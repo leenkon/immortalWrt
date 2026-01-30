@@ -1,4 +1,4 @@
-name: OpenWrt Builder
+name: immortalWrt Builder
 
 on:
   repository_dispatch:
