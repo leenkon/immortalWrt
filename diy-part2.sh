@@ -17,4 +17,4 @@ sed -i 's/192.168.1.1/10.10.10.1/g' package/base-files/files/bin/config_generate
 #sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci/Makefile
 
 # Modify hostname
-sed -i 's/FanchmWrt/Router/g' package/base-files/files/bin/config_generate
+sed -i 's/immortalWrt/Router/g' package/base-files/files/bin/config_generate
