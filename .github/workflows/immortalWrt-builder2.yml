@@ -1,0 +1,196 @@
+name: ImmortalWrt Builder
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write  # 用于创建 release
+  actions: read    # 最小权限原则
+
+env:
+  REPO_URL: https://github.com/immortalwrt/immortalwrt
+  REPO_BRANCH: master
+  FEEDS_CONF: feeds.conf.default
+  CONFIG_FILE: .config 
+  DIY_P1_SH: diy-part1.sh
+  DIY_P2_SH: diy-part2.sh
+  UPLOAD_BIN_DIR: false
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup cache
+      uses: actions/cache@v3
+      with:
+        path: |
+          /workdir/openwrt/dl
+          /workdir/openwrt/ccache
+        key: ${{ runner.os }}-immortalwrt-${{ hashFiles('$FEEDS_CONF', '$CONFIG_FILE') }}
+        restore-keys: |
+          ${{ runner.os }}-immortalwrt-
+
+    - name: Initialization environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+        sudo docker image prune --all --force
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+          bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib g++-multilib \
+          git gnutls-dev gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev \
+          libltdl-dev libmpc-dev libmpfr-dev libncurses-dev libpython3-dev libreadline-dev libssl-dev libtool libyaml-dev \
+          libz-dev lld llvm lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip \
+          python3-ply python3-docutils python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig \
+          texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+        sudo timedatectl set-timezone "$TZ"
+        sudo mkdir -p /workdir
+        sudo chown -R $USER:$USER /workdir
+        echo "CCACHE_DIR=/workdir/openwrt/ccache" >> $GITHUB_ENV
+        ccache --max-size=2G
+
+    - name: Clone source code
+      working-directory: /workdir
+      run: |
+        df -hT $PWD
+        if [ ! -d "openwrt" ]; then
+          git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
+          ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+        else
+          cd openwrt
+          git fetch --depth 1 origin $REPO_BRANCH
+          git reset --hard origin/$REPO_BRANCH
+        fi
+
+    - name: Load custom feeds
+      run: |
+        [ -e $FEEDS_CONF ] && cp $FEEDS_CONF openwrt/feeds.conf.default
+        if [ -x "$DIY_P1_SH" ]; then
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P1_SH || exit 1
+        fi
+
+    - name: Update feeds
+      run: |
+        cd openwrt
+        ./scripts/feeds update -a || exit 1
+
+    - name: Install feeds
+      run: |
+        cd openwrt
+        ./scripts/feeds install -af || exit 1
+
+    - name: Load custom configuration
+      run: |
+        [ -d "files" ] && cp -r files openwrt/files
+        [ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
+        if [ -x "$DIY_P2_SH" ]; then
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P2_SH || exit 1
+        fi
+
+    - name: Download package
+      id: package
+      run: |
+        cd openwrt
+        make defconfig
+        make download -j$(($(nproc) + 1)) || make download -j1 V=s
+        find dl -size -1024c -exec ls -l {} \; -delete
+
+    - name: Compile the firmware
+      id: compile
+      run: |
+        cd openwrt
+        echo "::group::Compilation Log"
+        make -j$(($(nproc) + 1)) FORCE_OVERWRITE=1 V=s || { 
+          echo "::error::Build failed! Running with single thread for debugging..."; 
+          make V=s; 
+          exit 1; 
+        }
+        echo "::endgroup::"
+        echo "status=success" >> $GITHUB_OUTPUT
+        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
+        [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
+        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+
+    - name: Check space usage
+      if: always() && !cancelled()
+      run: df -hT
+
+    - name: Upload bin directory
+      uses: actions/upload-artifact@v4
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true' && !failure()
+      with:
+        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: openwrt/bin
+        retention-days: 3
+
+    - name: Organize files
+      id: organize
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      run: |
+        cd openwrt/bin/targets
+        TARGET_DIR=$(find . -maxdepth 2 -type d -name '*' | head -1)
+        if [ -d "$TARGET_DIR" ]; then
+          cd "$TARGET_DIR"
+          rm -rf packages 2>/dev/null || true
+          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
+        else
+          echo "::error::No firmware directory found!"
+          exit 1
+        fi
+
+    - name: Generate SHA256 checksums
+      if: steps.organize.outputs.status == 'success' && !cancelled()
+      run: |
+        cd ${{ env.FIRMWARE }}
+        sha256sum -- * > sha256sums.txt
+
+    - name: Upload firmware directory
+      uses: actions/upload-artifact@v4
+      if: steps.organize.outputs.status == 'success' && !cancelled()
+      with:
+        name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: ${{ env.FIRMWARE }}
+        retention-days: 3
+
+    - name: Generate release tag
+      id: tag
+      if: env.UPLOAD_RELEASE == 'true' && steps.organize.outputs.status == 'success' && !cancelled()
+      run: |
+        echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+        touch release.txt
+        echo "status=success" >> $GITHUB_OUTPUT
+
+    - name: Upload firmware to release
+      if: steps.tag.outputs.status == 'success' && !cancelled()
+      uses: softprops/action-gh-release@v1
+      continue-on-error: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.tag.outputs.release_tag }}
+        body: "Automated ImmortalWrt build (${{ steps.tag.outputs.release_tag }})"
+        files: |
+          ${{ env.FIRMWARE }}/*
+          ${{ env.FIRMWARE }}/sha256sums.txt
+
+    - name: Remove old Releases
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      uses: dev-drprasad/delete-older-releases@v0.2.0
+      with:
+        keep_latest: 3
+        delete_tags: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
