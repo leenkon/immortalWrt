@@ -103,8 +103,8 @@ jobs:
       id: package
       run: |
         cd openwrt
-        make defconfig
-        make download -j$(($(nproc) + 1)) V=s || make download -j1 V=s
+         defconfig
+        make download -j$(($(nproc) + 1)) || make download -j1
         find dl -size -1024c -exec ls -l {} \; -delete
 
     - name: Compile the firmware
@@ -112,7 +112,7 @@ jobs:
       run: |
         cd openwrt
         echo "::group::Compilation Log"
-        make -j$(($(nproc) + 1)) FORCE_OVERWRITE=1 V=s || { 
+        make -j$(($(nproc) + 1)) || { 
           echo "::error::Build failed! Running with single thread for debugging..."; 
           make V=s; 
           exit 1; 
