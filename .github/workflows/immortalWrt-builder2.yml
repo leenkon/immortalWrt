@@ -140,22 +140,33 @@ jobs:
       if: steps.compile.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
         cd openwrt/bin/targets
-        TARGET_DIR=$(find . -maxdepth 2 -type d -name '*' | head -1)
+        # 查找最具体的构建目录（通常是 targets/*/* 格式）
+        TARGET_DIR=$(find . -maxdepth 2 -mindepth 2 -type d | head -1)
         if [ -d "$TARGET_DIR" ]; then
           cd "$TARGET_DIR"
           rm -rf packages 2>/dev/null || true
           echo "FIRMWARE=$PWD" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
         else
-          echo "::error::No firmware directory found!"
-          exit 1
+          # 如果没有找到二级目录，尝试一级目录
+          TARGET_DIR=$(find . -maxdepth 1 -mindepth 1 -type d | head -1)
+          if [ -d "$TARGET_DIR" ]; then
+            cd "$TARGET_DIR"
+            rm -rf packages 2>/dev/null || true
+            echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "::error::No firmware directory found!"
+            exit 1
+          fi
         fi
 
     - name: Generate SHA256 checksums
       if: steps.organize.outputs.status == 'success' && !cancelled()
       run: |
         cd ${{ env.FIRMWARE }}
-        sha256sum -- * > sha256sums.txt
+        # 只对文件进行校验和计算，忽略目录
+        find . -maxdepth 1 -type f ! -name "sha256sums.txt" -exec sha256sum {} + > sha256sums.txt
 
     - name: Upload firmware directory
       uses: actions/upload-artifact@v4
@@ -184,7 +195,6 @@ jobs:
         body: "Automated ImmortalWrt build (${{ steps.tag.outputs.release_tag }})"
         files: |
           ${{ env.FIRMWARE }}/*
-          ${{ env.FIRMWARE }}/sha256sums.txt
 
     - name: Remove old Releases
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
