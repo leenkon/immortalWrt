@@ -88,7 +88,7 @@ jobs:
     - name: Install feeds
       run: |
         cd openwrt
-        ./scripts/feeds install -af || exit 1
+        ./scripts/feeds install -a || exit 1
 
     - name: Load custom configuration
       run: |
@@ -104,7 +104,7 @@ jobs:
       run: |
         cd openwrt
         make defconfig
-        make download -j$(($(nproc) + 1)) || make download -j1 V=s
+        make download -j$(($(nproc) + 1)) V=s || make download -j1 V=s
         find dl -size -1024c -exec ls -l {} \; -delete
 
     - name: Compile the firmware
