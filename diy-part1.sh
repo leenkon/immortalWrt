@@ -16,4 +16,5 @@
 # Add a feed source
 #echo 'src-git helloworld https://github.com/fw876/helloworld' >>feeds.conf.default
 #echo 'src-git OpenAppFilter https://github.com/destan19/OpenAppFilter' >>feeds.conf.default
-echo 'src-git package https://github.com/kenzok8/small-package' >>feeds.conf.default
+#echo 'src-git package https://github.com/kenzok8/small-package' >>feeds.conf.default
+echo 'src-git fanchmwrt https://github.com/fanchmwrt/fanchmwrt-packages' >>feeds.conf.default
