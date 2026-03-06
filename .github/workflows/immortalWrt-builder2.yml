@@ -27,17 +27,16 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Create directories for cache
+    - name: Create cache directories
       run: |
-        mkdir -p /workdir/openwrt/dl /workdir/openwrt/ccache
-        sudo chown -R $USER:$USER /workdir
+        mkdir -p openwrt/dl openwrt/ccache
 
     - name: Setup cache
       uses: actions/cache@v3
       with:
         path: |
-          /workdir/openwrt/dl
-          /workdir/openwrt/ccache
+          openwrt/dl
+          openwrt/ccache
         key: ${{ runner.os }}-immortalwrt-${{ hashFiles('$FEEDS_CONF', '$CONFIG_FILE') }}
         restore-keys: |
           ${{ runner.os }}-immortalwrt-
@@ -59,23 +58,19 @@ jobs:
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
-        echo "CCACHE_DIR=/workdir/openwrt/ccache" >> $GITHUB_ENV
+        echo "CCACHE_DIR=$GITHUB_WORKSPACE/openwrt/ccache" >> $GITHUB_ENV
         ccache --max-size=2G
 
     - name: Clone source code
-      working-directory: /workdir
       run: |
         df -hT $PWD
         if [ ! -d "openwrt" ]; then
           git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
-          ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
         else
           cd openwrt
           git fetch --depth 1 origin $REPO_BRANCH
           git reset --hard origin/$REPO_BRANCH
         fi
-        # 确保目录所有权正确
-        sudo chown -R $USER:$USER /workdir/openwrt
 
     - name: Load custom feeds
       run: |
