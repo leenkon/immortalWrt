@@ -27,6 +27,11 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
+    - name: Create directories for cache
+      run: |
+        mkdir -p /workdir/openwrt/dl /workdir/openwrt/ccache
+        sudo chown -R $USER:$USER /workdir
+
     - name: Setup cache
       uses: actions/cache@v3
       with:
@@ -54,8 +59,6 @@ jobs:
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
-        sudo mkdir -p /workdir
-        sudo chown -R $USER:$USER /workdir
         echo "CCACHE_DIR=/workdir/openwrt/ccache" >> $GITHUB_ENV
         ccache --max-size=2G
 
@@ -71,6 +74,8 @@ jobs:
           git fetch --depth 1 origin $REPO_BRANCH
           git reset --hard origin/$REPO_BRANCH
         fi
+        # 确保目录所有权正确
+        sudo chown -R $USER:$USER /workdir/openwrt
 
     - name: Load custom feeds
       run: |
