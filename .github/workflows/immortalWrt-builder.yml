@@ -9,7 +9,7 @@ permissions:
 
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
-  REPO_BRANCH: openwrt-24.10  # ✅ 明确指定你想要的分支
+  REPO_BRANCH: openwrt-24.10
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: .config
   DIY_P1_SH: diy-part1.sh
@@ -42,6 +42,8 @@ jobs:
           ${{ runner.os }}-immortalwrt-
 
     - name: Initialization environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
       run: |
         sudo apt-get update -y
         sudo apt-get install -y ack antlr3 asciidoc autoconf automake autopoint \
@@ -59,78 +61,49 @@ jobs:
         echo "CCACHE_DIR=$GITHUB_WORKSPACE/openwrt/ccache" >> $GITHUB_ENV
         ccache --max-size=2G
 
-    - name: Clone source code (智能分支检测)
+    - name: Clone source code
       run: |
-        echo "=== 开始克隆 ImmortalWrt 源码 ==="
-        echo "目标仓库: $REPO_URL"
-        echo "目标分支: $REPO_BRANCH"
+        echo "正在克隆 ImmortalWrt 源码..."
+        echo "仓库: $REPO_URL"
+        echo "分支: $REPO_BRANCH"
         
-        # 1. 首先检查指定的分支是否存在
-        echo "检查分支是否存在..."
-        if git ls-remote --exit-code --heads "$REPO_URL" "$REPO_BRANCH" >/dev/null 2>&1; then
-          echo "✅ 找到分支: $REPO_BRANCH"
-          if [ ! -d "openwrt" ]; then
-            git clone --depth 1 "$REPO_URL" -b "$REPO_BRANCH" openwrt
-          else
-            cd openwrt
-            git fetch --depth 1 origin "$REPO_BRANCH"
-            git reset --hard "origin/$REPO_BRANCH"
-          fi
+        # 首先检查仓库是否存在
+        if git ls-remote "$REPO_URL" &> /dev/null; then
+          echo "仓库可访问"
         else
-          echo "❌ 分支 $REPO_BRANCH 不存在"
-          echo "正在查找可用分支..."
-          
-          # 获取所有可用分支
-          BRANCHES=$(git ls-remote --heads "$REPO_URL" | sed 's|.*refs/heads/||')
-          echo "可用分支:"
-          echo "$BRANCHES"
-          
-          # 尝试一些常见分支
-          for BRANCH in "main" "master" "openwrt-23.05" "openwrt-22.03" "openwrt-21.02"; do
-            if echo "$BRANCHES" | grep -q "^$BRANCH$"; then
-              echo "✅ 使用备用分支: $BRANCH"
-              if [ ! -d "openwrt" ]; then
-                git clone --depth 1 "$REPO_URL" -b "$BRANCH" openwrt
-                break
-              else
-                cd openwrt
-                git fetch --depth 1 origin "$BRANCH"
-                git reset --hard "origin/$BRANCH"
-                break
-              fi
-            fi
-          done
-          
-          # 如果以上分支都不存在，使用第一个找到的分支
-          if [ ! -d "openwrt" ] || [ ! -f "openwrt/Makefile" ]; then
-            FIRST_BRANCH=$(echo "$BRANCHES" | head -1)
-            if [ -n "$FIRST_BRANCH" ]; then
-              echo "⚠️ 使用第一个可用分支: $FIRST_BRANCH"
-              git clone --depth 1 "$REPO_URL" -b "$FIRST_BRANCH" openwrt
-            else
-              echo "::error::无法找到任何分支，请检查仓库地址"
-              exit 1
-            fi
-          fi
-        fi
-        
-        # 验证克隆结果
-        if [ -d "openwrt" ] && [ -f "openwrt/Makefile" ]; then
-          echo "✅ 克隆成功"
-          cd openwrt
-          CURRENT_BRANCH=$(git branch --show-current || echo "未知")
-          echo "当前分支: $CURRENT_BRANCH"
-        else
-          echo "::error::克隆失败"
+          echo "错误：无法访问仓库"
           exit 1
         fi
+        
+        # 克隆代码
+        if [ ! -d "openwrt" ]; then
+          echo "开始克隆..."
+          git clone --depth 1 "$REPO_URL" -b "$REPO_BRANCH" openwrt
+        else
+          echo "更新现有代码..."
+          cd openwrt
+          git fetch --depth 1 origin "$REPO_BRANCH" && git reset --hard "origin/$REPO_BRANCH" || {
+            echo "警告：无法更新分支 $REPO_BRANCH，尝试使用 main 分支"
+            git fetch --depth 1 origin main && git reset --hard origin/main
+          }
+        fi
+        
+        if [ ! -d "openwrt" ] || [ ! -f "openwrt/Makefile" ]; then
+          echo "错误：克隆失败！"
+          exit 1
+        fi
+        
+        echo "克隆成功！"
 
     - name: Load custom feeds
       run: |
-        [ -e $FEEDS_CONF ] && cp $FEEDS_CONF openwrt/feeds.conf.default
+        if [ -e "$FEEDS_CONF" ]; then
+          cp "$FEEDS_CONF" openwrt/feeds.conf.default
+          echo "已复制自定义 feeds 配置"
+        fi
         if [ -x "$DIY_P1_SH" ]; then
           cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P1_SH || exit 1
+          "$GITHUB_WORKSPACE/$DIY_P1_SH" || exit 1
         fi
 
     - name: Update feeds
@@ -145,11 +118,15 @@ jobs:
 
     - name: Load custom configuration
       run: |
-        [ -d "files" ] && cp -r files openwrt/files
-        [ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
+        if [ -d "files" ]; then
+          cp -r files openwrt/files
+        fi
+        if [ -e "$CONFIG_FILE" ]; then
+          cp "$CONFIG_FILE" openwrt/.config
+        fi
         if [ -x "$DIY_P2_SH" ]; then
           cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P2_SH || exit 1
+          "$GITHUB_WORKSPACE/$DIY_P2_SH" || exit 1
         fi
 
     - name: Download package
@@ -157,15 +134,15 @@ jobs:
         cd openwrt
         make defconfig
         make download -j$(($(nproc) + 1)) || make download -j1
-        find dl -size -1024c -delete
+        find dl -size -1024c -delete 2>/dev/null || true
 
     - name: Compile the firmware
       id: compile
       run: |
         cd openwrt
-        echo "::group::Compilation Log"
+        echo "::group::编译日志"
         make -j$(($(nproc) + 1)) || { 
-          echo "::error::Build failed! Running with single thread for debugging..."; 
+          echo "构建失败！尝试单线程编译..."
           make V=s; 
           exit 1; 
         }
@@ -186,16 +163,15 @@ jobs:
       run: |
         cd openwrt/bin/targets
         TARGET_DIR=$(find . -maxdepth 2 -mindepth 2 -type d | head -1 || find . -maxdepth 1 -mindepth 1 -type d | head -1)
-        [ -d "$TARGET_DIR" ] && cd "$TARGET_DIR" && rm -rf packages
-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-
-    - name: Generate SHA256 checksums
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true'
-      run: |
-        cd "$FIRMWARE"
-        find . -maxdepth 1 -type f -name "*.bin" -o -name "*.img" -o -name "*.gz" | while read file; do
-          sha256sum "$file" > "$file.sha256sum"
-        done
+        if [ -d "$TARGET_DIR" ]; then
+          cd "$TARGET_DIR"
+          rm -rf packages 2>/dev/null || true
+          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+          echo "✅ 固件目录: $PWD"
+        else
+          echo "❌ 未找到固件目录"
+          exit 1
+        fi
 
     - name: Create Release
       if: steps.compile.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true'
