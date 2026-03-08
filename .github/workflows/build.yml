@@ -1,0 +1,146 @@
+name: ImmortalWrt Builder
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  REPO_URL: https://github.com/immortalwrt/immortalwrt
+  REPO_BRANCH: master
+  FEEDS_CONF: feeds.conf.default
+  CONFIG_FILE: .config
+  DIY_P1_SH: diy-part1.sh
+  DIY_P2_SH: diy-part2.sh
+  UPLOAD_BIN_DIR: false
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Create cache directories
+      run: |
+        mkdir -p openwrt/dl openwrt/ccache
+
+    - name: Setup cache
+      uses: actions/cache@v3
+      with:
+        path: |
+          openwrt/dl
+          openwrt/ccache
+        key: ${{ runner.os }}-immortalwrt-${{ hashFiles('$FEEDS_CONF', '$CONFIG_FILE') }}
+        restore-keys: |
+          ${{ runner.os }}-immortalwrt-
+
+    - name: Setup build environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ack antlr3 asciidoc autoconf automake autopoint \
+          binutils bison build-essential bzip2 ccache clang cmake cpio curl \
+          device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib \
+          g++-multilib git gnutls-dev gperf haveged help2man intltool lib32gcc-s1 \
+          libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev \
+          libmpc-dev libmpfr-dev libncurses-dev libpython3-dev libreadline-dev \
+          libssl-dev libtool libyaml-dev libz-dev lld llvm lrzsz mkisofs msmtp \
+          nano ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip \
+          python3-ply python3-docutils python3-pyelftools qemu-utils re2c rsync \
+          scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip \
+          vim wget xmlto xxd zlib1g-dev zstd
+        sudo timedatectl set-timezone "$TZ"
+        echo "CCACHE_DIR=$GITHUB_WORKSPACE/openwrt/ccache" >> $GITHUB_ENV
+        ccache --max-size=2G
+
+    - name: Clone ImmortalWrt source code
+      run: |
+        echo "开始克隆 ImmortalWrt 源码..."
+        echo "仓库: $REPO_URL"
+        echo "分支: $REPO_BRANCH"
+        
+        # 如果 openwrt 目录已存在，先删除它
+        if [ -d "openwrt" ]; then
+          echo "删除旧的 openwrt 目录..."
+          rm -rf openwrt
+        fi
+        
+        # 尝试克隆
+        echo "正在克隆 $REPO_BRANCH 分支..."
+        git clone --depth 1 "$REPO_URL" -b "$REPO_BRANCH" openwrt
+        
+        # 验证克隆是否成功
+        if [ -d "openwrt" ] && [ -f "openwrt/Makefile" ]; then
+          echo "✅ 克隆成功！"
+          cd openwrt
+          echo "当前分支: $(git branch --show-current)"
+          echo "提交哈希: $(git rev-parse --short HEAD)"
+        else
+          echo "❌ 克隆失败！"
+          exit 1
+        fi
+
+    - name: Load custom feeds
+      run: |
+        if [ -e "$FEEDS_CONF" ]; then
+          cp "$FEEDS_CONF" openwrt/feeds.conf.default
+          echo "已复制自定义 feeds 配置"
+        fi
+        if [ -x "$DIY_P1_SH" ]; then
+          cd openwrt
+          bash "$GITHUB_WORKSPACE/$DIY_P1_SH" || exit 1
+        fi
+
+    - name: Update feeds
+      run: |
+        cd openwrt
+        ./scripts/feeds update -a
+
+    - name: Install feeds
+      run: |
+        cd openwrt
+        ./scripts/feeds install -a
+
+    - name: Load custom configuration
+      run: |
+        if [ -d "files" ]; then
+          cp -r files openwrt/files
+        fi
+        if [ -e "$CONFIG_FILE" ]; then
+          cp "$CONFIG_FILE" openwrt/.config
+        fi
+        if [ -x "$DIY_P2_SH" ]; then
+          cd openwrt
+          bash "$GITHUB_WORKSPACE/$DIY_P2_SH" || exit 1
+        fi
+
+    - name: Download packages
+      run: |
+        cd openwrt
+        make defconfig
+        make download -j$(($(nproc) + 1)) || make download -j1
+        # 删除小于1KB的文件（通常是下载失败的文件）
+        find dl -size -1024c -delete 2>/dev/null || true
+
+    - name: Compile firmware
+      id: compile
+      run: |
+        cd openwrt
+        echo "::group::编译日志"
+        make -j$(($(nproc) + 1)) V=s
+        echo "::endgroup::"
+        echo "status=success" >> $GITHUB_OUTPUT
+
+    - name: Upload firmware artifacts
+      if: steps.compile.outputs.status == 'success'
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenWrt-firmware
+        path: openwrt/bin/targets/
+        retention-days: 7
