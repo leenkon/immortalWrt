@@ -62,6 +62,8 @@ jobs:
         ccache --max-size=2G
 
     - name: Clone source code
+      env:
+          CLONE_BRANCH: ${{ env.REPO_BRANCH }}
       run: |
         df -hT $PWD
         if [ ! -d "openwrt" ]; then
