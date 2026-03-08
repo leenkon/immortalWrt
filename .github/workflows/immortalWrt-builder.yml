@@ -9,7 +9,7 @@ permissions:
 
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
-  REPO_BRANCH: openwrt-24.10
+  REPO_BRANCH: openwrt-24.10  # ✅ 明确指定你想要的分支
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: .config
   DIY_P1_SH: diy-part1.sh
@@ -43,7 +43,7 @@ jobs:
 
     - name: Initialization environment
       run: |
-        sudo apt-get update
+        sudo apt-get update -y
         sudo apt-get install -y ack antlr3 asciidoc autoconf automake autopoint \
           binutils bison build-essential bzip2 ccache clang cmake cpio curl \
           device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib \
@@ -59,40 +59,98 @@ jobs:
         echo "CCACHE_DIR=$GITHUB_WORKSPACE/openwrt/ccache" >> $GITHUB_ENV
         ccache --max-size=2G
 
-    - name: Clone source code
+    - name: Clone source code (智能分支检测)
       run: |
-        echo "正在克隆 ImmortalWrt 源码..."
-        echo "仓库: $REPO_URL"
-        echo "分支: $REPO_BRANCH"
+        echo "=== 开始克隆 ImmortalWrt 源码 ==="
+        echo "目标仓库: $REPO_URL"
+        echo "目标分支: $REPO_BRANCH"
         
-        if [ ! -d "openwrt" ]; then
-          git clone --depth 1 "$REPO_URL" -b "$REPO_BRANCH" openwrt
+        # 1. 首先检查指定的分支是否存在
+        echo "检查分支是否存在..."
+        if git ls-remote --exit-code --heads "$REPO_URL" "$REPO_BRANCH" >/dev/null 2>&1; then
+          echo "✅ 找到分支: $REPO_BRANCH"
+          if [ ! -d "openwrt" ]; then
+            git clone --depth 1 "$REPO_URL" -b "$REPO_BRANCH" openwrt
+          else
+            cd openwrt
+            git fetch --depth 1 origin "$REPO_BRANCH"
+            git reset --hard "origin/$REPO_BRANCH"
+          fi
         else
+          echo "❌ 分支 $REPO_BRANCH 不存在"
+          echo "正在查找可用分支..."
+          
+          # 获取所有可用分支
+          BRANCHES=$(git ls-remote --heads "$REPO_URL" | sed 's|.*refs/heads/||')
+          echo "可用分支:"
+          echo "$BRANCHES"
+          
+          # 尝试一些常见分支
+          for BRANCH in "main" "master" "openwrt-23.05" "openwrt-22.03" "openwrt-21.02"; do
+            if echo "$BRANCHES" | grep -q "^$BRANCH$"; then
+              echo "✅ 使用备用分支: $BRANCH"
+              if [ ! -d "openwrt" ]; then
+                git clone --depth 1 "$REPO_URL" -b "$BRANCH" openwrt
+                break
+              else
+                cd openwrt
+                git fetch --depth 1 origin "$BRANCH"
+                git reset --hard "origin/$BRANCH"
+                break
+              fi
+            fi
+          done
+          
+          # 如果以上分支都不存在，使用第一个找到的分支
+          if [ ! -d "openwrt" ] || [ ! -f "openwrt/Makefile" ]; then
+            FIRST_BRANCH=$(echo "$BRANCHES" | head -1)
+            if [ -n "$FIRST_BRANCH" ]; then
+              echo "⚠️ 使用第一个可用分支: $FIRST_BRANCH"
+              git clone --depth 1 "$REPO_URL" -b "$FIRST_BRANCH" openwrt
+            else
+              echo "::error::无法找到任何分支，请检查仓库地址"
+              exit 1
+            fi
+          fi
+        fi
+        
+        # 验证克隆结果
+        if [ -d "openwrt" ] && [ -f "openwrt/Makefile" ]; then
+          echo "✅ 克隆成功"
           cd openwrt
-          git fetch --depth 1 origin "$REPO_BRANCH"
-          git reset --hard origin/$REPO_BRANCH
+          CURRENT_BRANCH=$(git branch --show-current || echo "未知")
+          echo "当前分支: $CURRENT_BRANCH"
+        else
+          echo "::error::克隆失败"
+          exit 1
         fi
 
     - name: Load custom feeds
       run: |
         [ -e $FEEDS_CONF ] && cp $FEEDS_CONF openwrt/feeds.conf.default
-        [ -x "$DIY_P1_SH" ] && cd openwrt && $GITHUB_WORKSPACE/$DIY_P1_SH
+        if [ -x "$DIY_P1_SH" ]; then
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P1_SH || exit 1
+        fi
 
     - name: Update feeds
       run: |
         cd openwrt
-        ./scripts/feeds update -a
+        ./scripts/feeds update -a || exit 1
 
     - name: Install feeds
       run: |
         cd openwrt
-        ./scripts/feeds install -a
+        ./scripts/feeds install -a || exit 1
 
     - name: Load custom configuration
       run: |
         [ -d "files" ] && cp -r files openwrt/files
         [ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
-        [ -x "$DIY_P2_SH" ] && cd openwrt && $GITHUB_WORKSPACE/$DIY_P2_SH
+        if [ -x "$DIY_P2_SH" ]; then
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P2_SH || exit 1
+        fi
 
     - name: Download package
       run: |
@@ -106,7 +164,11 @@ jobs:
       run: |
         cd openwrt
         echo "::group::Compilation Log"
-        make -j$(($(nproc) + 1)) || make V=s
+        make -j$(($(nproc) + 1)) || { 
+          echo "::error::Build failed! Running with single thread for debugging..."; 
+          make V=s; 
+          exit 1; 
+        }
         echo "::endgroup::"
         echo "status=success" >> $GITHUB_OUTPUT
         echo "FILE_DATE=$(date +%Y%m%d%H%M)" >> $GITHUB_ENV
