@@ -24,13 +24,12 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: Checkout repository and setup environment
+    - name: Checkout repository
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 1
 
-    - name: Setup build environment and cache
+    - name: Setup environment and cache
       run: |
+        # 创建缓存目录
         mkdir -p openwrt/dl openwrt/ccache
         
         # 安装构建依赖
@@ -46,12 +45,15 @@ jobs:
           python3-ply python3-docutils python3-pyelftools qemu-utils re2c rsync \
           scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip \
           vim wget xmlto xxd zlib1g-dev zstd
+        
+        # 设置时区和ccache
         sudo timedatectl set-timezone "$TZ"
         echo "CCACHE_DIR=$GITHUB_WORKSPACE/openwrt/ccache" >> $GITHUB_ENV
         ccache --max-size=2G
 
-    - name: Setup cache
+    - name: Restore build cache
       uses: actions/cache@v3
+      id: cache-restore
       with:
         path: |
           openwrt/dl
@@ -115,6 +117,15 @@ jobs:
         
         echo "status=success" >> $GITHUB_OUTPUT
 
+    - name: Save build cache
+      if: always()
+      uses: actions/cache@v3
+      with:
+        path: |
+          openwrt/dl
+          openwrt/ccache
+        key: ${{ steps.cache-restore.outputs.cache-primary-key }}
+
     - name: Create Release
       if: steps.compile.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true'
       uses: softprops/action-gh-release@v1
@@ -130,6 +141,7 @@ jobs:
           openwrt/bin/targets/**/*.manifest
           openwrt/bin/targets/**/*.sha256sums
           openwrt/bin/targets/**/sha256sums
+
     - name: Upload firmware artifacts (fallback)
       if: steps.compile.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true' && env.UPLOAD_RELEASE != 'true'
       uses: actions/upload-artifact@v4
