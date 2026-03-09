@@ -19,4 +19,4 @@ sed -i 's/192.168.1.1/10.10.10.1/g' package/base-files/files/bin/config_generate
 # Modify hostname
 sed -i 's/ImmortalWrt/Router/g' package/base-files/files/bin/config_generate
 sed -i 's/GMT0/CST-8/g' package/base-files/files/bin/config_generate
-sed -i 's/UTC/Asia/Shanghai/g' package/base-files/files/bin/config_generate
+sed -i 's/UTC/Asia\/Shanghai/g' package/base-files/files/bin/config_generate
