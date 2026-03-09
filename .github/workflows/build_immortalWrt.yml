@@ -31,12 +31,7 @@ jobs:
 
     - name: Setup build environment and cache
       run: |
-        # 创建缓存目录
         mkdir -p openwrt/dl openwrt/ccache
-        
-        # 设置缓存环境变量
-        echo "CCACHE_DIR=$GITHUB_WORKSPACE/openwrt/ccache" >> $GITHUB_ENV
-        ccache --max-size=2G
         
         # 安装构建依赖
         sudo apt-get update
@@ -52,6 +47,8 @@ jobs:
           scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip \
           vim wget xmlto xxd zlib1g-dev zstd
         sudo timedatectl set-timezone "$TZ"
+        echo "CCACHE_DIR=$GITHUB_WORKSPACE/openwrt/ccache" >> $GITHUB_ENV
+        ccache --max-size=2G
 
     - name: Setup cache
       uses: actions/cache@v3
