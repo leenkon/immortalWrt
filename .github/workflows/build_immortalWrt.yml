@@ -103,7 +103,7 @@ jobs:
         
         # 编译固件
         echo "::group::编译固件"
-        make -j$(($(nproc) + 1)) V=s
+        make -j$(($(nproc) + 1)) V=w
         echo "::endgroup::"
         
         echo "status=success" >> $GITHUB_OUTPUT
