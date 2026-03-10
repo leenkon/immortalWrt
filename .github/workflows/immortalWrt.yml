@@ -1,4 +1,4 @@
-name: ImmortalWrtBuilder
+name: ImmortalWrt Builder
 
 on:
   workflow_dispatch:
@@ -18,123 +18,111 @@ env:
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
+  CCACHE_DIR: ${{ github.workspace }}/openwrt/ccache
+  DL_DIR: ${{ github.workspace }}/openwrt/dl
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 180  # 添加超时限制
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 1  # 显式声明浅克隆
 
-    - name: Setup environment and cache
+    - name: Setup build environment
       run: |
-        # 创建缓存目录
-        mkdir -p openwrt/dl openwrt/ccache
+        mkdir -p $CCACHE_DIR $DL_DIR
         
-        # 使用ImmortalWrt官方一键安装脚本
-        echo "::group::Installing build dependencies"
+        echo "::group::Installing dependencies"
         sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)'
         echo "::endgroup::"
-        
-        # 设置时区和ccache
+
         sudo timedatectl set-timezone "$TZ"
-        echo "CCACHE_DIR=$GITHUB_WORKSPACE/openwrt/ccache" >> $GITHUB_ENV
         ccache --max-size=2G
+        ccache --show-stats
 
     - name: Restore build cache
       uses: actions/cache@v3
-      id: cache-restore
+      id: cache
       with:
         path: |
-          openwrt/dl
-          openwrt/ccache
+          ${{ env.CCACHE_DIR }}
+          ${{ env.DL_DIR }}
         key: ${{ runner.os }}-immortalwrt-${{ hashFiles('feeds.conf.default', '.config') }}
         restore-keys: |
           ${{ runner.os }}-immortalwrt-
 
-    - name: Clone and configure source code
+    - name: Prepare source code
       run: |
-        # 克隆源码
         rm -rf openwrt
-        git clone --depth 1 "$REPO_URL" -b "$REPO_BRANCH" openwrt
-        
-        # 加载自定义配置
-        if [ -e "$FEEDS_CONF" ]; then
-          cp "$FEEDS_CONF" openwrt/feeds.conf.default
-        fi
-        
-        if [ -d "files" ]; then
-          cp -r files openwrt/files
-        fi
-        
-        if [ -e "$CONFIG_FILE" ]; then
-          cp "$CONFIG_FILE" openwrt/.config
-        fi
-        
-        # 执行自定义脚本
+        git clone --depth 1 --single-branch -b "$REPO_BRANCH" "$REPO_URL" openwrt
+
+        [ -f "$FEEDS_CONF" ] && cp "$FEEDS_CONF" openwrt/feeds.conf.default
+        [ -d "files" ] && cp -rf files openwrt/files
+        [ -f "$CONFIG_FILE" ] && cp "$CONFIG_FILE" openwrt/.config
+
         if [ -x "$DIY_P1_SH" ]; then
           cd openwrt
-          bash "$GITHUB_WORKSPACE/$DIY_P1_SH" || exit 1
+          bash "../$DIY_P1_SH" || { echo "DIY script failed"; exit 1; }
         fi
 
-    - name: Update and install feeds
+    - name: Update feeds
       run: |
         cd openwrt
-        ./scripts/feeds update -a
-        ./scripts/feeds install -a        
-        # 执行第二阶段自定义脚本
-        if [ -x "$DIY_P2_SH" ]; then
-          bash "$GITHUB_WORKSPACE/$DIY_P2_SH" || exit 1
+        ./scripts/feeds update -a || { echo "Feeds update failed"; exit 1; }
+        ./scripts/feeds install -a || { echo "Feeds install failed"; exit 1; }
+
+        if [ -x "../$DIY_P2_SH" ]; then
+          bash "../$DIY_P2_SH" || { echo "DIY stage2 failed"; exit 1; }
         fi
 
-    - name: Download and compile firmware
-      id: compile
+    - name: Build firmware
+      id: build
       run: |
         cd openwrt
-        make defconfig        
-        # 下载软件包
-        echo "::group::下载软件包"
-        make download -j$(($(nproc) + 1)) || make download -j1
+        
+        echo "::group::Download packages"
+        for i in {1..3}; do
+          make download -j$(($(nproc) + 1)) && break || sleep 10
+          [ $i -eq 3 ] && exit 1
+        done
         find dl -size -1024c -delete 2>/dev/null || true
         echo "::endgroup::"
-        
-        # 编译固件
-        echo "::group::编译固件"
-        make -j$(($(nproc) + 1)) V=w
+
+        echo "::group::Compilation log"
+        make -j$(($(nproc) + 1)) V=w || {
+          echo "Parallel build failed, retrying single-threaded...";
+          make -j1 V=w || exit 1;
+        }
         echo "::endgroup::"
-        
+
         echo "status=success" >> $GITHUB_OUTPUT
 
-    - name: Save build cache
+    - name: Save cache
       if: always()
       uses: actions/cache@v3
       with:
         path: |
-          openwrt/dl
-          openwrt/ccache
-        key: ${{ steps.cache-restore.outputs.cache-primary-key }}
+          ${{ env.CCACHE_DIR }}
+          ${{ env.DL_DIR }}
+        key: ${{ steps.cache.outputs.cache-primary-key }}
 
     - name: Create Release
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true'
+      if: steps.build.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true'
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: immortalwrt-${{ env.REPO_BRANCH }}-$(date +%Y%m%d-%H%M%S)
-        name: ImmortalWrt Build (${{ env.REPO_BRANCH }}) - $(date +'%Y-%m-%d %H:%M:%S')
-        draft: false
-        prerelease: true
+        tag_name: build-${{ env.REPO_BRANCH }}-$(date +%Y%m%d)
+        name: Build (${{ env.REPO_BRANCH }}) - $(date +'%Y-%m-%d')
         files: |
-          openwrt/bin/targets/**/*.bin
-          openwrt/bin/targets/**/*.img
-          openwrt/bin/targets/**/*.gz
-          openwrt/bin/targets/**/*.manifest
-          openwrt/bin/targets/**/*.sha256sums
-          openwrt/bin/targets/**/sha256sums
+          openwrt/bin/targets/**/*
 
-    - name: Upload firmware artifacts (fallback)
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true' && env.UPLOAD_RELEASE != 'true'
+    - name: Upload artifacts
+      if: steps.build.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true' && env.UPLOAD_RELEASE != 'true'
       uses: actions/upload-artifact@v4
       with:
-        name: OpenWrt-firmware
+        name: firmware
         path: openwrt/bin/targets/
         retention-days: 7
