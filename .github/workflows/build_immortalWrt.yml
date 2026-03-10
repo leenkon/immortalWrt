@@ -58,7 +58,7 @@ jobs:
         path: |
           openwrt/dl
           openwrt/ccache
-        key: ${{ runner.os }}-immortalwrt-${{ hashFiles('$FEEDS_CONF', '$CONFIG_FILE') }}
+        key: ${{ runner.os }}-immortalwrt-${{ hashFiles('feeds.conf.default', '.config') }}
         restore-keys: |
           ${{ runner.os }}-immortalwrt-
 
