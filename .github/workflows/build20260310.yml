@@ -81,12 +81,11 @@ jobs:
     - name: Update feeds
       run: |
         cd openwrt
-        ./scripts/feeds update -a || { echo "Feeds update failed"; exit 1; }
-        ./scripts/feeds install -a || { echo "Feeds install failed"; exit 1; }
-
+        ./scripts/feeds update -a || { echo "Feeds update failed"; exit 1; }     
         if [ -x "../$DIY_P2_SH" ]; then
           bash "../$DIY_P2_SH" || { echo "DIY stage2 failed"; exit 1; }
         fi
+        ./scripts/feeds install -a || { echo "Feeds install failed"; exit 1; }
 
     - name: Build firmware
       id: build
