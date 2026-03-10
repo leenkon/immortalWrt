@@ -82,8 +82,7 @@ jobs:
       run: |
         cd openwrt
         ./scripts/feeds update -a
-        ./scripts/feeds install -a
-        
+        ./scripts/feeds install -a        
         # 执行第二阶段自定义脚本
         if [ -x "$DIY_P2_SH" ]; then
           bash "$GITHUB_WORKSPACE/$DIY_P2_SH" || exit 1
@@ -93,8 +92,7 @@ jobs:
       id: compile
       run: |
         cd openwrt
-        #make defconfig
-        
+        make defconfig        
         # 下载软件包
         echo "::group::下载软件包"
         make download -j$(($(nproc) + 1)) || make download -j1
