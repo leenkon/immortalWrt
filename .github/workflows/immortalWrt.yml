@@ -1,4 +1,4 @@
-name: ImmortalWrt Builder
+name: ImmortalWrtBuilder
 
 on:
   workflow_dispatch:
