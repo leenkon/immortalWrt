@@ -1,0 +1,330 @@
+name: ImmortalWrt 24.10 云编译
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: '目标架构 (如 x86_64, ramips/mt7621)'
+        required: true
+        default: 'x86_64'
+        type: string
+      subtarget:
+        description: '子目标'
+        required: false
+        default: ''
+        type: string
+      profile:
+        description: '设备型号'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  REPO_URL: https://github.com/immortalwrt/immortalwrt
+  REPO_BRANCH: openwrt-24.10
+  FEEDS_CONF: feeds.conf.default
+  CONFIG_FILE: .config
+  DIY_P1_SH: diy-part1.sh
+  DIY_P2_SH: diy-part2.sh
+  TZ: Asia/Shanghai
+  CCACHE_DIR: ${{ github.workspace }}/openwrt/ccache
+  DL_DIR: ${{ github.workspace }}/openwrt/dl
+  BUILD_DIR: ${{ github.workspace }}/openwrt
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    
+    strategy:
+      matrix:
+        include:
+          - target: ${{ github.event.inputs.target || 'x86_64' }}
+            subtarget: ${{ github.event.inputs.subtarget || '' }}
+            profile: ${{ github.event.inputs.profile || '' }}
+
+    steps:
+    - name: 检查仓库代码
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+        path: config-files
+
+    - name: 设置构建环境
+      run: |
+        echo "::group::创建缓存目录"
+        mkdir -p $CCACHE_DIR $DL_DIR
+        echo "::endgroup::"
+        
+        echo "::group::安装编译依赖"
+        sudo apt-get update -y
+        # 基础编译工具链[citation:1][citation:2]
+        sudo apt-get install -y \
+          build-essential asciidoc binutils bzip2 gawk gettext git \
+          libncurses5-dev libz-dev patch python3 python2.7 unzip zlib1g-dev \
+          lib32gcc1 libc6-dev-i386 subversion flex uglifyjs git-core \
+          gcc-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev \
+          xmlto qemu-utils upx libelf-dev autoconf automake libtool autopoint \
+          device-tree-compiler g++-multilib antlr3 gperf wget curl swig rsync \
+          cmake ninja-build ack cpio fastjar help2man intltool libgmp3-dev \
+          libltdl-dev libmpc-dev libmpfr-dev libreadline-dev lld llvm lrzsz \
+          python3-pip python3-ply python3-docutils re2c scons squashfs-tools
+        
+        # 额外依赖 - 提高兼容性
+        sudo apt-get install -y \
+          libyaml-dev libpython3-dev libev-dev libgpiod-dev
+        
+        echo "::endgroup::"
+        
+        sudo timedatectl set-timezone "$TZ"
+        ccache --max-size=4G
+        ccache --cleanup
+        ccache --show-stats
+
+    - name: 恢复构建缓存
+      uses: actions/cache@v3
+      with:
+        path: |
+          ${{ env.CCACHE_DIR }}
+          ${{ env.DL_DIR }}
+        key: ${{ runner.os }}-immortalwrt-${{ env.REPO_BRANCH }}-${{ matrix.target }}-${{ hashFiles('config-files/feeds.conf.default', 'config-files/.config') }}
+        restore-keys: |
+          ${{ runner.os }}-immortalwrt-${{ env.REPO_BRANCH }}-${{ matrix.target }}-
+          ${{ runner.os }}-immortalwrt-${{ env.REPO_BRANCH }}-
+          ${{ runner.os }}-immortalwrt-
+
+    - name: 准备源码
+      run: |
+        echo "::group::克隆ImmortalWrt源码"
+        rm -rf openwrt
+        git clone --depth 1 --single-branch -b "$REPO_BRANCH" "$REPO_URL" openwrt
+        cd openwrt
+        
+        # 记录源码版本
+        git log --oneline -1
+        echo "::endgroup::"
+        
+        echo "::group::应用配置文件"
+        # 复制feeds配置文件[citation:1][citation:22]
+        if [ -f "../config-files/$FEEDS_CONF" ]; then
+          cp "../config-files/$FEEDS_CONF" feeds.conf.default
+          echo "已应用自定义feeds配置"
+        else
+          # 使用默认feeds配置，添加常用第三方源[citation:1]
+          cat > feeds.conf.default << EOF
+          src-git packages https://github.com/immortalwrt/packages.git
+          src-git luci https://github.com/immortalwrt/luci.git
+          src-git routing https://github.com/openwrt/routing.git
+          src-git telephony https://github.com/openwrt/telephony.git
+          # 第三方源示例[citation:1]
+          # src-git kenzo https://github.com/kenzok8/openwrt-packages
+          # src-git small https://github.com/kenzok8/small
+          EOF
+          echo "使用默认feeds配置"
+        fi
+        
+        # 复制其他配置文件
+        [ -d "../config-files/files" ] && cp -rf "../config-files/files" .
+        [ -f "../config-files/$CONFIG_FILE" ] && cp "../config-files/$CONFIG_FILE" .config
+        echo "::endgroup::"
+        
+        # 运行自定义脚本第一部分[citation:2]
+        if [ -f "../config-files/$DIY_P1_SH" ]; then
+          echo "::group::运行自定义脚本 (第一阶段)"
+          chmod +x "../config-files/$DIY_P1_SH"
+          bash "../config-files/$DIY_P1_SH" || { echo "DIY脚本第一阶段执行失败"; exit 1; }
+          echo "::endgroup::"
+        fi
+
+    - name: 更新和安装Feeds
+      run: |
+        cd openwrt
+        
+        echo "::group::更新Feeds源"
+        # 多次尝试更新feeds[citation:1]
+        MAX_RETRY=3
+        retry_count=0
+        while [ $retry_count -lt $MAX_RETRY ]; do
+          ./scripts/feeds update -a && break
+          retry_count=$((retry_count+1))
+          echo "第 $retry_count 次更新feeds失败，10秒后重试..."
+          [ $retry_count -eq $MAX_RETRY ] && { echo "更新feeds失败，达到最大重试次数"; exit 1; }
+          sleep 10
+        done
+        echo "Feeds更新完成"
+        echo "::endgroup::"
+        
+        echo "::group::安装Feeds包"
+        # 先安装所有包
+        ./scripts/feeds install -a || echo "部分包安装失败，继续编译..."
+        
+        # 特别安装关键依赖包[citation:19]
+        CRITICAL_PKGS="luci luci-compat luci-lib-ipkg libpam libtirpc"
+        for pkg in $CRITICAL_PKGS; do
+          if ./scripts/feeds list | grep -q "^$pkg"; then
+            echo "安装关键包: $pkg"
+            ./scripts/feeds install $pkg || echo "警告: $pkg 安装失败"
+          fi
+        done
+        echo "::endgroup::"
+        
+        # 运行自定义脚本第二部分
+        if [ -f "../config-files/$DIY_P2_SH" ]; then
+          echo "::group::运行自定义脚本 (第二阶段)"
+          chmod +x "../config-files/$DIY_P2_SH"
+          bash "../config-files/$DIY_P2_SH" || { echo "DIY脚本第二阶段执行失败"; exit 1; }
+          echo "::endgroup::"
+        fi
+
+    - name: 配置编译选项
+      run: |
+        cd openwrt
+        
+        echo "::group::生成默认配置"
+        if [ -f .config ]; then
+          echo "使用已有的.config文件"
+          # 确保配置中包含目标架构
+          if [ -n "${{ matrix.target }}" ]; then
+            sed -i "s/CONFIG_TARGET_[^=]*=.*/CONFIG_TARGET_${{ matrix.target }}=y/" .config 2>/dev/null || true
+          fi
+        else
+          # 生成默认配置
+          make defconfig
+          echo "已生成默认配置"
+        fi
+        
+        # 设置目标架构[citation:1]
+        if [ -n "${{ matrix.target }}" ]; then
+          echo "设置目标架构: ${{ matrix.target }}"
+          if [ -n "${{ matrix.subtarget }}" ]; then
+            echo "设置子目标: ${{ matrix.subtarget }}"
+            sed -i "s/CONFIG_TARGET_SUBTARGET=\".*\"/CONFIG_TARGET_SUBTARGET=\"${{ matrix.subtarget }}\"/" .config 2>/dev/null || true
+          fi
+          if [ -n "${{ matrix.profile }}" ]; then
+            echo "设置设备型号: ${{ matrix.profile }}"
+            sed -i "s/CONFIG_TARGET_PROFILE=\".*\"/CONFIG_TARGET_PROFILE=\"${{ matrix.profile }}\"/" .config 2>/dev/null || true
+          fi
+        fi
+        
+        # 确保启用关键组件[citation:19]
+        echo "确保关键组件已启用"
+        for pkg in luci luci-compat luci-lib-ipkg; do
+          if grep -q "CONFIG_PACKAGE_${pkg}=[mn]" .config 2>/dev/null; then
+            sed -i "s/CONFIG_PACKAGE_${pkg}=[mn]/CONFIG_PACKAGE_${pkg}=y/" .config
+          elif ! grep -q "CONFIG_PACKAGE_${pkg}=y" .config 2>/dev/null; then
+            echo "CONFIG_PACKAGE_${pkg}=y" >> .config
+          fi
+        done
+        
+        echo "当前配置摘要:"
+        grep -E "CONFIG_TARGET|CONFIG_PACKAGE_luci" .config || true
+        echo "::endgroup::"
+
+    - name: 下载软件包
+      run: |
+        cd openwrt
+        
+        echo "::group::下载软件包"
+        # 多次尝试下载[citation:2]
+        MAX_RETRY=3
+        retry_count=0
+        while [ $retry_count -lt $MAX_RETRY ]; do
+          make download -j$(nproc) && break
+          retry_count=$((retry_count+1))
+          echo "第 $retry_count 次下载失败，20秒后重试..."
+          [ $retry_count -eq $MAX_RETRY ] && { echo "下载失败，达到最大重试次数"; exit 1; }
+          sleep 20
+        done
+        
+        # 检查并删除不完整的文件[citation:2]
+        echo "检查下载文件完整性..."
+        find dl -size -1024c -exec ls -l {} \; 2>/dev/null | head -20
+        find dl -size -1024c -delete 2>/dev/null || true
+        echo "下载完成"
+        echo "::endgroup::"
+
+    - name: 编译固件
+      run: |
+        cd openwrt
+        
+        echo "::group::开始编译"
+        # 首先尝试并行编译[citation:2]
+        if make -j$(($(nproc) + 1)) V=s 2>&1 | tee build.log; then
+          echo "编译成功"
+        else
+          echo "并行编译失败，尝试单线程编译..."
+          # 单线程编译并显示详细错误[citation:2]
+          if make -j1 V=sc 2>&1 | tee -a build.log; then
+            echo "单线程编译成功"
+          else
+            echo "编译失败，检查错误日志"
+            grep -i "error:" build.log | head -20
+            exit 1
+          fi
+        fi
+        echo "::endgroup::"
+        
+        echo "::group::编译统计"
+        ccache --show-stats
+        echo "固件生成在以下目录:"
+        find bin/targets -name "*.bin" -o -name "*.img" -o -name "*.gz" | head -10
+        echo "::endgroup::"
+
+    - name: 保存缓存
+      if: success()
+      uses: actions/cache@v3
+      with:
+        path: |
+          ${{ env.CCACHE_DIR }}
+          ${{ env.DL_DIR }}
+        key: ${{ runner.os }}-immortalwrt-${{ env.REPO_BRANCH }}-${{ matrix.target }}-${{ hashFiles('config-files/feeds.conf.default', 'config-files/.config') }}
+
+    - name: 上传编译日志
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs-${{ matrix.target }}
+        path: |
+          openwrt/build.log
+          openwrt/.config
+          openwrt/config.seed
+        retention-days: 7
+
+    - name: 上传固件到Release
+      if: success()
+      uses: softprops/action-gh-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: immortalwrt-${{ env.REPO_BRANCH }}-${{ matrix.target }}-$(date +%Y%m%d-%H%M)
+        name: ImmortalWrt ${{ env.REPO_BRANCH }} - ${{ matrix.target }} - $(date +'%Y-%m-%d %H:%M')
+        body: |
+          ImmortalWrt ${{ env.REPO_BRANCH }} 固件
+          目标架构: ${{ matrix.target }}
+          编译时间: $(date)
+          
+          包含文件:
+          - 固件镜像
+          - 内核文件
+          - 软件包索引
+        files: |
+          openwrt/bin/targets/**/*.bin
+          openwrt/bin/targets/**/*.img
+          openwrt/bin/targets/**/*.gz
+          openwrt/bin/targets/**/*.manifest
+        draft: false
+        prerelease: false
+
+    - name: 上传固件到Artifacts
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: firmware-${{ matrix.target }}
+        path: |
+          openwrt/bin/targets/
+        retention-days: 30
+        if-no-files-found: error
