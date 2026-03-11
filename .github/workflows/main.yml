@@ -35,19 +35,20 @@ jobs:
 
     - name: Setup build environment
       run: |
+        echo "::group::Create cache directories"
         mkdir -p $CCACHE_DIR $DL_DIR
+        echo "::endgroup::"
         
-        echo "::group::Installing dependencies"
+        echo "::group::Install build dependencies"
         sudo apt-get update -y
         sudo apt-get install -y \
           ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
-          bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib \
-          g++-multilib git gnutls-dev gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev \
-          libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses-dev libpython3-dev \
-          libreadline-dev libssl-dev libtool libyaml-dev libz-dev lld llvm lrzsz mkisofs msmtp nano \
-          ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip python3-ply python3-docutils \
-          python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs \
-          upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
+          bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext \
+          gcc-multilib g++-multilib git gnutls-dev gperf haveged help2man libncurses-dev \
+          libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch \
+          pkgconf python3 python3-pip python3-ply python3-docutils qemu-utils re2c rsync \
+          scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget \
+          xmlto xxd zlib1g-dev zstd
         echo "::endgroup::"
 
         sudo timedatectl set-timezone "$TZ"
@@ -56,50 +57,71 @@ jobs:
 
     - name: Restore build cache
       uses: actions/cache@v3
-      id: cache
+      id: cache-restore
       with:
         path: |
           ${{ env.CCACHE_DIR }}
           ${{ env.DL_DIR }}
-        key: ${{ runner.os }}-immortalwrt-${{ github.sha }}
+        key: ${{ runner.os }}-immortalwrt-${{ hashFiles('.github/workflows/*.yml') }}-${{ env.REPO_BRANCH }}
         restore-keys: |
           ${{ runner.os }}-immortalwrt-
 
     - name: Prepare source code
       run: |
+        echo "::group::Clone source code"
         rm -rf openwrt
         git clone --depth 1 --single-branch -b "$REPO_BRANCH" "$REPO_URL" openwrt
+        echo "::endgroup::"
 
-        # Copy configuration files
+        echo "::group::Apply configurations"
         [ -f "src/$FEEDS_CONF" ] && cp "src/$FEEDS_CONF" openwrt/feeds.conf.default
         [ -d "src/files" ] && cp -rf src/files openwrt/files
         [ -f "src/$CONFIG_FILE" ] && cp "src/$CONFIG_FILE" openwrt/.config
+        echo "::endgroup::"
 
-        # Apply custom scripts
         if [ -f "src/$DIY_P1_SH" ]; then
+          echo "::group::Run custom script (part 1)"
           chmod +x "src/$DIY_P1_SH"
           cd openwrt
           bash "../src/$DIY_P1_SH" || { echo "DIY script failed"; exit 1; }
           cd ..
+          echo "::endgroup::"
         fi
 
-    - name: Update feeds with critical dependencies
+    - name: Update and install feeds
       run: |
         cd openwrt
-        ./scripts/feeds update -a || { echo "Feeds update failed"; exit 1; }
         
-        # Explicitly install commonly missing packages
-        ./scripts/feeds install -a || echo "Continuing with partial feeds installation"
-        
-        # Critical packages that often fail silently
-        REQUIRED_PKGS="luci luci-i18n-base-zh-cn libpam libtirpc lm-sensors libev liblzma libgpiod"
-        for pkg in $REQUIRED_PKGS; do
-          ./scripts/feeds install $pkg || echo "WARNING: Failed to install $pkg"
+        echo "::group::Update feeds"
+        for i in {1..3}; do
+          ./scripts/feeds update -a && break
+          [ $i -eq 3 ] && { echo "Feeds update failed after 3 attempts"; exit 1; }
+          echo "Retrying feeds update in 10 seconds..."
+          sleep 10
         done
+        echo "::endgroup::"
+
+        echo "::group::Install essential feeds"
+        # 先安装基础包
+        ./scripts/feeds install -a
+        
+        # 检查并安装关键包（如果存在）
+        REQUIRED_PKGS="luci luci-i18n-base-zh-cn libpam libtirpc"
+        for pkg in $REQUIRED_PKGS; do
+          if ./scripts/feeds list | grep -q "^$pkg"; then
+            echo "Installing $pkg..."
+            ./scripts/feeds install $pkg || echo "Note: $pkg installation had issues"
+          else
+            echo "Warning: $pkg not found in feeds"
+          fi
+        done
+        echo "::endgroup::"
 
         if [ -f "../src/$DIY_P2_SH" ]; then
+          echo "::group::Run custom script (part 2)"
           chmod +x "../src/$DIY_P2_SH"
           bash "../src/$DIY_P2_SH" || { echo "DIY stage2 failed"; exit 1; }
+          echo "::endgroup::"
         fi
 
     - name: Build firmware
@@ -107,37 +129,50 @@ jobs:
       run: |
         cd openwrt
         
-        echo "::group::Verify critical packages"
-        grep -E 'CONFIG_PACKAGE_(luci|libpam|libtirpc)=y' .config || \
-          echo "WARNING: Critical packages not enabled in config"
+        echo "::group::Verify configuration"
+        if [ -f .config ]; then
+          echo "Config file exists"
+          grep -E 'CONFIG_PACKAGE_(luci|libpam|libtirpc)=y' .config || \
+            echo "Note: Some recommended packages not enabled"
+        else
+          echo "Warning: No .config file found"
+        fi
         echo "::endgroup::"
 
         echo "::group::Download packages"
         for i in {1..3}; do
-          make download -j$(($(nproc) + 1)) && break || sleep 15
+          make download -j$(nproc) && break
           [ $i -eq 3 ] && { echo "Download failed after 3 attempts"; exit 1; }
+          echo "Retry $i/3 in 15 seconds..."
+          sleep 15
         done
+        # 清理损坏的小文件
         find dl -size -1024c -delete 2>/dev/null || true
         echo "::endgroup::"
 
         echo "::group::Compilation"
-        make -j$(($(nproc) + 1)) V=s || {
-          echo "Parallel build failed, retrying with debug..."
+        if make -j$(nproc) V=s; then
+          echo "Build successful"
+        else
+          echo "Parallel build failed, retrying with single thread..."
           make -j1 V=sc 2>&1 | tee build.log
-          grep -i "error:" build.log && exit 1
-        }
+          if grep -q -i "error:" build.log; then
+            echo "Build failed with errors"
+            exit 1
+          fi
+        fi
         echo "::endgroup::"
 
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: Save cache
-      if: always()
+      if: steps.build.outputs.status == 'success'
       uses: actions/cache@v3
       with:
         path: |
           ${{ env.CCACHE_DIR }}
           ${{ env.DL_DIR }}
-        key: ${{ runner.os }}-immortalwrt-${{ github.sha }}
+        key: ${{ runner.os }}-immortalwrt-${{ hashFiles('.github/workflows/*.yml') }}-${{ env.REPO_BRANCH }}
 
     - name: Upload build logs
       if: always()
@@ -156,7 +191,7 @@ jobs:
         tag_name: build-${{ env.REPO_BRANCH }}-$(date +%Y%m%d%H%M)
         name: Build (${{ env.REPO_BRANCH }}) - $(date +'%Y-%m-%d %H:%M')
         files: |
-          openwrt/bin/targets/**/
+          openwrt/bin/targets/**/*
 
     - name: Upload artifacts
       if: steps.build.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true' && env.UPLOAD_RELEASE != 'true'
