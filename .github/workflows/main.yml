@@ -153,10 +153,10 @@ jobs:
       if: steps.build.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true'
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: build-${{ env.REPO_BRANCH }}-$(date +%Y%m%d)
-        name: Build (${{ env.REPO_BRANCH }}) - $(date +'%Y-%m-%d')
+        tag_name: build-${{ env.REPO_BRANCH }}-$(date +%Y%m%d%H%M)
+        name: Build (${{ env.REPO_BRANCH }}) - $(date +'%Y-%m-%d %H:%M')
         files: |
-          openwrt/bin/targets/**/*
+          openwrt/bin/targets/**/
 
     - name: Upload artifacts
       if: steps.build.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true' && env.UPLOAD_RELEASE != 'true'
