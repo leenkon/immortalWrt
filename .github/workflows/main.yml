@@ -40,11 +40,14 @@ jobs:
         echo "::group::Installing dependencies"
         sudo apt-get update -y
         sudo apt-get install -y \
-          build-essential ccache clang cmake flex gawk gettext git libncurses-dev \
-          libssl-dev python3 python3-pip python3-dev rsync unzip zlib1g-dev \
-          libpam0g-dev libtirpc-dev libev-dev liblzma-dev libgpiod-dev \
-          libglib2.0-dev libgmp3-dev libmpc-dev libmpfr-dev libyaml-dev \
-          lld llvm ninja-build pkgconf zstd
+          ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+          bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib \
+          g++-multilib git gnutls-dev gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev \
+          libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses-dev libpython3-dev \
+          libreadline-dev libssl-dev libtool libyaml-dev libz-dev lld llvm lrzsz mkisofs msmtp nano \
+          ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip python3-ply python3-docutils \
+          python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs \
+          upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
         echo "::endgroup::"
 
         sudo timedatectl set-timezone "$TZ"
@@ -58,7 +61,7 @@ jobs:
         path: |
           ${{ env.CCACHE_DIR }}
           ${{ env.DL_DIR }}
-        key: ${{ runner.os }}-immortalwrt-${{ hashFiles('src/feeds.conf.default', 'src/.config') }}
+        key: ${{ runner.os }}-immortalwrt-${{ github.sha }}
         restore-keys: |
           ${{ runner.os }}-immortalwrt-
 
@@ -134,7 +137,7 @@ jobs:
         path: |
           ${{ env.CCACHE_DIR }}
           ${{ env.DL_DIR }}
-        key: ${{ steps.cache.outputs.cache-primary-key }}
+        key: ${{ runner.os }}-immortalwrt-${{ github.sha }}
 
     - name: Upload build logs
       if: always()
