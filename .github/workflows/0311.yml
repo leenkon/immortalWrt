@@ -72,10 +72,6 @@ jobs:
           scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget \
           xmlto xxd zlib1g-dev zstd
         
-        # 额外依赖 - 提高兼容性
-        sudo apt-get install -y \
-          libyaml-dev libpython3-dev libev-dev libgpiod-dev
-        
         echo "::endgroup::"
         
         sudo timedatectl set-timezone "$TZ"
