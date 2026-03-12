@@ -69,6 +69,7 @@ jobs:
           pkgconf python3 python3-pip python3-ply python3-docutils qemu-utils re2c rsync \
           scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget \
           xmlto xxd zlib1g-dev zstd
+        
         echo "::endgroup::"
         
         sudo timedatectl set-timezone "$TZ"
@@ -105,11 +106,11 @@ jobs:
         else
           # 使用默认feeds配置
           cat > feeds.conf.default << 'EOF'
-          src-git packages https://github.com/immortalwrt/packages.git
-          src-git luci https://github.com/immortalwrt/luci.git
-          src-git routing https://github.com/openwrt/routing.git
-          src-git telephony https://github.com/openwrt/telephony.git
-          EOF
+src-git packages https://github.com/immortalwrt/packages.git
+src-git luci https://github.com/immortalwrt/luci.git
+src-git routing https://github.com/openwrt/routing.git
+src-git telephony https://github.com/openwrt/telephony.git
+EOF
           echo "使用默认feeds配置"
         fi
         
