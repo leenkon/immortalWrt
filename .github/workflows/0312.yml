@@ -1,4 +1,4 @@
-name: ImmortalWrt 24.10 云编译
+name: ImmortalWrt 0312
 
 on:
   workflow_dispatch:
