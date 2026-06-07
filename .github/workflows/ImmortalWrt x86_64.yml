@@ -28,6 +28,23 @@ on:
         required: false
         type: string
         default: ''
+      enable_pppoe:
+        description: '启用 PPPoE 配置'
+        required: true
+        type: boolean
+        default: false
+      pppoe_username:
+        description: 'PPPoE 账号'
+        required: false
+        type: string
+        default: ''
+        if: ${{ github.event.inputs.enable_pppoe == 'true' }}
+      pppoe_password:
+        description: 'PPPoE 密码'
+        required: false
+        type: string
+        default: ''
+        if: ${{ github.event.inputs.enable_pppoe == 'true' }}
       custom_feeds:
         description: '是否加载自定义 feeds'
         required: true
@@ -51,6 +68,9 @@ jobs:
           VERSION="${{ github.event.inputs.version }}"
           PROFILE="${{ github.event.inputs.profile }}"
           CUSTOM_IP="${{ github.event.inputs.custom_ip }}"
+          ENABLE_PPPOE="${{ github.event.inputs.enable_pppoe }}"
+          PPPOE_USERNAME="${{ github.event.inputs.pppoe_username }}"
+          PPPOE_PASSWORD="${{ github.event.inputs.pppoe_password }}"
 
           echo "RELEASE_TAG=$VERSION" >> $GITHUB_ENV
 
@@ -68,6 +88,9 @@ jobs:
           echo "CONFIG_FILE=$FINAL_CONFIG" >> $GITHUB_ENV
           echo "PROFILE_TYPE=$PROFILE_TYPE" >> $GITHUB_ENV
           echo "CUSTOM_IP=$CUSTOM_IP" >> $GITHUB_ENV
+          echo "ENABLE_PPPOE=$ENABLE_PPPOE" >> $GITHUB_ENV
+          echo "PPPOE_USERNAME=$PPPOE_USERNAME" >> $GITHUB_ENV
+          echo "PPPOE_PASSWORD=$PPPOE_PASSWORD" >> $GITHUB_ENV
 
           echo "✅ 选中版本: $VERSION"
           echo "✅ 大版本: $VERSION_MAJOR"
@@ -80,6 +103,11 @@ jobs:
           fi
           if [[ -n "$CUSTOM_IP" ]]; then
             echo "✅ 自定义 IP: $CUSTOM_IP"
+          fi
+          if [[ "$ENABLE_PPPOE" == "true" ]]; then
+            echo "✅ PPPoE 启用: 是"
+            echo "✅ PPPoE 账号: $PPPOE_USERNAME"
+            echo "✅ PPPoE 密码: 已设置"
           fi
 
       - name: 清理环境
@@ -128,11 +156,18 @@ jobs:
       - name: 执行更新 feeds 后的 DIY 操作
         run: |
           cd openwrt
+          DIY_CMD="$GITHUB_WORKSPACE/scripts/diy.sh -v \"${VERSION_MAJOR}\" -p after -t \"${PROFILE_TYPE}\""
+          
           if [[ -n "$CUSTOM_IP" ]]; then
-            "$GITHUB_WORKSPACE/scripts/diy.sh" -v "${VERSION_MAJOR}" -p after -t "${PROFILE_TYPE}" --ip "$CUSTOM_IP"
-          else
-            "$GITHUB_WORKSPACE/scripts/diy.sh" -v "${VERSION_MAJOR}" -p after -t "${PROFILE_TYPE}"
+            DIY_CMD="$DIY_CMD --ip \"$CUSTOM_IP\""
           fi
+          
+          if [[ "$ENABLE_PPPOE" == "true" ]]; then
+            DIY_CMD="$DIY_CMD --pppoe-user \"$PPPOE_USERNAME\" --pppoe-pass \"$PPPOE_PASSWORD\""
+          fi
+          
+          echo "执行命令: $DIY_CMD"
+          eval "$DIY_CMD"
 
       - name: 生成配置
         run: |

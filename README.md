@@ -47,7 +47,8 @@ immortalwrt/
      - **mini-bypass**：旁路由（广告过滤、OpenClash）
      - **default-main**：主路由（完整网络功能、OAF）
      - **full-main**：完整主路由（所有功能）
-   - 自定义 IP（可选，留空使用默认）
+   - 自定义 IP（可选，留空使用默认: 主路由10.10.10.1 / 旁路由10.10.10.99）
+   - 启用 PPPoE 配置（勾选后显示 PPPoE 账号密码输入框）
    - 是否加载自定义 feeds（主路由自动启用，旁路由不需要）
 4. 点击 "Run workflow"
 

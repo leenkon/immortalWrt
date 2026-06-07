@@ -11,21 +11,25 @@ PHASE=""
 PROFILE_TYPE=""  # main (主路由) 或 bypass (旁路由)
 CUSTOM_FEEDS=false
 CUSTOM_IP=""
+PPPOE_USERNAME=""
+PPPOE_PASSWORD=""
 
 # 默认 IP 地址
 DEFAULT_MAIN_ROUTER_IP="10.10.10.1"
 DEFAULT_BYPASS_ROUTER_IP="10.10.10.99"
 
 usage() {
-    echo "用法: $0 -v <版本> -p <阶段> [-t <类型>] [--ip <地址>] [--custom-feeds]"
+    echo "用法: $0 -v <版本> -p <阶段> [-t <类型>] [--ip <地址>] [--pppoe-user <账号>] [--pppoe-pass <密码>] [--custom-feeds]"
     echo ""
     echo "选项:"
-    echo "  -v, --version    版本号 (例如: 24.10, 25.12)"
-    echo "  -p, --phase      执行阶段: before (更新 feeds 前) 或 after (更新 feeds 后)"
-    echo "  -t, --type       路由类型: main (主路由, IP: $DEFAULT_MAIN_ROUTER_IP) 或 bypass (旁路由, IP: $DEFAULT_BYPASS_ROUTER_IP)"
+    echo "  -v, --version      版本号 (例如: 24.10, 25.12)"
+    echo "  -p, --phase        执行阶段: before (更新 feeds 前) 或 after (更新 feeds 后)"
+    echo "  -t, --type         路由类型: main (主路由, IP: $DEFAULT_MAIN_ROUTER_IP) 或 bypass (旁路由, IP: $DEFAULT_BYPASS_ROUTER_IP)"
     echo "  --ip               自定义 IP 地址 (可选，不指定则使用默认)"
-    echo "  --custom-feeds   启用自定义 feeds"
-    echo "  -h, --help       显示帮助信息"
+    echo "  --pppoe-user       PPPoE 账号 (可选)"
+    echo "  --pppoe-pass       PPPoE 密码 (可选)"
+    echo "  --custom-feeds     启用自定义 feeds"
+    echo "  -h, --help         显示帮助信息"
     echo ""
     echo "示例:"
     echo "  # 主路由编译 - 更新 feeds 后"
@@ -34,8 +38,8 @@ usage() {
     echo "  # 旁路由编译 - 更新 feeds 后 (使用默认 IP)"
     echo "  $0 -v 24.10 -p after -t bypass"
     echo ""
-    echo "  # 主路由编译 - 使用自定义 IP"
-    echo "  $0 -v 24.10 -p after -t main --ip 192.168.1.1"
+    echo "  # 主路由编译 - 使用自定义 IP 和 PPPoE"
+    echo "  $0 -v 24.10 -p after -t main --ip 192.168.1.1 --pppoe-user myuser --pppoe-pass mypass"
     echo ""
     exit 1
 }
@@ -56,6 +60,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --ip)
             CUSTOM_IP="$2"
+            shift 2
+            ;;
+        --pppoe-user)
+            PPPOE_USERNAME="$2"
+            shift 2
+            ;;
+        --pppoe-pass)
+            PPPOE_PASSWORD="$2"
             shift 2
             ;;
         --custom-feeds)
@@ -145,6 +157,10 @@ elif [[ "$PHASE" == "after" ]]; then
         echo "设置 IP 地址: $ROUTER_IP (默认)"
     fi
     echo "设置主机名: $HOSTNAME"
+    if [[ -n "$PPPOE_USERNAME" ]]; then
+        echo "设置 PPPoE 账号: $PPPOE_USERNAME"
+        echo "设置 PPPoE 密码: 已设置"
+    fi
 
     CONFIG_FILE="package/base-files/files/bin/config_generate"
 
@@ -162,6 +178,29 @@ elif [[ "$PHASE" == "after" ]]; then
         echo "IP 地址、主机名和时区已更新"
     else
         echo "警告: 未找到配置文件 $CONFIG_FILE，跳过修改"
+    fi
+
+    # 设置 PPPoE 配置
+    if [[ -n "$PPPOE_USERNAME" ]]; then
+        NETWORK_CONFIG="package/base-files/files/etc/config/network"
+        if [[ -f "$NETWORK_CONFIG" ]]; then
+            # 移除现有的 PPPoE 配置
+            sed -i '/config interface.*wan/,/^$/d' "$NETWORK_CONFIG"
+            
+            # 添加新的 PPPoE 配置
+            cat >> "$NETWORK_CONFIG" <<EOF
+
+config interface 'wan'
+        option proto 'pppoe'
+        option username '$PPPOE_USERNAME'
+        option password '$PPPOE_PASSWORD'
+        option device '@wan'
+        option ipv6 'auto'
+EOF
+            echo "PPPoE 配置已更新"
+        else
+            echo "警告: 未找到网络配置文件 $NETWORK_CONFIG"
+        fi
     fi
 
     # 旁路由配置：禁用 PPPoE 和 DHCP（可选，根据需要启用）
