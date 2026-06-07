@@ -39,7 +39,7 @@ on:
         type: string
         default: ''
       custom_feeds:
-        description: '是否加载自定义 feeds'
+        description: '安装OpenAppFilter(OAF)'
         required: true
         type: boolean
         default: false
