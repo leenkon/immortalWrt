@@ -153,7 +153,7 @@ jobs:
             DIY_CMD="$DIY_CMD --ip \"$CUSTOM_IP\""
           fi
           
-          if [[ -n "$PPPOE_USERNAME" ]]; then
+          if [[ "$PROFILE_TYPE" == "main" && -n "$PPPOE_USERNAME" ]]; then
             DIY_CMD="$DIY_CMD --pppoe-user \"$PPPOE_USERNAME\" --pppoe-pass \"$PPPOE_PASSWORD\""
           fi
           
