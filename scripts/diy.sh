@@ -10,18 +10,20 @@ VERSION=""
 PHASE=""
 PROFILE_TYPE=""  # main (主路由) 或 bypass (旁路由)
 CUSTOM_FEEDS=false
+CUSTOM_IP=""
 
 # 默认 IP 地址
-MAIN_ROUTER_IP="10.10.10.1"
-BYPASS_ROUTER_IP="10.10.10.99"
+DEFAULT_MAIN_ROUTER_IP="10.10.10.1"
+DEFAULT_BYPASS_ROUTER_IP="10.10.10.99"
 
 usage() {
-    echo "用法: $0 -v <版本> -p <阶段> [-t <类型>] [--custom-feeds]"
+    echo "用法: $0 -v <版本> -p <阶段> [-t <类型>] [--ip <地址>] [--custom-feeds]"
     echo ""
     echo "选项:"
     echo "  -v, --version    版本号 (例如: 24.10, 25.12)"
     echo "  -p, --phase      执行阶段: before (更新 feeds 前) 或 after (更新 feeds 后)"
-    echo "  -t, --type       路由类型: main (主路由, IP: $MAIN_ROUTER_IP) 或 bypass (旁路由, IP: $BYPASS_ROUTER_IP)"
+    echo "  -t, --type       路由类型: main (主路由, IP: $DEFAULT_MAIN_ROUTER_IP) 或 bypass (旁路由, IP: $DEFAULT_BYPASS_ROUTER_IP)"
+    echo "  --ip               自定义 IP 地址 (可选，不指定则使用默认)"
     echo "  --custom-feeds   启用自定义 feeds"
     echo "  -h, --help       显示帮助信息"
     echo ""
@@ -29,8 +31,11 @@ usage() {
     echo "  # 主路由编译 - 更新 feeds 后"
     echo "  $0 -v 24.10 -p after -t main"
     echo ""
-    echo "  # 旁路由编译 - 更新 feeds 后"
+    echo "  # 旁路由编译 - 更新 feeds 后 (使用默认 IP)"
     echo "  $0 -v 24.10 -p after -t bypass"
+    echo ""
+    echo "  # 主路由编译 - 使用自定义 IP"
+    echo "  $0 -v 24.10 -p after -t main --ip 192.168.1.1"
     echo ""
     exit 1
 }
@@ -47,6 +52,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -t|--type)
             PROFILE_TYPE="$2"
+            shift 2
+            ;;
+        --ip)
+            CUSTOM_IP="$2"
             shift 2
             ;;
         --custom-feeds)
@@ -80,6 +89,14 @@ if [[ -n "$PROFILE_TYPE" && "$PROFILE_TYPE" != "main" && "$PROFILE_TYPE" != "byp
     usage
 fi
 
+# 验证自定义 IP 格式校验
+if [[ -n "$CUSTOM_IP" ]]; then
+    if ! [[ $CUSTOM_IP =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+        echo "错误: 无效的 IP 地址格式 '$CUSTOM_IP'"
+        usage
+    fi
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
@@ -106,15 +123,27 @@ elif [[ "$PHASE" == "after" ]]; then
 
     # 根据路由类型设置 IP 地址
     if [[ "$PROFILE_TYPE" == "main" ]]; then
-        ROUTER_IP="$MAIN_ROUTER_IP"
+        if [[ -n "$CUSTOM_IP" ]]; then
+            ROUTER_IP="$CUSTOM_IP"
+        else
+            ROUTER_IP="$DEFAULT_MAIN_ROUTER_IP"
+        fi
         HOSTNAME="Router-Main"
     elif [[ "$PROFILE_TYPE" == "bypass" ]]; then
-        ROUTER_IP="$BYPASS_ROUTER_IP"
+        if [[ -n "$CUSTOM_IP" ]]; then
+            ROUTER_IP="$CUSTOM_IP"
+        else
+            ROUTER_IP="$DEFAULT_BYPASS_ROUTER_IP"
+        fi
         HOSTNAME="Router-Bypass"
     fi
 
     echo "路由类型: $PROFILE_TYPE"
-    echo "设置 IP 地址: $ROUTER_IP"
+    if [[ -n "$CUSTOM_IP" ]]; then
+        echo "设置 IP 地址: $ROUTER_IP (自定义)"
+    else
+        echo "设置 IP 地址: $ROUTER_IP (默认)"
+    fi
     echo "设置主机名: $HOSTNAME"
 
     CONFIG_FILE="package/base-files/files/bin/config_generate"
@@ -127,8 +156,8 @@ elif [[ "$PHASE" == "after" ]]; then
         sed -i "s/ImmortalWrt/$HOSTNAME/g" "$CONFIG_FILE"
 
         # 修改时区为中国时区
-        sed -i 's/GMT0/CST-8/g' "$CONFIG_FILE"
-        sed -i 's/UTC/Asia\/Shanghai/g' "$CONFIG_FILE"
+        sed -i "s/GMT0/CST-8/g" "$CONFIG_FILE"
+        sed -i "s/UTC/Asia\/Shanghai/g" "$CONFIG_FILE"
 
         echo "IP 地址、主机名和时区已更新"
     else
@@ -140,7 +169,11 @@ elif [[ "$PHASE" == "after" ]]; then
         echo ""
         echo "提示: 旁路由配置建议："
         echo "  - 关闭 DHCP 服务器"
-        echo "  - 网关指向主路由 ($MAIN_ROUTER_IP)"
+        if [[ -n "$CUSTOM_IP" ]]; then
+            echo "  - 网关指向主路由 (根据您的网络配置)"
+        else
+            echo "  - 网关指向主路由 ($DEFAULT_MAIN_ROUTER_IP)"
+        fi
         echo "  - DNS 指向主路由或公共 DNS"
     fi
 

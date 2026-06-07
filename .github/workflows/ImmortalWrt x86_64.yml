@@ -14,10 +14,7 @@ on:
           - 24.10.4
           - 24.10.5
           - 24.10.6
-          - 25.12.1
-          - 25.12.2
-          - 25.12.3
-          - 25.12.4
+          - 25.12.0
       config_type:
         description: '选择配置类型'
         required: true
@@ -33,6 +30,11 @@ on:
         options:
           - main
           - bypass
+      custom_ip:
+        description: '自定义 IP 地址 (可选，留空使用默认)'
+        required: false
+        type: string
+        default: ''
       custom_feeds:
         description: '是否加载自定义 feeds'
         required: true
@@ -56,6 +58,7 @@ jobs:
           VERSION="${{ github.event.inputs.version }}"
           CONFIG_TYPE="${{ github.event.inputs.config_type }}"
           PROFILE_TYPE="${{ github.event.inputs.profile_type }}"
+          CUSTOM_IP="${{ github.event.inputs.custom_ip }}"
 
           echo "RELEASE_TAG=$VERSION" >> $GITHUB_ENV
 
@@ -70,14 +73,19 @@ jobs:
           echo "VERSION_MAJOR=$VERSION_MAJOR" >> $GITHUB_ENV
           echo "CONFIG_FILE=$FINAL_CONFIG" >> $GITHUB_ENV
           echo "PROFILE_TYPE=$PROFILE_TYPE" >> $GITHUB_ENV
+          echo "CUSTOM_IP=$CUSTOM_IP" >> $GITHUB_ENV
+
           echo "✅ 选中版本: $VERSION"
           echo "✅ 大版本: $VERSION_MAJOR"
           echo "✅ 选中配置: $FINAL_CONFIG"
           echo "✅ 路由类型: $PROFILE_TYPE"
           if [[ "$PROFILE_TYPE" == "main" ]]; then
-            echo "✅ 路由 IP: 10.10.10.1"
+            echo "✅ 默认 IP: 10.10.10.1"
           else
-            echo "✅ 路由 IP: 10.10.10.99"
+            echo "✅ 默认 IP: 10.10.10.99"
+          fi
+          if [[ -n "$CUSTOM_IP" ]]; then
+            echo "✅ 自定义 IP: $CUSTOM_IP"
           fi
 
       - name: 清理环境
@@ -103,7 +111,10 @@ jobs:
         run: |
           cd openwrt
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
-          if [[ "${{ github.event.inputs.custom_feeds }}" == "true" ]]; then
+          
+          # 判断是否启用自定义 feeds：用户选择是 OR 选择了主路由
+          if [[ "${{ github.event.inputs.custom_feeds }}" == "true" ]] || [[ "$PROFILE_TYPE" == "main" ]]; then
+            echo "✅ 启用自定义 feeds (主路由或用户选择)"
             "$GITHUB_WORKSPACE/scripts/diy.sh" -v "${VERSION_MAJOR}" -p before --custom-feeds
           else
             "$GITHUB_WORKSPACE/scripts/diy.sh" -v "${VERSION_MAJOR}" -p before
@@ -123,7 +134,11 @@ jobs:
       - name: 执行更新 feeds 后的 DIY 操作
         run: |
           cd openwrt
-          "$GITHUB_WORKSPACE/scripts/diy.sh" -v "${VERSION_MAJOR}" -p after -t "${PROFILE_TYPE}"
+          if [[ -n "$CUSTOM_IP" ]]; then
+            "$GITHUB_WORKSPACE/scripts/diy.sh" -v "${VERSION_MAJOR}" -p after -t "${PROFILE_TYPE}" --ip "$CUSTOM_IP"
+          else
+            "$GITHUB_WORKSPACE/scripts/diy.sh" -v "${VERSION_MAJOR}" -p after -t "${PROFILE_TYPE}"
+          fi
 
       - name: 生成配置
         run: |
