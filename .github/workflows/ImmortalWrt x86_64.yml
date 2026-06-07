@@ -29,17 +29,17 @@ on:
         type: string
         default: ''
       pppoe_username:
-        description: 'PPPoE 账号 (可选，主路由使用)'
+        description: 'PPPoE 账号'
         required: false
         type: string
         default: ''
       pppoe_password:
-        description: 'PPPoE 密码 (可选，主路由使用)'
+        description: 'PPPoE 密码'
         required: false
         type: string
         default: ''
       custom_feeds:
-        description: '是否加载自定义 feeds'
+        description: '安装OpenAppFilter(OAF)'
         required: true
         type: boolean
         default: false
@@ -56,36 +56,24 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 自动匹配版本与配置文件
+      - name: 初始化环境变量
         run: |
           VERSION="${{ github.event.inputs.version }}"
           PROFILE="${{ github.event.inputs.profile }}"
-          CUSTOM_IP="${{ github.event.inputs.custom_ip }}"
-          PPPOE_USERNAME="${{ github.event.inputs.pppoe_username }}"
-          PPPOE_PASSWORD="${{ github.event.inputs.pppoe_password }}"
-          echo "RELEASE_TAG=$VERSION" >> $GITHUB_ENV
-          
-          if [[ "$VERSION" == 24.10.* ]]; then
-            VERSION_MAJOR="24.10"
-          elif [[ "$VERSION" == 25.12.* ]]; then
-            VERSION_MAJOR="25.12"
-          fi
-          
           IFS="-" read -r CONFIG_TYPE PROFILE_TYPE <<< "$PROFILE"
+          VERSION_MAJOR=${VERSION%.*}
           FINAL_CONFIG="${VERSION_MAJOR}-${CONFIG_TYPE}.config"
-          
+
+          echo "RELEASE_TAG=$VERSION" >> $GITHUB_ENV
           echo "VERSION_MAJOR=$VERSION_MAJOR" >> $GITHUB_ENV
           echo "CONFIG_FILE=$FINAL_CONFIG" >> $GITHUB_ENV
           echo "PROFILE_TYPE=$PROFILE_TYPE" >> $GITHUB_ENV
-          echo "CUSTOM_IP=$CUSTOM_IP" >> $GITHUB_ENV
-          echo "PPPOE_USERNAME=$PPPOE_USERNAME" >> $GITHUB_ENV
-          echo "PPPOE_PASSWORD=$PPPOE_PASSWORD" >> $GITHUB_ENV
+          echo "CUSTOM_IP=${{ github.event.inputs.custom_ip }}" >> $GITHUB_ENV
+          echo "PPPOE_USER=${{ github.event.inputs.pppoe_username }}" >> $GITHUB_ENV
+          echo "PPPOE_PASS=${{ github.event.inputs.pppoe_password }}" >> $GITHUB_ENV
           echo "CUSTOM_FEEDS=${{ github.event.inputs.custom_feeds }}" >> $GITHUB_ENV
 
-      - name: 清理环境
-        run: sudo rm -rf openwrt
-
-      - name: 安装编译依赖
+      - name: 安装系统依赖
         run: |
           sudo apt update -y
           sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
@@ -97,60 +85,49 @@ jobs:
           python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs \
           upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
 
-      - name: 克隆精确版本源码
+      - name: 克隆 ImmortalWrt 源码
         run: |
+          sudo rm -rf openwrt
           git clone --depth=1 -b "v${RELEASE_TAG}" https://github.com/immortalwrt/immortalwrt openwrt
 
-      - name: 执行更新 feeds 前的 DIY 操作
+      - name: 编译前置配置
         run: |
           cd openwrt
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
-          if [[ "${{ github.event.inputs.custom_feeds }}" == "true" ]]; then
-            "$GITHUB_WORKSPACE/scripts/diy.sh" -v "${VERSION_MAJOR}" -p before --custom-feeds
-          else
-            "$GITHUB_WORKSPACE/scripts/diy.sh" -v "${VERSION_MAJOR}" -p before
+
+          # 执行前置 DIY
+          "$GITHUB_WORKSPACE/scripts/diy.sh" -v "${VERSION_MAJOR}" -p before ${CUSTOM_FEEDS:+--custom-feeds}
+
+          # 加载配置 & 更新 feeds
+          cp "$GITHUB_WORKSPACE/configs/${CONFIG_FILE}" .config
+          ./scripts/feeds update -a && ./scripts/feeds install -a
+
+          # ==================== OAF 官方标准安装 ====================
+          if [[ "$PROFILE_TYPE" == "main" && "$CUSTOM_FEEDS" == "true" ]]; then
+            git clone https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
+            echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
+            make defconfig
           fi
 
-      - name: 应用配置文件
+          # 执行后置 DIY
+          args=(-v "${VERSION_MAJOR}" -p after -t "${PROFILE_TYPE}")
+          [[ -n "$CUSTOM_IP" ]] && args+=(--ip "$CUSTOM_IP")
+          [[ -n "$PPPOE_USER" && -n "$PPPOE_PASS" ]] && args+=(--pppoe-user "$PPPOE_USER" --pppoe-pass "$PPPOE_PASS")
+          [[ "$CUSTOM_FEEDS" == "true" ]] && args+=(--custom-feeds)
+          "$GITHUB_WORKSPACE/scripts/diy.sh" "${args[@]}"
+
+      - name: 生成配置并下载依赖
         run: |
           cd openwrt
-          cp "$GITHUB_WORKSPACE/configs/${CONFIG_FILE}" .config
+          make defconfig
+          make download -j$(nproc)
 
-      - name: 更新 feeds
+      - name: 开始编译固件
         run: |
           cd openwrt
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+          make -j$(nproc) V=s || make -j1 V=s
 
-      - name: 安装 OAF 包（仅主路由 + 自定义 feeds）
-        if: env.PROFILE_TYPE == 'main' && env.CUSTOM_FEEDS == 'true'
-        run: |
-          cd openwrt
-          ./scripts/feeds install luci-app-oaf
-
-      - name: 执行更新 feeds 后的 DIY 操作
-        run: |
-          cd openwrt
-          DIY_CMD="$GITHUB_WORKSPACE/scripts/diy.sh -v \"${VERSION_MAJOR}\" -p after -t \"${PROFILE_TYPE}\""
-          [[ -n "$CUSTOM_IP" ]] && DIY_CMD="$DIY_CMD --ip \"$CUSTOM_IP\""
-          [[ "$PROFILE_TYPE" == "main" && -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && DIY_CMD="$DIY_CMD --pppoe-user \"$PPPOE_USERNAME\" --pppoe-pass \"$PPPOE_PASSWORD\""
-          [[ "$CUSTOM_FEEDS" == "true" ]] && DIY_CMD="$DIY_CMD --custom-feeds"
-          eval "$DIY_CMD"
-
-      - name: 生成配置
-        run: |
-          cd openwrt
-          make defconfig FORCE=1
-
-      - name: 下载依赖
-        run: cd openwrt && make download -j$(nproc)
-
-      - name: 开始编译
-        run: |
-          cd openwrt
-          make -j$(nproc) V=s FORCE=1 || make -j1 V=s FORCE=1
-
-      - name: 发布固件到 GitHub Release
+      - name: 上传固件到 Release
         uses: softprops/action-gh-release@v2
         with:
           name: ImmortalWrt x86_64 ${{ env.RELEASE_TAG }} (${{ env.PROFILE_TYPE }})
