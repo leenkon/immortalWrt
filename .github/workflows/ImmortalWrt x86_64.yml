@@ -24,7 +24,7 @@ on:
           - default-main
           - full-main
       custom_ip:
-        description: '自定义 IP 地址 (留空使用默认: 主路由10.10.10.1 / 旁路由10.10.10.99)'
+        description: '自定义 IP 地址 (留空使用默认)'
         required: false
         type: string
         default: ''
@@ -126,7 +126,7 @@ jobs:
         if: env.PROFILE_TYPE == 'main' && env.CUSTOM_FEEDS == 'true'
         run: |
           cd openwrt
-          ./scripts/feeds install open-app-filter luci-app-oaf
+          ./scripts/feeds install luci-app-oaf
 
       - name: 执行更新 feeds 后的 DIY 操作
         run: |
