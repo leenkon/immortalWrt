@@ -77,7 +77,7 @@ uci commit luci
 EOF
 
     if [[ "$PROFILE_TYPE" == "main" ]]; then
-        if [[ -n "$PPPOE_USERNAME" ]]; then
+        if [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]]; then
             ESCAPED_USER=$(printf '%s\n' "$PPPOE_USERNAME" | sed 's/[\/&]/\\&/g')
             ESCAPED_PASS=$(printf '%s\n' "$PPPOE_PASSWORD" | sed 's/[\/&]/\\&/g')
             cat >> "$BOOT_SCRIPT" <<EOF
