@@ -28,18 +28,13 @@ on:
         required: false
         type: string
         default: ''
-      enable_pppoe:
-        description: '启用 PPPoE 配置 (仅主路由使用)'
-        required: true
-        type: boolean
-        default: false
       pppoe_username:
-        description: 'PPPoE 账号 (启用 PPPoE 时填写)'
+        description: 'PPPoE 账号 (可选，主路由使用)'
         required: false
         type: string
         default: ''
       pppoe_password:
-        description: 'PPPoE 密码 (启用 PPPoE 时填写)'
+        description: 'PPPoE 密码 (可选，主路由使用)'
         required: false
         type: string
         default: ''
@@ -66,7 +61,6 @@ jobs:
           VERSION="${{ github.event.inputs.version }}"
           PROFILE="${{ github.event.inputs.profile }}"
           CUSTOM_IP="${{ github.event.inputs.custom_ip }}"
-          ENABLE_PPPOE="${{ github.event.inputs.enable_pppoe }}"
           PPPOE_USERNAME="${{ github.event.inputs.pppoe_username }}"
           PPPOE_PASSWORD="${{ github.event.inputs.pppoe_password }}"
 
@@ -86,7 +80,6 @@ jobs:
           echo "CONFIG_FILE=$FINAL_CONFIG" >> $GITHUB_ENV
           echo "PROFILE_TYPE=$PROFILE_TYPE" >> $GITHUB_ENV
           echo "CUSTOM_IP=$CUSTOM_IP" >> $GITHUB_ENV
-          echo "ENABLE_PPPOE=$ENABLE_PPPOE" >> $GITHUB_ENV
           echo "PPPOE_USERNAME=$PPPOE_USERNAME" >> $GITHUB_ENV
           echo "PPPOE_PASSWORD=$PPPOE_PASSWORD" >> $GITHUB_ENV
 
@@ -102,7 +95,7 @@ jobs:
           if [[ -n "$CUSTOM_IP" ]]; then
             echo "✅ 自定义 IP: $CUSTOM_IP"
           fi
-          if [[ "$ENABLE_PPPOE" == "true" ]]; then
+          if [[ -n "$PPPOE_USERNAME" ]]; then
             echo "✅ PPPoE 启用: 是"
             echo "✅ PPPoE 账号: $PPPOE_USERNAME"
             echo "✅ PPPoE 密码: 已设置"
@@ -160,7 +153,7 @@ jobs:
             DIY_CMD="$DIY_CMD --ip \"$CUSTOM_IP\""
           fi
           
-          if [[ "$ENABLE_PPPOE" == "true" ]]; then
+          if [[ -n "$PPPOE_USERNAME" ]]; then
             DIY_CMD="$DIY_CMD --pppoe-user \"$PPPOE_USERNAME\" --pppoe-pass \"$PPPOE_PASSWORD\""
           fi
           
@@ -185,9 +178,7 @@ jobs:
         with:
           name: ImmortalWrt x86_64 ${{ env.RELEASE_TAG }} (${{ env.PROFILE_TYPE }})
           tag_name: ${{ env.RELEASE_TAG }}-${{ env.PROFILE_TYPE }}
-          files: |
-            openwrt/bin/targets/x86/64/immortalwrt-${{ env.RELEASE_TAG }}-x86-64-generic-ext4-combined-efi.img.gz
-            openwrt/bin/targets/x86/64/immortalwrt-${{ env.RELEASE_TAG }}-x86-64-generic-squashfs-combined-efi.img.gz
+          files: openwrt/bin/targets/x86/64/*combined-efi.img.gz
           draft: false
           prerelease: false
         env:
