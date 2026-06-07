@@ -38,7 +38,7 @@ on:
         required: false
         type: string
         default: ''
-      custom_feeds:
+      install_oaf:
         description: '安装OpenAppFilter(OAF)'
         required: true
         type: boolean
@@ -71,7 +71,7 @@ jobs:
           echo "CUSTOM_IP=${{ github.event.inputs.custom_ip }}" >> $GITHUB_ENV
           echo "PPPOE_USER=${{ github.event.inputs.pppoe_username }}" >> $GITHUB_ENV
           echo "PPPOE_PASS=${{ github.event.inputs.pppoe_password }}" >> $GITHUB_ENV
-          echo "CUSTOM_FEEDS=${{ github.event.inputs.custom_feeds }}" >> $GITHUB_ENV
+          echo "INSTALL_OAF=${{ github.event.inputs.install_oaf }}" >> $GITHUB_ENV
 
       - name: 安装系统依赖
         run: |
@@ -99,34 +99,24 @@ jobs:
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
 
           # 执行前置 DIY
-          "$GITHUB_WORKSPACE/scripts/diy.sh" -v "${VERSION_MAJOR}" -p before ${CUSTOM_FEEDS:+--custom-feeds}
+          "$GITHUB_WORKSPACE/scripts/diy.sh" -v "${VERSION_MAJOR}" -p before
 
           # 加载配置 & 更新 feeds
           cp "$GITHUB_WORKSPACE/configs/${CONFIG_FILE}" .config
           ./scripts/feeds update -a
 
-          # ==============================================
-          # 删除 feeds 里自带的 oaf
-          # ==============================================
-          rm -rf package/feeds/packages/oaf
-          rm -rf package/feeds/packages/luci-app-oaf
-          rm -rf package/feeds/packages/open-app-filter
-          rm -rf feeds/packages/net/oaf
-          rm -rf feeds/packages/net/open-app-filter
+          # 处理 OAF（删除自带的，条件安装官方的）- 先处理，再安装 feeds
+          oaf_args=(-v "${VERSION_MAJOR}" -p oaf -t "${PROFILE_TYPE}")
+          [[ "$INSTALL_OAF" == "true" ]] && oaf_args+=(--install-oaf)
+          "$GITHUB_WORKSPACE/scripts/diy.sh" "${oaf_args[@]}"
 
+          # 安装 feeds
           ./scripts/feeds install -a
-
-          # ==================== OAF 官方安装 ====================
-          if [[ "$PROFILE_TYPE" == "main" && "$CUSTOM_FEEDS" == "true" ]]; then
-            git clone https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
-            echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
-          fi
 
           # 执行后置 DIY
           args=(-v "${VERSION_MAJOR}" -p after -t "${PROFILE_TYPE}")
           [[ -n "$CUSTOM_IP" ]] && args+=(--ip "$CUSTOM_IP")
           [[ -n "$PPPOE_USER" && -n "$PPPOE_PASS" ]] && args+=(--pppoe-user "$PPPOE_USER" --pppoe-pass "$PPPOE_PASS")
-          [[ "$CUSTOM_FEEDS" == "true" ]] && args+=(--custom-feeds)
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${args[@]}"
 
       - name: 生成配置并下载依赖

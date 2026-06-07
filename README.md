@@ -27,7 +27,7 @@ immortalwrt/
 | 配置类型 | 用途 | 主要功能 |
 |---------|------|---------|
 | **mini** | 旁路由 | 广告过滤 (adblock-fast)、OpenClash、基础网络功能 |
-| **default** | 主路由 | Full-NAT、DDNS、UPnP、WOL、多拨、VLAN、IPTV、USB 支持、OAF 应用过滤 |
+| **default** | 主路由 | Full-NAT、DDNS、UPnP、WOL、多拨、VLAN、IPTV、USB 支持 |
 | **full** | 完整功能 | 包含所有功能（mini + default），额外包含 SQM、nlbwmon、watchcat |
 
 ## 路由类型
@@ -45,11 +45,11 @@ immortalwrt/
    - 版本（例如 24.10.1）
    - 配置文件：
      - **mini-bypass**：旁路由（广告过滤、OpenClash）
-     - **default-main**：主路由（完整网络功能、OAF）
+     - **default-main**：主路由（完整网络功能）
      - **full-main**：完整主路由（所有功能）
    - 自定义 IP（可选，留空使用默认: 主路由10.10.10.1 / 旁路由10.10.10.99）
    - 启用 PPPoE 配置（勾选后显示 PPPoE 账号密码输入框）
-   - 是否加载自定义 feeds（主路由自动启用，旁路由不需要）
+   - 安装 OpenAppFilter(OAF)（主路由和旁路由均可选，旁路由需注意与流量转发软件的冲突）
 4. 点击 "Run workflow"
 
 ## 本地编译使用
@@ -68,11 +68,7 @@ git checkout v24.10.1  # 或其他目标版本
 ### 使用 diy.sh 脚本
 
 ```bash
-# 第一步：更新 feeds 前的操作（应用 feeds 配置）
-# 主路由：会自动添加 OpenAppFilter feeds
-../scripts/diy.sh -v 24.10 -p before --custom-feeds
-
-# 旁路由：不需要 custom-feeds
+# 第一步：应用 feeds 配置
 ../scripts/diy.sh -v 24.10 -p before
 
 # 第二步：应用配置文件
@@ -84,16 +80,24 @@ cp ../configs/24.10-mini.config .config
 
 # 第三步：更新 feeds
 ./scripts/feeds update -a
+
+# 第四步：处理 OAF（删除自带的，条件安装官方的）
+# 不安装 OAF
+../scripts/diy.sh -v 24.10 -p oaf -t main
+# 或安装 OAF（主路由和旁路由均可选）
+../scripts/diy.sh -v 24.10 -p oaf -t main --install-oaf
+
+# 第五步：安装 feeds
 ./scripts/feeds install -a
 
-# 第四步：更新 feeds 后的操作（设置 IP、主机名、时区）
+# 第六步：配置系统
 # 主路由（使用默认 IP）
 ../scripts/diy.sh -v 24.10 -p after -t main
 
 # 旁路由（使用自定义 IP）
 ../scripts/diy.sh -v 24.10 -p after -t bypass --ip 192.168.1.2
 
-# 第五步：编译
+# 第七步：编译
 make defconfig
 make -j$(nproc)
 ```
@@ -101,15 +105,15 @@ make -j$(nproc)
 ## 脚本参数说明
 
 ```
-用法: scripts/diy.sh -v <版本> -p <阶段> [-t <类型>] [--ip <地址>] [--custom-feeds]
+用法: scripts/diy.sh -v <版本> -p <阶段> [-t <类型>] [--ip <地址>] [--install-oaf]
 
 选项:
   -v, --version    版本号 (例如: 24.10, 25.12)
-  -p, --phase      执行阶段: before (更新 feeds 前) 或 after (更新 feeds 后)
+  -p, --phase      执行阶段: before (更新 feeds 前)、oaf (处理 OAF) 或 after (更新 feeds 后)
   -t, --type       路由类型: main (主路由, IP: 10.10.10.1) 或 bypass (旁路由, IP: 10.10.10.99)
   --ip             自定义 IP 地址 (可选，不指定则使用默认)
-  --custom-feeds   启用自定义 feeds (添加 OpenAppFilter)
-  -h, --help       显示帮助信息
+  --install-oaf    安装官方 OpenAppFilter (主路由和旁路由均可选，旁路由需注意与流量转发软件的冲突)
+  --custom-feeds   向后兼容，同 --install-oaf
 ```
 
 ## OAF (OpenAppFilter) 支持
@@ -117,8 +121,8 @@ make -j$(nproc)
 OAF 是基于 DPI 的应用过滤软件，支持识别 TikTok、YouTube、Facebook 等流行应用。
 
 **启用条件**：
-- 主路由：自动启用（自动添加 feeds）
-- 旁路由：不包含 OAF
+- 主路由：可选安装
+- 旁路由：可选安装（可能与流量转发软件产生冲突，请谨慎使用）
 
 **包含的包**：
 - `oaf` - 内核模块
