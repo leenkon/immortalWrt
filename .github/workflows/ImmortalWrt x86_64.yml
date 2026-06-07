@@ -39,7 +39,7 @@ on:
         type: string
         default: ''
       custom_feeds:
-        description: '安装OpenAppFilter(OAF)'
+        description: '是否加载自定义 feeds'
         required: true
         type: boolean
         default: false
@@ -85,10 +85,13 @@ jobs:
           python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs \
           upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
 
-      - name: 克隆 ImmortalWrt 源码
+      - name: 克隆 ImmortalWrt 源码（修复 Git 标签警告）
         run: |
           sudo rm -rf openwrt
-          git clone --depth=1 -b "v${RELEASE_TAG}" https://github.com/immortalwrt/immortalwrt openwrt
+          git clone https://github.com/immortalwrt/immortalwrt openwrt
+          cd openwrt
+          git fetch --tags
+          git checkout "v$RELEASE_TAG"
 
       - name: 编译前置配置
         run: |
@@ -102,12 +105,13 @@ jobs:
           cp "$GITHUB_WORKSPACE/configs/${CONFIG_FILE}" .config
           ./scripts/feeds update -a && ./scripts/feeds install -a
 
-          # ==================== OAF 官方标准安装 ====================
+          # ==================== OAF 官方标准安装（无循环依赖）====================
           if [[ "$PROFILE_TYPE" == "main" && "$CUSTOM_FEEDS" == "true" ]]; then
             git clone https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
             echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
             make defconfig
           fi
+          # ======================================================================
 
           # 执行后置 DIY
           args=(-v "${VERSION_MAJOR}" -p after -t "${PROFILE_TYPE}")
