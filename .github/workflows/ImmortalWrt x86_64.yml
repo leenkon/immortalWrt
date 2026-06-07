@@ -121,6 +121,12 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      - name: 安装 OAF 包（仅主路由）
+        if: env.PROFILE_TYPE == 'main' && (github.event.inputs.custom_feeds == 'true' || github.event.inputs.profile == 'default-main' || github.event.inputs.profile == 'full-main')
+        run: |
+          cd openwrt
+          ./scripts/feeds install open-app-filter luci-app-oaf
+
       - name: 执行更新 feeds 后的 DIY 操作
         run: |
           cd openwrt

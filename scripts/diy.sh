@@ -52,6 +52,15 @@ elif [[ "$PHASE" == "after" ]]; then
         HOSTNAME="Router-Bypass"
     fi
     echo "配置: $PROFILE_TYPE | IP: $ROUTER_IP"
+    
+    if [[ "$PROFILE_TYPE" == "main" && "$CUSTOM_FEEDS" == true ]]; then
+        if [[ -f ".config" ]]; then
+            sed -i '/CONFIG_PACKAGE_kmod-oaf/d' .config
+            echo 'CONFIG_PACKAGE_open-app-filter=y' >> .config
+            echo 'CONFIG_PACKAGE_luci-app-oaf=y' >> .config
+            echo 'CONFIG_PACKAGE_kmod-oaf=n' >> .config
+        fi
+    fi
     CONFIG_FILE="package/base-files/files/bin/config_generate"
     if [[ -f "$CONFIG_FILE" ]]; then
         sed -i "s/set network.lan.ipaddr='192.168.1.1'/set network.lan.ipaddr='$ROUTER_IP'/g" "$CONFIG_FILE"
