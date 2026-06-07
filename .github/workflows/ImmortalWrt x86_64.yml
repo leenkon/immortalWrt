@@ -1,0 +1,150 @@
+name: ImmortalWrt x86_64
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '选择精确发布版本'
+        required: true
+        type: choice
+        options:
+          - 24.10.1
+          - 24.10.2
+          - 24.10.3
+          - 24.10.4
+          - 24.10.5
+          - 24.10.6
+          - 25.12.1
+          - 25.12.2
+          - 25.12.3
+          - 25.12.4
+      config_type:
+        description: '选择配置类型'
+        required: true
+        type: choice
+        options:
+          - default
+          - mini
+          - full
+      profile_type:
+        description: '选择路由类型'
+        required: true
+        type: choice
+        options:
+          - main
+          - bypass
+      custom_feeds:
+        description: '是否加载自定义 feeds'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 自动匹配版本与配置文件
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          CONFIG_TYPE="${{ github.event.inputs.config_type }}"
+          PROFILE_TYPE="${{ github.event.inputs.profile_type }}"
+
+          echo "RELEASE_TAG=$VERSION" >> $GITHUB_ENV
+
+          if [[ "$VERSION" == 24.10.* ]]; then
+            VERSION_MAJOR="24.10"
+          elif [[ "$VERSION" == 25.12.* ]]; then
+            VERSION_MAJOR="25.12"
+          fi
+
+          FINAL_CONFIG="${VERSION_MAJOR}-${CONFIG_TYPE}.config"
+
+          echo "VERSION_MAJOR=$VERSION_MAJOR" >> $GITHUB_ENV
+          echo "CONFIG_FILE=$FINAL_CONFIG" >> $GITHUB_ENV
+          echo "PROFILE_TYPE=$PROFILE_TYPE" >> $GITHUB_ENV
+          echo "✅ 选中版本: $VERSION"
+          echo "✅ 大版本: $VERSION_MAJOR"
+          echo "✅ 选中配置: $FINAL_CONFIG"
+          echo "✅ 路由类型: $PROFILE_TYPE"
+          if [[ "$PROFILE_TYPE" == "main" ]]; then
+            echo "✅ 路由 IP: 10.10.10.1"
+          else
+            echo "✅ 路由 IP: 10.10.10.99"
+          fi
+
+      - name: 清理环境
+        run: sudo rm -rf openwrt
+
+      - name: 安装编译依赖
+        run: |
+          sudo apt update -y
+          sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+          bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib \
+          g++-multilib git gnutls-dev gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev \
+          libglib2.0-dev libgmp-dev libltdl-dev libmpc-dev libmpfr-dev libncurses-dev libpython3-dev \
+          libreadline-dev libssl-dev libtool libyaml-dev libz-dev lld llvm lrzsz mkisofs msmtp nano \
+          ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip python3-ply python3-docutils \
+          python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs \
+          upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
+
+      - name: 克隆精确版本源码
+        run: |
+          git clone --depth=1 -b "v${RELEASE_TAG}" https://github.com/immortalwrt/immortalwrt openwrt
+
+      - name: 执行更新 feeds 前的 DIY 操作
+        run: |
+          cd openwrt
+          chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
+          if [[ "${{ github.event.inputs.custom_feeds }}" == "true" ]]; then
+            "$GITHUB_WORKSPACE/scripts/diy.sh" -v "${VERSION_MAJOR}" -p before --custom-feeds
+          else
+            "$GITHUB_WORKSPACE/scripts/diy.sh" -v "${VERSION_MAJOR}" -p before
+          fi
+
+      - name: 应用配置文件
+        run: |
+          cd openwrt
+          cp "$GITHUB_WORKSPACE/configs/${CONFIG_FILE}" .config
+
+      - name: 更新 feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: 执行更新 feeds 后的 DIY 操作
+        run: |
+          cd openwrt
+          "$GITHUB_WORKSPACE/scripts/diy.sh" -v "${VERSION_MAJOR}" -p after -t "${PROFILE_TYPE}"
+
+      - name: 生成配置
+        run: |
+          cd openwrt
+          make defconfig FORCE=1
+
+      - name: 下载依赖
+        run: cd openwrt && make download -j$(nproc)
+
+      - name: 开始编译
+        run: |
+          cd openwrt
+          make -j$(nproc) V=s FORCE=1 || make -j1 V=s FORCE=1
+
+      - name: 发布固件到 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ImmortalWrt x86_64 ${{ env.RELEASE_TAG }} (${{ env.PROFILE_TYPE }})
+          tag_name: ${{ env.RELEASE_TAG }}-${{ env.PROFILE_TYPE }}
+          files: openwrt/bin/targets/x86/64/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
