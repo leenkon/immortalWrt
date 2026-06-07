@@ -165,15 +165,19 @@ elif [[ "$PHASE" == "after" ]]; then
     CONFIG_FILE="package/base-files/files/bin/config_generate"
 
     if [[ -f "$CONFIG_FILE" ]]; then
-        # 修改默认 IP 地址
+        # 修改默认 IP 地址 - 只替换 LAN 接口的 IP
+        sed -i "s/set network.lan.ipaddr='192.168.1.1'/set network.lan.ipaddr='$ROUTER_IP'/g" "$CONFIG_FILE"
+        
+        # 同时替换其他可能出现的 192.168.1.1（如网关提示等）
         sed -i "s/192.168.1.1/$ROUTER_IP/g" "$CONFIG_FILE"
 
         # 修改主机名
+        sed -i "s/set system.@system\[0\].hostname='ImmortalWrt'/set system.@system[0].hostname='$HOSTNAME'/g" "$CONFIG_FILE"
         sed -i "s/ImmortalWrt/$HOSTNAME/g" "$CONFIG_FILE"
 
         # 修改时区为中国时区
-        sed -i "s/GMT0/CST-8/g" "$CONFIG_FILE"
-        sed -i "s/UTC/Asia\/Shanghai/g" "$CONFIG_FILE"
+        sed -i "s/set system.@system\[0\].timezone='GMT0'/set system.@system[0].timezone='CST-8'/g" "$CONFIG_FILE"
+        sed -i "s/set system.@system\[0\].zonename='UTC'/set system.@system[0].zonename='Asia\/Shanghai'/g" "$CONFIG_FILE"
 
         echo "IP 地址、主机名和时区已更新"
     else
@@ -182,24 +186,42 @@ elif [[ "$PHASE" == "after" ]]; then
 
     # 设置 PPPoE 配置
     if [[ -n "$PPPOE_USERNAME" ]]; then
-        NETWORK_CONFIG="package/base-files/files/etc/config/network"
-        if [[ -f "$NETWORK_CONFIG" ]]; then
-            # 移除现有的 PPPoE 配置
-            sed -i '/config interface.*wan/,/^$/d' "$NETWORK_CONFIG"
+        # 尝试多个可能的网络配置文件位置
+        NETWORK_CONFIGS=(
+            "package/base-files/files/etc/config/network"
+            "files/etc/config/network"
+        )
+        
+        NETWORK_CONFIG=""
+        for config in "${NETWORK_CONFIGS[@]}"; do
+            if [[ -f "$config" ]]; then
+                NETWORK_CONFIG="$config"
+                break
+            fi
+        done
+        
+        if [[ -n "$NETWORK_CONFIG" ]]; then
+            # 先删除可能存在的旧 wan 配置
+            sed -i "/config interface 'wan'/,/^$/d" "$NETWORK_CONFIG"
+            sed -i "/config interface 'wan'/,+10d" "$NETWORK_CONFIG"
             
             # 添加新的 PPPoE 配置
-            cat >> "$NETWORK_CONFIG" <<EOF
+            cat >> "$NETWORK_CONFIG" << 'EOF'
 
 config interface 'wan'
         option proto 'pppoe'
-        option username '$PPPOE_USERNAME'
-        option password '$PPPOE_PASSWORD'
-        option device '@wan'
+        option username 'PPPOE_USER_PLACEHOLDER'
+        option password 'PPPOE_PASS_PLACEHOLDER'
         option ipv6 'auto'
 EOF
+            # 替换占位符为实际值
+            sed -i "s/PPPOE_USER_PLACEHOLDER/$PPPOE_USERNAME/g" "$NETWORK_CONFIG"
+            sed -i "s/PPPOE_PASS_PLACEHOLDER/$PPPOE_PASSWORD/g" "$NETWORK_CONFIG"
+            
             echo "PPPoE 配置已更新"
         else
-            echo "警告: 未找到网络配置文件 $NETWORK_CONFIG"
+            echo "警告: 未找到网络配置文件，跳过 PPPoE 配置"
+            echo "提示: PPPoE 配置需要在编译后手动设置"
         fi
     fi
 
