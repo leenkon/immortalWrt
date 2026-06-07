@@ -24,7 +24,7 @@ on:
           - default-main
           - full-main
       custom_ip:
-        description: '自定义 IP 地址 (可选，留空使用默认)'
+        description: '自定义 IP 地址 (留空使用默认: 主路由10.10.10.1 / 旁路由10.10.10.99)'
         required: false
         type: string
         default: ''
