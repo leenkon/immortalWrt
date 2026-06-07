@@ -43,10 +43,12 @@ immortalwrt/
 2. 点击 "Run workflow"
 3. 选择：
    - 版本（例如 24.10.1）
-   - 配置类型（mini/default/full）
-   - 路由类型（main/bypass）
+   - 配置文件：
+     - **mini-bypass**：旁路由（广告过滤、OpenClash）
+     - **default-main**：主路由（完整网络功能、OAF）
+     - **full-main**：完整主路由（所有功能）
    - 自定义 IP（可选，留空使用默认）
-   - 是否加载自定义 feeds（仅旁路由需要手动选，主路由自动启用）
+   - 是否加载自定义 feeds（主路由自动启用，旁路由不需要）
 4. 点击 "Run workflow"
 
 ## 本地编译使用

@@ -15,21 +15,14 @@ on:
           - 24.10.5
           - 24.10.6
           - 25.12.0
-      config_type:
-        description: '选择配置类型'
+      profile:
+        description: '选择配置文件'
         required: true
         type: choice
         options:
-          - default
-          - mini
-          - full
-      profile_type:
-        description: '选择路由类型'
-        required: true
-        type: choice
-        options:
-          - main
-          - bypass
+          - mini-bypass
+          - default-main
+          - full-main
       custom_ip:
         description: '自定义 IP 地址 (可选，留空使用默认)'
         required: false
@@ -56,8 +49,7 @@ jobs:
       - name: 自动匹配版本与配置文件
         run: |
           VERSION="${{ github.event.inputs.version }}"
-          CONFIG_TYPE="${{ github.event.inputs.config_type }}"
-          PROFILE_TYPE="${{ github.event.inputs.profile_type }}"
+          PROFILE="${{ github.event.inputs.profile }}"
           CUSTOM_IP="${{ github.event.inputs.custom_ip }}"
 
           echo "RELEASE_TAG=$VERSION" >> $GITHUB_ENV
@@ -67,6 +59,8 @@ jobs:
           elif [[ "$VERSION" == 25.12.* ]]; then
             VERSION_MAJOR="25.12"
           fi
+
+          IFS="-" read -r CONFIG_TYPE PROFILE_TYPE <<< "$PROFILE"
 
           FINAL_CONFIG="${VERSION_MAJOR}-${CONFIG_TYPE}.config"
 
