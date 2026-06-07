@@ -29,22 +29,20 @@ on:
         type: string
         default: ''
       enable_pppoe:
-        description: '启用 PPPoE 配置'
+        description: '启用 PPPoE 配置 (仅主路由使用)'
         required: true
         type: boolean
         default: false
       pppoe_username:
-        description: 'PPPoE 账号'
+        description: 'PPPoE 账号 (启用 PPPoE 时填写)'
         required: false
         type: string
         default: ''
-        if: ${{ github.event.inputs.enable_pppoe == 'true' }}
       pppoe_password:
-        description: 'PPPoE 密码'
+        description: 'PPPoE 密码 (启用 PPPoE 时填写)'
         required: false
         type: string
         default: ''
-        if: ${{ github.event.inputs.enable_pppoe == 'true' }}
       custom_feeds:
         description: '是否加载自定义 feeds'
         required: true
