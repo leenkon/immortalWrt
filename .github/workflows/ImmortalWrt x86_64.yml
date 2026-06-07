@@ -80,6 +80,7 @@ jobs:
           echo "CUSTOM_IP=$CUSTOM_IP" >> $GITHUB_ENV
           echo "PPPOE_USERNAME=$PPPOE_USERNAME" >> $GITHUB_ENV
           echo "PPPOE_PASSWORD=$PPPOE_PASSWORD" >> $GITHUB_ENV
+          echo "CUSTOM_FEEDS=${{ github.event.inputs.custom_feeds }}" >> $GITHUB_ENV
 
       - name: 清理环境
         run: sudo rm -rf openwrt
@@ -104,7 +105,7 @@ jobs:
         run: |
           cd openwrt
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
-          if [[ "${{ github.event.inputs.custom_feeds }}" == "true" ]] || [[ "$PROFILE_TYPE" == "main" ]]; then
+          if [[ "${{ github.event.inputs.custom_feeds }}" == "true" ]]; then
             "$GITHUB_WORKSPACE/scripts/diy.sh" -v "${VERSION_MAJOR}" -p before --custom-feeds
           else
             "$GITHUB_WORKSPACE/scripts/diy.sh" -v "${VERSION_MAJOR}" -p before
@@ -121,8 +122,8 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 安装 OAF 包（仅主路由）
-        if: env.PROFILE_TYPE == 'main' && (github.event.inputs.custom_feeds == 'true' || github.event.inputs.profile == 'default-main' || github.event.inputs.profile == 'full-main')
+      - name: 安装 OAF 包（仅主路由 + 自定义 feeds）
+        if: env.PROFILE_TYPE == 'main' && env.CUSTOM_FEEDS == 'true'
         run: |
           cd openwrt
           ./scripts/feeds install open-app-filter luci-app-oaf
@@ -133,7 +134,17 @@ jobs:
           DIY_CMD="$GITHUB_WORKSPACE/scripts/diy.sh -v \"${VERSION_MAJOR}\" -p after -t \"${PROFILE_TYPE}\""
           [[ -n "$CUSTOM_IP" ]] && DIY_CMD="$DIY_CMD --ip \"$CUSTOM_IP\""
           [[ "$PROFILE_TYPE" == "main" && -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && DIY_CMD="$DIY_CMD --pppoe-user \"$PPPOE_USERNAME\" --pppoe-pass \"$PPPOE_PASSWORD\""
+          [[ "$CUSTOM_FEEDS" == "true" ]] && DIY_CMD="$DIY_CMD --custom-feeds"
           eval "$DIY_CMD"
+
+      - name: 清理 OAF 递归依赖问题
+        if: env.PROFILE_TYPE == 'main' && env.CUSTOM_FEEDS == 'true'
+        run: |
+          cd openwrt
+          sed -i '/CONFIG_PACKAGE_kmod-oaf/d' .config
+          sed -i '/CONFIG_PACKAGE_oaf/d' .config
+          echo 'CONFIG_PACKAGE_open-app-filter=y' >> .config
+          echo 'CONFIG_PACKAGE_luci-app-oaf=y' >> .config
 
       - name: 生成配置
         run: |
