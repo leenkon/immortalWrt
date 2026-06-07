@@ -1,4 +1,4 @@
-name: ImmortalWrt_Build x86_64
+name: ImmortalWrt x86_64
 
 on:
   workflow_dispatch:
@@ -24,7 +24,7 @@ on:
           - default-main
           - full-main
       custom_ip:
-        description: '自定义 IP 地址 (留空使用默认)'
+        description: '自定义 IP 地址'
         required: false
         type: string
         default: ''
@@ -39,7 +39,7 @@ on:
         type: string
         default: ''
       custom_feeds:
-        description: '安装OpenAppFilter(OAF)'
+        description: '是否加载自定义 feeds'
         required: true
         type: boolean
         default: false
@@ -85,7 +85,7 @@ jobs:
           python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs \
           upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
 
-      - name: 克隆 ImmortalWrt 源码（修复 Git 标签警告）
+      - name: 克隆 ImmortalWrt 源码
         run: |
           sudo rm -rf openwrt
           git clone https://github.com/immortalwrt/immortalwrt openwrt
@@ -103,15 +103,24 @@ jobs:
 
           # 加载配置 & 更新 feeds
           cp "$GITHUB_WORKSPACE/configs/${CONFIG_FILE}" .config
-          ./scripts/feeds update -a && ./scripts/feeds install -a
+          ./scripts/feeds update -a
 
-          # ==================== OAF 官方标准安装 ====================
+          # ==============================================
+          # 删除 feeds 里自带的 oaf
+          # ==============================================
+          rm -rf package/feeds/packages/oaf
+          rm -rf package/feeds/packages/luci-app-oaf
+          rm -rf package/feeds/packages/open-app-filter
+          rm -rf feeds/packages/net/oaf
+          rm -rf feeds/packages/net/open-app-filter
+
+          ./scripts/feeds install -a
+
+          # ==================== OAF 官方安装 ====================
           if [[ "$PROFILE_TYPE" == "main" && "$CUSTOM_FEEDS" == "true" ]]; then
             git clone https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
             echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
-            make defconfig
           fi
-          # ======================================================================
 
           # 执行后置 DIY
           args=(-v "${VERSION_MAJOR}" -p after -t "${PROFILE_TYPE}")
