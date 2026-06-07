@@ -105,7 +105,7 @@ jobs:
           cp "$GITHUB_WORKSPACE/configs/${CONFIG_FILE}" .config
           ./scripts/feeds update -a && ./scripts/feeds install -a
 
-          # ==================== OAF 官方标准安装（无循环依赖）====================
+          # ==================== OAF 官方标准安装 ====================
           if [[ "$PROFILE_TYPE" == "main" && "$CUSTOM_FEEDS" == "true" ]]; then
             git clone https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
             echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config

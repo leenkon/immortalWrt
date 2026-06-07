@@ -41,7 +41,6 @@ if [[ "$PHASE" == "before" ]]; then
     fi
     if [[ "$CUSTOM_FEEDS" == true ]]; then
         echo "" >> feeds.conf.default
-        echo "src-git OpenAppFilter https://github.com/destan19/OpenAppFilter.git" >> feeds.conf.default
     fi
 elif [[ "$PHASE" == "after" ]]; then
     if [[ "$PROFILE_TYPE" == "main" ]]; then
