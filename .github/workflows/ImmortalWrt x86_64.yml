@@ -185,7 +185,9 @@ jobs:
         with:
           name: ImmortalWrt x86_64 ${{ env.RELEASE_TAG }} (${{ env.PROFILE_TYPE }})
           tag_name: ${{ env.RELEASE_TAG }}-${{ env.PROFILE_TYPE }}
-          files: openwrt/bin/targets/x86/64/*
+          files: |
+            openwrt/bin/targets/x86/64/immortalwrt-${{ env.RELEASE_TAG }}-x86-64-generic-ext4-combined-efi.img.gz
+            openwrt/bin/targets/x86/64/immortalwrt-${{ env.RELEASE_TAG }}-x86-64-generic-squashfs-combined-efi.img.gz
           draft: false
           prerelease: false
         env:
