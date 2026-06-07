@@ -1,7 +1,5 @@
 #!/bin/bash
 
-set -e
-
 VERSION=""
 PHASE=""
 PROFILE_TYPE=""
@@ -34,48 +32,44 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 if [[ "$PHASE" == "before" ]]; then
-    echo "=== 应用 feeds 配置 ==="
-    
     FEEDS_CONF="$PROJECT_ROOT/feeds/$VERSION.conf"
-    [[ -f "$FEEDS_CONF" ]] && cp "$FEEDS_CONF" feeds.conf.default || echo "警告: 未找到 feeds 配置"
-    
-    [[ "$CUSTOM_FEEDS" == true ]] && {
+    if [[ -f "$FEEDS_CONF" ]]; then
+        cp "$FEEDS_CONF" feeds.conf.default
+    else
+        # 如果没有 feeds 配置，确保至少有一个空文件
+        touch feeds.conf.default
+    fi
+    if [[ "$CUSTOM_FEEDS" == true ]]; then
         echo "" >> feeds.conf.default
         echo "src-git OpenAppFilter https://github.com/destan19/OpenAppFilter.git" >> feeds.conf.default
-        echo "已添加 OpenAppFilter"
-    }
-
+    fi
 elif [[ "$PHASE" == "after" ]]; then
-    echo "=== 配置路由参数 ==="
-    
-    ROUTER_IP="${CUSTOM_IP:-$([ "$PROFILE_TYPE" == "main" ] && echo "$DEFAULT_MAIN_ROUTER_IP" || echo "$DEFAULT_BYPASS_ROUTER_IP")}"
-    HOSTNAME="$([ "$PROFILE_TYPE" == "main" ] && echo "Router-Main" || echo "Router-Bypass")"
-    
-    echo "类型: $PROFILE_TYPE | IP: $ROUTER_IP | 主机名: $HOSTNAME"
-    
+    if [[ "$PROFILE_TYPE" == "main" ]]; then
+        ROUTER_IP="${CUSTOM_IP:-$DEFAULT_MAIN_ROUTER_IP}"
+        HOSTNAME="Router-Main"
+    else
+        ROUTER_IP="${CUSTOM_IP:-$DEFAULT_BYPASS_ROUTER_IP}"
+        HOSTNAME="Router-Bypass"
+    fi
+    echo "配置: $PROFILE_TYPE | IP: $ROUTER_IP"
     CONFIG_FILE="package/base-files/files/bin/config_generate"
-    [[ -f "$CONFIG_FILE" ]] && {
+    if [[ -f "$CONFIG_FILE" ]]; then
         sed -i "s/set network.lan.ipaddr='192.168.1.1'/set network.lan.ipaddr='$ROUTER_IP'/g" "$CONFIG_FILE"
         sed -i "s/set system.@system\[0\].hostname='ImmortalWrt'/set system.@system[0].hostname='$HOSTNAME'/g" "$CONFIG_FILE"
         sed -i "s/set system.@system\[0\].timezone='GMT0'/set system.@system[0].timezone='CST-8'/g" "$CONFIG_FILE"
         sed -i "s/set system.@system\[0\].zonename='UTC'/set system.@system[0].zonename='Asia\/Shanghai'/g" "$CONFIG_FILE"
-    }
-    
+    fi
     mkdir -p files/etc/uci-defaults
     BOOT_SCRIPT="files/etc/uci-defaults/99-custom-config"
-    
     cat > "$BOOT_SCRIPT" <<EOF
 #!/bin/sh
-
 uci set network.lan.ipaddr='$ROUTER_IP'
 uci set system.@system[0].hostname='$HOSTNAME'
 uci set system.@system[0].timezone='CST-8'
 uci set system.@system[0].zonename='Asia/Shanghai'
 uci set luci.main.mediaurlbase='/luci-static/argon'
 uci commit luci
-
 EOF
-
     if [[ "$PROFILE_TYPE" == "main" ]]; then
         if [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]]; then
             ESCAPED_USER=$(printf '%s\n' "$PPPOE_USERNAME" | sed 's/[\/&]/\\&/g')
@@ -100,14 +94,10 @@ uci delete dhcp.lan.limit 2>/dev/null
 uci delete dhcp.lan.leasetime 2>/dev/null
 EOF
     fi
-    
     cat >> "$BOOT_SCRIPT" <<EOF
 uci commit network
 uci commit system
 uci commit dhcp
 EOF
-    
     chmod +x "$BOOT_SCRIPT"
-    echo "开机脚本已创建"
-
 fi

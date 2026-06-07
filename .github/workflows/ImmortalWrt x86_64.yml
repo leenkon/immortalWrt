@@ -63,43 +63,23 @@ jobs:
           CUSTOM_IP="${{ github.event.inputs.custom_ip }}"
           PPPOE_USERNAME="${{ github.event.inputs.pppoe_username }}"
           PPPOE_PASSWORD="${{ github.event.inputs.pppoe_password }}"
-
           echo "RELEASE_TAG=$VERSION" >> $GITHUB_ENV
-
+          
           if [[ "$VERSION" == 24.10.* ]]; then
             VERSION_MAJOR="24.10"
           elif [[ "$VERSION" == 25.12.* ]]; then
             VERSION_MAJOR="25.12"
           fi
-
+          
           IFS="-" read -r CONFIG_TYPE PROFILE_TYPE <<< "$PROFILE"
-
           FINAL_CONFIG="${VERSION_MAJOR}-${CONFIG_TYPE}.config"
-
+          
           echo "VERSION_MAJOR=$VERSION_MAJOR" >> $GITHUB_ENV
           echo "CONFIG_FILE=$FINAL_CONFIG" >> $GITHUB_ENV
           echo "PROFILE_TYPE=$PROFILE_TYPE" >> $GITHUB_ENV
           echo "CUSTOM_IP=$CUSTOM_IP" >> $GITHUB_ENV
           echo "PPPOE_USERNAME=$PPPOE_USERNAME" >> $GITHUB_ENV
           echo "PPPOE_PASSWORD=$PPPOE_PASSWORD" >> $GITHUB_ENV
-
-          echo "✅ 选中版本: $VERSION"
-          echo "✅ 大版本: $VERSION_MAJOR"
-          echo "✅ 选中配置: $FINAL_CONFIG"
-          echo "✅ 路由类型: $PROFILE_TYPE"
-          if [[ "$PROFILE_TYPE" == "main" ]]; then
-            echo "✅ 默认 IP: 10.10.10.1"
-          else
-            echo "✅ 默认 IP: 10.10.10.99"
-          fi
-          if [[ -n "$CUSTOM_IP" ]]; then
-            echo "✅ 自定义 IP: $CUSTOM_IP"
-          fi
-          if [[ -n "$PPPOE_USERNAME" ]]; then
-            echo "✅ PPPoE 启用: 是"
-            echo "✅ PPPoE 账号: $PPPOE_USERNAME"
-            echo "✅ PPPoE 密码: 已设置"
-          fi
 
       - name: 清理环境
         run: sudo rm -rf openwrt
@@ -124,10 +104,7 @@ jobs:
         run: |
           cd openwrt
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
-          
-          # 判断是否启用自定义 feeds：用户选择是 OR 选择了主路由
           if [[ "${{ github.event.inputs.custom_feeds }}" == "true" ]] || [[ "$PROFILE_TYPE" == "main" ]]; then
-            echo "✅ 启用自定义 feeds (主路由或用户选择)"
             "$GITHUB_WORKSPACE/scripts/diy.sh" -v "${VERSION_MAJOR}" -p before --custom-feeds
           else
             "$GITHUB_WORKSPACE/scripts/diy.sh" -v "${VERSION_MAJOR}" -p before
@@ -148,16 +125,8 @@ jobs:
         run: |
           cd openwrt
           DIY_CMD="$GITHUB_WORKSPACE/scripts/diy.sh -v \"${VERSION_MAJOR}\" -p after -t \"${PROFILE_TYPE}\""
-          
-          if [[ -n "$CUSTOM_IP" ]]; then
-            DIY_CMD="$DIY_CMD --ip \"$CUSTOM_IP\""
-          fi
-          
-          if [[ "$PROFILE_TYPE" == "main" && -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]]; then
-            DIY_CMD="$DIY_CMD --pppoe-user \"$PPPOE_USERNAME\" --pppoe-pass \"$PPPOE_PASSWORD\""
-          fi
-          
-          echo "执行命令: $DIY_CMD"
+          [[ -n "$CUSTOM_IP" ]] && DIY_CMD="$DIY_CMD --ip \"$CUSTOM_IP\""
+          [[ "$PROFILE_TYPE" == "main" && -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && DIY_CMD="$DIY_CMD --pppoe-user \"$PPPOE_USERNAME\" --pppoe-pass \"$PPPOE_PASSWORD\""
           eval "$DIY_CMD"
 
       - name: 生成配置
