@@ -137,15 +137,6 @@ jobs:
           [[ "$CUSTOM_FEEDS" == "true" ]] && DIY_CMD="$DIY_CMD --custom-feeds"
           eval "$DIY_CMD"
 
-      - name: 清理 OAF 递归依赖问题
-        if: env.PROFILE_TYPE == 'main' && env.CUSTOM_FEEDS == 'true'
-        run: |
-          cd openwrt
-          sed -i '/CONFIG_PACKAGE_kmod-oaf/d' .config
-          sed -i '/CONFIG_PACKAGE_oaf/d' .config
-          echo 'CONFIG_PACKAGE_open-app-filter=y' >> .config
-          echo 'CONFIG_PACKAGE_luci-app-oaf=y' >> .config
-
       - name: 生成配置
         run: |
           cd openwrt
