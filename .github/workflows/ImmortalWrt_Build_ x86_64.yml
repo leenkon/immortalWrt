@@ -29,12 +29,12 @@ on:
         type: string
         default: ''
       pppoe_username:
-        description: 'PPPoE 账号'
+        description: 'PPPoE账号'
         required: false
         type: string
         default: ''
       pppoe_password:
-        description: 'PPPoE 密码'
+        description: 'PPPoE密码'
         required: false
         type: string
         default: ''
@@ -44,7 +44,7 @@ on:
         type: boolean
         default: false
       root_password:
-        description: '设置 root 密码（不设置则首次登录无需密码）'
+        description: '设置root密码（默认无需密码）'
         required: false
         type: string
         default: ''

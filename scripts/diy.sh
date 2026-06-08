@@ -124,8 +124,8 @@ uci delete dhcp.lan.leasetime 2>/dev/null
 EOF
         fi
         
-        [[ -n "$ROOT_PASSWORD" ]] && { echo "→ 设置 root 密码..."; cat >> "$BOOT_SCRIPT" <<EOF
-echo -e "$ROOT_PASSWORD\n$ROOT_PASSWORD" | passwd root
+        [[ -n "$ROOT_PASSWORD" ]] && { echo "→ 设置 root 密码..."; local ENCRYPTED_PASS=$(echo "$ROOT_PASSWORD" | mkpasswd -m sha-512 -s); cat >> "$BOOT_SCRIPT" <<EOF
+uci set system.@system[0].password='$ENCRYPTED_PASS'
 EOF
         }
         
