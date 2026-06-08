@@ -48,8 +48,9 @@ immortalwrt/
      - **default-main**：主路由（完整网络功能）
      - **full-main**：完整主路由（所有功能）
    - 自定义 IP（可选，留空使用默认: 主路由10.10.10.1 / 旁路由10.10.10.99）
-   - 启用 PPPoE 配置（勾选后显示 PPPoE 账号密码输入框）
+   - PPPoE 账号密码（可选，设置后自动配置 PPPoE 拨号）
    - 安装 OpenAppFilter(OAF)（主路由和旁路由均可选，旁路由需注意与流量转发软件的冲突）
+   - 设置 root 密码（可选，不设置则首次登录无需密码）
 4. 点击 "Run workflow"
 
 ## 本地编译使用
@@ -94,8 +95,11 @@ cp ../configs/24.10-mini.config .config
 # 主路由（使用默认 IP）
 ../scripts/diy.sh -v 24.10 -p after -t main
 
-# 旁路由（使用自定义 IP）
-../scripts/diy.sh -v 24.10 -p after -t bypass --ip 192.168.1.2
+# 主路由（设置 PPPoE 和密码）
+../scripts/diy.sh -v 24.10 -p after -t main --pppoe-user "your_username" --pppoe-pass "your_password" --root-pass "your_root_password"
+
+# 旁路由（使用自定义 IP 和密码）
+../scripts/diy.sh -v 24.10 -p after -t bypass --ip 192.168.1.2 --root-pass "your_root_password"
 
 # 第七步：编译
 make defconfig
@@ -105,15 +109,17 @@ make -j$(nproc)
 ## 脚本参数说明
 
 ```
-用法: scripts/diy.sh -v <版本> -p <阶段> [-t <类型>] [--ip <地址>] [--install-oaf]
+用法: scripts/diy.sh -v <版本> -p <阶段> [-t <类型>] [选项]
 
 选项:
   -v, --version    版本号 (例如: 24.10, 25.12)
   -p, --phase      执行阶段: before (更新 feeds 前)、oaf (处理 OAF) 或 after (更新 feeds 后)
   -t, --type       路由类型: main (主路由, IP: 10.10.10.1) 或 bypass (旁路由, IP: 10.10.10.99)
   --ip             自定义 IP 地址 (可选，不指定则使用默认)
+  --pppoe-user     PPPoE 账号
+  --pppoe-pass     PPPoE 密码
+  --root-pass      设置 root 密码 (可选，不设置则首次登录无需密码)
   --install-oaf    安装官方 OpenAppFilter (主路由和旁路由均可选，旁路由需注意与流量转发软件的冲突)
-  --custom-feeds   向后兼容，同 --install-oaf
 ```
 
 ## OAF (OpenAppFilter) 支持

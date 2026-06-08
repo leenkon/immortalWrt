@@ -43,6 +43,11 @@ on:
         required: true
         type: boolean
         default: false
+      root_password:
+        description: '设置 root 密码（不设置则首次登录无需密码）'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -72,6 +77,7 @@ jobs:
           echo "PPPOE_USER=${{ github.event.inputs.pppoe_username }}" >> $GITHUB_ENV
           echo "PPPOE_PASS=${{ github.event.inputs.pppoe_password }}" >> $GITHUB_ENV
           echo "INSTALL_OAF=${{ github.event.inputs.install_oaf }}" >> $GITHUB_ENV
+          echo "ROOT_PASSWORD=${{ github.event.inputs.root_password }}" >> $GITHUB_ENV
 
       - name: 安装系统依赖
         run: |
@@ -117,6 +123,7 @@ jobs:
           args=(-v "${VERSION_MAJOR}" -p after -t "${PROFILE_TYPE}")
           [[ -n "$CUSTOM_IP" ]] && args+=(--ip "$CUSTOM_IP")
           [[ -n "$PPPOE_USER" && -n "$PPPOE_PASS" ]] && args+=(--pppoe-user "$PPPOE_USER" --pppoe-pass "$PPPOE_PASS")
+          [[ -n "$ROOT_PASSWORD" ]] && args+=(--root-pass "$ROOT_PASSWORD")
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${args[@]}"
 
       - name: 生成配置并下载依赖
