@@ -8,16 +8,7 @@ DEFAULT_BYPASS_ROUTER_IP="10.10.10.99"
 
 remove_immortalwrt_oaf() {
     echo "→ 删除 ImmortalWrt 自带的 OAF..."
-    local oaf_paths=(
-        "package/feeds/packages/oaf"
-        "package/feeds/packages/luci-app-oaf"
-        "package/feeds/packages/open-app-filter"
-        "feeds/packages/net/oaf"
-        "feeds/packages/net/open-app-filter"
-    )
-    for path in "${oaf_paths[@]}"; do
-        rm -rf "$path" 2>/dev/null
-    done
+    rm -rf package/feeds/packages/oaf package/feeds/packages/luci-app-oaf package/feeds/packages/open-app-filter feeds/packages/net/oaf feeds/packages/net/open-app-filter 2>/dev/null
     echo "✓ OAF 清理完成"
 }
 
@@ -53,13 +44,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 case "$PHASE" in
     before)
         FEEDS_CONF="$PROJECT_ROOT/feeds/$VERSION.conf"
-        if [[ -f "$FEEDS_CONF" ]]; then
-            cp "$FEEDS_CONF" feeds.conf.default
-            echo "✓ 已应用 feeds 配置: $VERSION.conf"
-        else
-            touch feeds.conf.default
-            echo "✓ 使用默认 feeds 配置"
-        fi
+        [[ -f "$FEEDS_CONF" ]] && cp "$FEEDS_CONF" feeds.conf.default && echo "✓ 已应用 feeds 配置: $VERSION.conf" || { touch feeds.conf.default; echo "✓ 使用默认 feeds 配置"; }
         ;;
         
     oaf)
@@ -77,63 +62,64 @@ case "$PHASE" in
         HOSTNAME="Router-$([ "$PROFILE_TYPE" == "main" ] && echo "Main" || echo "Bypass")"
         echo "配置: $PROFILE_TYPE | IP: $ROUTER_IP"
         
-        CONFIG_FILE="package/base-files/files/bin/config_generate"
-        if [[ -f "$CONFIG_FILE" ]]; then
-            sed -i \
-                -e "s/set network.lan.ipaddr='192.168.1.1'/set network.lan.ipaddr='$ROUTER_IP'/g" \
-                -e "s/set system.@system\[0\].hostname='ImmortalWrt'/set system.@system[0].hostname='$HOSTNAME'/g" \
-                -e "s/set system.@system\[0\].timezone='GMT0'/set system.@system[0].timezone='CST-8'/g" \
-                -e "s/set system.@system\[0\].zonename='UTC'/set system.@system[0].zonename='Asia\/Shanghai'/g" \
-                "$CONFIG_FILE"
-        fi
+        [[ -f "package/base-files/files/bin/config_generate" ]] && sed -i \
+            -e "s/set network.lan.ipaddr='192.168.1.1'/set network.lan.ipaddr='$ROUTER_IP'/g" \
+            -e "s/set system.@system\[0\].hostname='ImmortalWrt'/set system.@system[0].hostname='$HOSTNAME'/g" \
+            -e "s/set system.@system\[0\].timezone='GMT0'/set system.@system[0].timezone='CST-8'/g" \
+            -e "s/set system.@system\[0\].zonename='UTC'/set system.@system[0].zonename='Asia\/Shanghai'/g" \
+            "package/base-files/files/bin/config_generate"
         
         mkdir -p files/etc/uci-defaults
         BOOT_SCRIPT="files/etc/uci-defaults/99-custom-config"
-        cat > "$BOOT_SCRIPT" <<EOF
+        
+        {
+            cat <<EOF
 #!/bin/sh
 uci set network.lan.ipaddr='$ROUTER_IP'
 uci set system.@system[0].hostname='$HOSTNAME'
 uci set system.@system[0].timezone='CST-8'
 uci set system.@system[0].zonename='Asia/Shanghai'
 uci set luci.main.mediaurlbase='/luci-static/argon'
-uci commit luci
 EOF
-        
-        if [[ "$PROFILE_TYPE" == "main" ]]; then
-            if [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]]; then
-                ESCAPED_USER=$(printf '%s\n' "$PPPOE_USERNAME" | sed 's/[\/&]/\\&/g')
-                ESCAPED_PASS=$(printf '%s\n' "$PPPOE_PASSWORD" | sed 's/[\/&]/\\&/g')
-                cat >> "$BOOT_SCRIPT" <<EOF
+
+            if [[ "$PROFILE_TYPE" == "main" ]]; then
+                if [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]]; then
+                    ESCAPED_USER=$(printf '%s\n' "$PPPOE_USERNAME" | sed 's/[\/&]/\\&/g')
+                    ESCAPED_PASS=$(printf '%s\n' "$PPPOE_PASSWORD" | sed 's/[\/&]/\\&/g')
+                    cat <<EOF
 uci set network.wan.proto='pppoe'
 uci set network.wan.username='$ESCAPED_USER'
 uci set network.wan.password='$ESCAPED_PASS'
 uci set network.wan.ipv6='auto'
 EOF
-            else
-                cat >> "$BOOT_SCRIPT" <<EOF
+                else
+                    cat <<EOF
 uci set network.wan.proto='dhcp'
 uci set network.wan6.proto='dhcpv6'
 EOF
-            fi
-        else
-            cat >> "$BOOT_SCRIPT" <<EOF
+                fi
+            else
+                cat <<EOF
 uci set dhcp.lan.ignore='1'
 uci delete dhcp.lan.start 2>/dev/null
 uci delete dhcp.lan.limit 2>/dev/null
 uci delete dhcp.lan.leasetime 2>/dev/null
 EOF
-        fi
-        
-        [[ -n "$ROOT_PASSWORD" ]] && { echo "→ 设置 root 密码..."; local ENCRYPTED_PASS=$(echo "$ROOT_PASSWORD" | mkpasswd -m sha-512 -s); cat >> "$BOOT_SCRIPT" <<EOF
-uci set system.@system[0].password='$ENCRYPTED_PASS'
+            fi
+            
+            [[ -n "$ROOT_PASSWORD" ]] && { echo "→ 设置 root 密码..."; cat <<EOF
+uci set system.@system[0].password='$(echo "$ROOT_PASSWORD" | mkpasswd -m sha-512 -s)'
 EOF
-        }
-        
-        cat >> "$BOOT_SCRIPT" <<EOF
+            }
+            
+            cat <<EOF
+uci commit luci
 uci commit network
 uci commit system
 uci commit dhcp
 EOF
+        } > "$BOOT_SCRIPT"
+        
         chmod +x "$BOOT_SCRIPT"
         echo "✓ 系统配置完成"
         ;;
