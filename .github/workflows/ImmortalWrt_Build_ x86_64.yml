@@ -24,6 +24,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 配置缓存
+        id: cache
         uses: actions/cache@v4
         with:
           path: |
@@ -49,9 +50,11 @@ jobs:
         run: |
           IFS="-" read -r CONFIG_TYPE PROFILE_TYPE <<< "${{ inputs.profile }}"
           VERSION=${{ inputs.version }}
-          
+          VERSION_MAJOR="${VERSION%.*}"
+
           echo "--- 编译参数 ---"
           echo "版本: $VERSION"
+          echo "主版本: $VERSION_MAJOR"
           echo "配置: $CONFIG_TYPE-$PROFILE_TYPE"
           [[ -n "${{ inputs.custom_ip }}" ]] && echo "自定义IP: ${{ inputs.custom_ip }}" || echo "自定义IP: (使用默认)"
           [[ -n "${{ inputs.custom_gateway }}" ]] && echo "自定义网关: ${{ inputs.custom_gateway }}" || echo "自定义网关: (使用默认)"
@@ -61,9 +64,9 @@ jobs:
           
           {
             echo "RELEASE_TAG=$VERSION"
-            echo "VERSION_MAJOR=${VERSION%.*}"
+            echo "VERSION_MAJOR=${VERSION_MAJOR}"
             echo "CONFIG_FILE=${VERSION_MAJOR}-${CONFIG_TYPE}.config"
-            echo "PROFILE_TYPE=$PROFILE_TYPE"
+            echo "PROFILE_TYPE=${PROFILE_TYPE}"
             printf 'CUSTOM_IP=%s\n' "${{ inputs.custom_ip }}"
             printf 'CUSTOM_GATEWAY=%s\n' "${{ inputs.custom_gateway }}"
             printf 'PPPOE_USERNAME=%s\n' "${{ inputs.pppoe_username }}"
@@ -81,7 +84,6 @@ jobs:
           
           "$GITHUB_WORKSPACE/scripts/diy.sh" -v "$VERSION_MAJOR" -p before
           
-          # 【只加了调试输出，完全不改变你原有逻辑】
           echo "正在查找配置文件: $GITHUB_WORKSPACE/configs/$CONFIG_FILE"
           ls "$GITHUB_WORKSPACE/configs/"
           
