@@ -46,9 +46,7 @@ if [[ "$PHASE" == "before" ]]; then
     rm -f feeds.conf
     if [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]]; then
         cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf.default
-        echo "✓ 已应用 feeds 配置"
-    else
-        echo "ℹ 使用默认 feeds 配置"
+        echo "✓ 已应用feeds配置（$VERSION.conf）"
     fi
 
     ./scripts/feeds update -a
@@ -77,9 +75,8 @@ fi
 if [[ "$PHASE" == "after" ]]; then
     mkdir -p files/etc/uci-defaults
     OUTPUT="files/etc/uci-defaults/99-custom-config"
-    chmod +x "$OUTPUT"
 
-    cat > "$OUTPUT" <<EOF
+    cat > "$OUTPUT" <<'EOF'
 #!/bin/sh
 EOF
 
@@ -142,7 +139,7 @@ uci commit
 /etc/init.d/network reload
 exit 0
 EOF
-
+    chmod +x "$OUTPUT"
     if [[ -n "$ROOT_PASSWORD" ]]; then
         ENCRYPTED_PASS=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin 2>/dev/null || true)
         if [[ -n "$ENCRYPTED_PASS" ]]; then
