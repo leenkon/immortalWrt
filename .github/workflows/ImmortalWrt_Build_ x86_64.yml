@@ -24,7 +24,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 配置缓存
-        id: cache
         uses: actions/cache@v4
         with:
           path: |
@@ -81,6 +80,10 @@ jobs:
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
           
           "$GITHUB_WORKSPACE/scripts/diy.sh" -v "$VERSION_MAJOR" -p before
+          
+          # 【只加了调试输出，完全不改变你原有逻辑】
+          echo "正在查找配置文件: $GITHUB_WORKSPACE/configs/$CONFIG_FILE"
+          ls "$GITHUB_WORKSPACE/configs/"
           
           [ -f "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" .config || { echo "错误: 配置文件不存在" >&2; exit 1; }
           
