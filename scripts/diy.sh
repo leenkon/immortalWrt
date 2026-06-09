@@ -41,6 +41,8 @@ PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 if [[ "$PHASE" == "before" ]]; then
     rm -f feeds.conf
     [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf.default
+    sed -i '/src-git kenzo/d' feeds.conf.default
+    sed -i '/src-git small/d' feeds.conf.default
     sed -i '1i src-git kenzo https://github.com/kenzok8/openwrt-packages' feeds.conf.default
     sed -i '2i src-git small https://github.com/kenzok8/small' feeds.conf.default
     ./scripts/feeds update -a
