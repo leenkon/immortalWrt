@@ -8,9 +8,7 @@ DEF_MAIN_IP="192.168.1.1"
 DEF_BYPASS_IP="192.168.1.2"
 DEF_MAIN_GATEWAY="192.168.1.1"
 
-_escape_sq() {
-    printf '%s' "${1//\'/\'\\\'\'}"
-}
+_escape_sq() { printf '%s' "${1//\'/\'\\\'\'}"; }
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -31,34 +29,25 @@ done
 [[ "$PHASE" =~ ^(after|oaf)$ && -z "$PROFILE_TYPE" ]] && { echo "错误: $PHASE 阶段必须指定路由类型 (-t)"; exit 1; }
 [[ -n "$PROFILE_TYPE" && "$PROFILE_TYPE" != "main" && "$PROFILE_TYPE" != "bypass" ]] && { echo "错误: 路由类型必须是 main 或 bypass"; exit 1; }
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 if [[ "$PHASE" == "before" ]]; then
     rm -f feeds.conf
-    FEEDS_CONF="$PROJECT_ROOT/feeds/$VERSION.conf"
-    if [[ -f "$FEEDS_CONF" ]]; then
-        cp "$FEEDS_CONF" feeds.conf.default
-        echo "✓ 已应用 feeds 配置: $VERSION.conf"
-    else
-        echo "ℹ 未找到 $VERSION.conf，保留 ImmortalWrt 默认 feeds"
-    fi
+    [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf.default && echo "✓ feeds: $VERSION.conf" || echo "ℹ feeds: 使用默认"
     exit 0
 fi
 
 if [[ "$PHASE" == "oaf" ]]; then
-    rm -rf feeds/packages/net/oaf feeds/packages/net/open-app-filter \
-           package/feeds/packages/oaf package/feeds/packages/luci-app-oaf \
-           package/feeds/packages/open-app-filter 2>/dev/null || true
-    echo "✓ 清理自带 OAF 完成"
+    rm -rf feeds/packages/net/oaf feeds/packages/net/open-app-filter package/feeds/packages/{oaf,luci-app-oaf,open-app-filter} 2>/dev/null || true
+    echo "✓ 清理 OAF"
 
     if [[ "$INSTALL_OAF" == true ]]; then
         [[ "$PROFILE_TYPE" == "bypass" ]] && echo "⚠ 旁路由安装 OAF 可能与流量转发软件冲突"
         if git clone --depth 1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter 2>/dev/null; then
             echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
-            echo "✓ 官方 OAF 安装完成"
+            echo "✓ 安装 OAF"
         else
-            echo "✗ OAF 安装失败（可能是网络问题），跳过"
+            echo "✗ OAF 安装失败"
         fi
     fi
     exit 0
@@ -70,25 +59,7 @@ if [[ "$PHASE" == "after" ]]; then
         GATEWAY_IP="${CUSTOM_GATEWAY:-${CUSTOM_IP:+${CUSTOM_IP%.*}.1}}"
         [[ -z "$GATEWAY_IP" ]] && GATEWAY_IP="$DEF_MAIN_GATEWAY"
         HOSTNAME="Router-Bypass"
-        echo "→ 配置: 旁路由 | IP: $ROUTER_IP | 网关: $GATEWAY_IP"
-    else
-        ROUTER_IP="${CUSTOM_IP:-$DEF_MAIN_IP}"
-        HOSTNAME="Router-Main"
-        echo "→ 配置: 主路由 | IP: $ROUTER_IP"
-    fi
-
-    PPPOE_USERNAME_SAFE=$(_escape_sq "$PPPOE_USERNAME")
-    PPPOE_PASSWORD_SAFE=$(_escape_sq "$PPPOE_PASSWORD")
-
-    mkdir -p files/etc/uci-defaults
-    BOOT_SCRIPT="files/etc/uci-defaults/99-custom-config"
-
-    cat > "$BOOT_SCRIPT" <<'XYZ123'
-#!/bin/sh
-XYZ123
-
-    if [[ "$PROFILE_TYPE" == "bypass" ]]; then
-        cat >> "$BOOT_SCRIPT" <<XYZ123
+        NETWORK_CONF=$(cat <<EOF
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.255.0'
@@ -100,38 +71,43 @@ uci set dhcp.lan.ignore='1'
 uci delete dhcp.lan.start 2>/dev/null
 uci delete dhcp.lan.limit 2>/dev/null
 uci delete dhcp.lan.leasetime 2>/dev/null
-
-XYZ123
+EOF
+)
     else
-        cat >> "$BOOT_SCRIPT" <<XYZ123
-uci set network.lan.ipaddr='$ROUTER_IP'
-XYZ123
-
+        ROUTER_IP="${CUSTOM_IP:-$DEF_MAIN_IP}"
+        HOSTNAME="Router-Main"
+        
         if [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]]; then
-            cat >> "$BOOT_SCRIPT" <<XYZ123
+            WAN_CONF=$(cat <<EOF
 uci set network.wan.proto='pppoe'
-uci set network.wan.username='$PPPOE_USERNAME_SAFE'
-uci set network.wan.password='$PPPOE_PASSWORD_SAFE'
+uci set network.wan.username='$(_escape_sq "$PPPOE_USERNAME")'
+uci set network.wan.password='$(_escape_sq "$PPPOE_PASSWORD")'
 uci set network.wan.ipv6='auto'
-XYZ123
+EOF
+)
         else
-            cat >> "$BOOT_SCRIPT" <<'XYZ123'
+            WAN_CONF=$(cat <<'EOF'
 uci set network.wan.proto='dhcp'
 uci set network.wan6.proto='dhcpv6'
-XYZ123
+EOF
+)
         fi
-
-        cat >> "$BOOT_SCRIPT" <<'XYZ123'
-
+        
+        NETWORK_CONF=$(cat <<EOF
+uci set network.lan.ipaddr='$ROUTER_IP'
+$WAN_CONF
 uci set dhcp.lan.ignore='0'
 uci set dhcp.lan.start='100'
 uci set dhcp.lan.limit='150'
 uci set dhcp.lan.leasetime='12h'
-
-XYZ123
+EOF
+)
     fi
 
-    cat >> "$BOOT_SCRIPT" <<XYZ123
+    mkdir -p files/etc/uci-defaults
+    cat > files/etc/uci-defaults/99-custom-config <<EOF
+#!/bin/sh
+$NETWORK_CONF
 uci set system.@system[0].hostname='$HOSTNAME'
 uci set system.@system[0].timezone='CST-8'
 uci set system.@system[0].zonename='Asia/Shanghai'
@@ -144,27 +120,17 @@ uci set system.ntp.enable_server='1'
 uci commit
 /etc/init.d/network reload 2>/dev/null
 exit 0
-XYZ123
-
-    chmod +x "$BOOT_SCRIPT"
-    echo "✓ uci-defaults 脚本创建完成"
+EOF
+    chmod +x files/etc/uci-defaults/99-custom-config
+    echo "✓ 生成配置脚本"
 
     if [[ -n "$ROOT_PASSWORD" ]]; then
-        echo "→ 设置 root 密码..."
-        ENCRYPTED_PASS=""
-        if command -v mkpasswd &>/dev/null; then
-            ENCRYPTED_PASS=$(printf '%s' "$ROOT_PASSWORD" | mkpasswd -m sha-512 -s 2>/dev/null) || true
-        fi
-        if [[ -z "$ENCRYPTED_PASS" ]] && command -v openssl &>/dev/null; then
-            ENCRYPTED_PASS=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin 2>/dev/null) || true
-        fi
+        ENCRYPTED_PASS=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin 2>/dev/null)
 
         if [[ -n "$ENCRYPTED_PASS" ]]; then
             mkdir -p files/etc
-            if [[ -f "package/base-files/files/etc/shadow" ]]; then
-                cp package/base-files/files/etc/shadow files/etc/shadow
-            else
-                cat > files/etc/shadow <<'SHADOW_ABC'
+            [[ -f "package/base-files/files/etc/shadow" ]] && cp package/base-files/files/etc/shadow files/etc/shadow || \
+                cat > files/etc/shadow <<'EOF'
 root::0:0:99999:7:::
 daemon:*:0:0:99999:7:::
 ftp:*:0:0:99999:7:::
@@ -172,17 +138,15 @@ network:*:0:0:99999:7:::
 nobody:*:0:0:99999:7:::
 dnsmasq:*:0:0:99999:7:::
 logd:*:0:0:99999:7:::
-SHADOW_ABC
-            fi
+EOF
             awk -F: -v hash="$ENCRYPTED_PASS" 'BEGIN{OFS=":"} $1=="root"{$2=hash}1' files/etc/shadow > files/etc/shadow.tmp && mv -f files/etc/shadow.tmp files/etc/shadow
-            echo "✓ root 密码设置完成（SHA-512 加密）"
+            echo "✓ 设置 root 密码"
         else
-            echo "⚠ 系统缺少 mkpasswd/openssl，密码无法提前加密"
-            echo "  固件启动后请手动执行: passwd root"
+            echo "⚠ 系统缺少 OpenSSL，密码未设置"
         fi
     fi
 
-    echo "✓ 系统配置完成"
+    echo "✓ 配置完成"
     exit 0
 fi
 
