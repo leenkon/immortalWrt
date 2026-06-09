@@ -91,15 +91,11 @@ jobs:
           echo "PROFILE_TYPE=$PROFILE_TYPE" >> $GITHUB_ENV
           echo "INSTALL_OAF=$INPUT_INSTALL_OAF" >> $GITHUB_ENV
 
-          # 用循环 + heredoc 安全写入可能含特殊字符的值
-          for var in CUSTOM_IP CUSTOM_GATEWAY PPPOE_USER PPPOE_PASS ROOT_PASSWORD; do
-            eval "val=\${INPUT_$var}"
-            {
-              echo "${var}<<'EOF_VAR'"
-              echo "$val"
-              echo "EOF_VAR"
-            } >> $GITHUB_ENV
-          done
+          printf 'CUSTOM_IP=%s\n' "$INPUT_CUSTOM_IP" >> $GITHUB_ENV
+          printf 'CUSTOM_GATEWAY=%s\n' "$INPUT_CUSTOM_GATEWAY" >> $GITHUB_ENV
+          printf 'PPPOE_USER=%s\n' "$INPUT_PPPOE_USER" >> $GITHUB_ENV
+          printf 'PPPOE_PASS=%s\n' "$INPUT_PPPOE_PASS" >> $GITHUB_ENV
+          printf 'ROOT_PASSWORD=%s\n' "$INPUT_ROOT_PASSWORD" >> $GITHUB_ENV
 
       - name: 安装系统依赖
         run: |
