@@ -80,7 +80,7 @@ jobs:
           cd openwrt
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
           
-          [[ "${{ steps.cache.outputs.cache-hit }}" != "true" ]] && "$GITHUB_WORKSPACE/scripts/diy.sh" -v "$VERSION_MAJOR" -p before
+          "$GITHUB_WORKSPACE/scripts/diy.sh" -v "$VERSION_MAJOR" -p before
           
           [ -f "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" .config || { echo "错误: 配置文件不存在" >&2; exit 1; }
           

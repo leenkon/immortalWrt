@@ -40,14 +40,11 @@ PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # before: feeds 配置与冲突处理
 if [[ "$PHASE" == "before" ]]; then
     rm -f feeds.conf
-    [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf.default
-    sed -i '/src-git kenzo/d' feeds.conf.default
-    sed -i '/src-git small/d' feeds.conf.default
-    sed -i '1i src-git kenzo https://github.com/kenzok8/openwrt-packages' feeds.conf.default
-    sed -i '2i src-git small https://github.com/kenzok8/small' feeds.conf.default
+    [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf.default || cp feeds.conf.default feeds.conf.default.bak
     ./scripts/feeds update -a
-    rm -rf feeds/luci/applications/luci-app-mosdns feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} feeds/packages/utils/v2dat 2>/dev/null || true
-    rm -rf feeds/packages/lang/golang && git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang feeds/packages/lang/golang 2>/dev/null
+    if grep -qs 'src-git small' feeds.conf.default; then
+        rm -rf feeds/luci/applications/luci-app-mosdns feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} feeds/packages/utils/v2dat 2>/dev/null || true
+        rm -rf feeds/packages/lang/golang && git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang feeds/packages/lang/golang 2>/dev/null && echo "✓ 替换 golang 版本"
     exit 0
 fi
 
