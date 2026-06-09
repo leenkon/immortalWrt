@@ -4,6 +4,7 @@ set -euo pipefail
 VERSION="" PHASE="" PROFILE_TYPE="" INSTALL_OAF=false
 CUSTOM_IP="" CUSTOM_GATEWAY="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
 DEF_MAIN_IP="10.10.10.1" DEF_BYPASS_IP="10.10.10.99" DEF_GATEWAY="10.10.10.1"
+
 _escape_sq() { printf '%s' "${1//\'/\'\\\'\'}"; }
 
 while [[ $# -gt 0 ]]; do
@@ -52,10 +53,10 @@ fi
 # oaf: 清理并可选安装
 if [[ "$PHASE" == "oaf" ]]; then
     rm -rf feeds/packages/net/{oaf,open-app-filter} package/feeds/packages/{oaf,luci-app-oaf,open-app-filter} 2>/dev/null || true
-    [[ "$INSTALL_OAF" == true ]] && {
+    if [[ "$INSTALL_OAF" == true ]]; then
         [[ "$PROFILE_TYPE" == "bypass" ]] && echo "⚠ 旁路由安装 OAF 可能与流量转发软件冲突"
         git clone --depth 1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter 2>/dev/null && echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
-    }
+    fi
     exit 0
 fi
 
@@ -75,11 +76,15 @@ uci set network.wan6.proto='none' 2>/dev/null
 uci set dhcp.lan.ignore='1'"
     else
         ROUTER_IP="${CUSTOM_IP:-$DEF_MAIN_IP}"
-        [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && WAN_CONF="uci set network.wan.proto='pppoe'
+        if [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]]; then
+            WAN_CONF="uci set network.wan.proto='pppoe'
 uci set network.wan.username='$(_escape_sq "$PPPOE_USERNAME")'
 uci set network.wan.password='$(_escape_sq "$PPPOE_PASSWORD")'
-uci set network.wan.ipv6='auto'" || WAN_CONF="uci set network.wan.proto='dhcp'
+uci set network.wan.ipv6='auto'"
+        else
+            WAN_CONF="uci set network.wan.proto='dhcp'
 uci set network.wan6.proto='dhcpv6'"
+        fi
         NETWORK_CONF="uci set network.lan.ipaddr='$ROUTER_IP'
 $WAN_CONF
 uci set dhcp.lan.ignore='0'
@@ -89,7 +94,7 @@ uci set dhcp.lan.leasetime='12h'"
     fi
 
     mkdir -p files/etc/uci-defaults
-    cat > files/etc/uci-defaults/99-custom-config <<EOF
+    cat > files/etc/uci-defaults/99-custom-config <<CUSTOM_EOF
 #!/bin/sh
 $NETWORK_CONF
 uci set system.@system[0].hostname='Router-${PROFILE_TYPE^}'
@@ -104,13 +109,16 @@ uci set system.ntp.enable_server='1'
 uci commit
 /etc/init.d/network reload 2>/dev/null
 exit 0
-EOF
+CUSTOM_EOF
 
-    [[ -n "$ROOT_PASSWORD" ]] && {
+    if [[ -n "$ROOT_PASSWORD" ]]; then
         ENCRYPTED_PASS=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin 2>/dev/null)
         if [[ -n "$ENCRYPTED_PASS" ]]; then
             mkdir -p files/etc
-            [[ -f "package/base-files/files/etc/shadow" ]] && cp package/base-files/files/etc/shadow files/etc/shadow || cat > files/etc/shadow <<'SHADOW_EOF'
+            if [[ -f "package/base-files/files/etc/shadow" ]]; then
+                cp package/base-files/files/etc/shadow files/etc/shadow
+            else
+                cat > files/etc/shadow <<SHADOW_ABC
 root::0:0:99999:7:::
 daemon:*:0:0:99999:7:::
 ftp:*:0:0:99999:7:::
@@ -118,10 +126,11 @@ network:*:0:0:99999:7:::
 nobody:*:0:0:99999:7:::
 dnsmasq:*:0:0:99999:7:::
 logd:*:0:0:99999:7:::
-SHADOW_EOF
+SHADOW_ABC
+            fi
             awk -F: -v h="$ENCRYPTED_PASS" 'BEGIN{OFS=":"} $1=="root"{$2=h}1' files/etc/shadow > files/etc/shadow.tmp && mv -f files/etc/shadow.tmp files/etc/shadow
         fi
-    }
+    fi
     echo "✓ 配置完成"
     exit 0
 fi
