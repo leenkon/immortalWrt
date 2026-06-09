@@ -31,17 +31,19 @@ done
 
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
+# --- before: feeds 配置 ---
 if [[ "$PHASE" == "before" ]]; then
     rm -f feeds.conf
     [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf.default && echo "✓ feeds: $VERSION.conf" || echo "ℹ feeds: 使用默认"
     exit 0
 fi
 
+# --- oaf: 清理并可选安装 ---
 if [[ "$PHASE" == "oaf" ]]; then
     rm -rf feeds/packages/net/oaf feeds/packages/net/open-app-filter package/feeds/packages/{oaf,luci-app-oaf,open-app-filter} 2>/dev/null || true
     echo "✓ 清理 OAF"
 
-    if [[ "$INSTALL_OAF" == true ]]; then
+    [[ "$INSTALL_OAF" == true ]] && {
         [[ "$PROFILE_TYPE" == "bypass" ]] && echo "⚠ 旁路由安装 OAF 可能与流量转发软件冲突"
         if git clone --depth 1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter 2>/dev/null; then
             echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
@@ -49,16 +51,21 @@ if [[ "$PHASE" == "oaf" ]]; then
         else
             echo "✗ OAF 安装失败"
         fi
-    fi
+    }
     exit 0
 fi
 
+# --- after: 系统配置 ---
 if [[ "$PHASE" == "after" ]]; then
     if [[ "$PROFILE_TYPE" == "bypass" ]]; then
         ROUTER_IP="${CUSTOM_IP:-$DEF_BYPASS_IP}"
-        GATEWAY_IP="${CUSTOM_GATEWAY:-${CUSTOM_IP:+${CUSTOM_IP%.*}.1}}"
-        [[ -z "$GATEWAY_IP" ]] && GATEWAY_IP="$DEF_MAIN_GATEWAY"
-        HOSTNAME="Router-Bypass"
+        if [[ -n "$CUSTOM_GATEWAY" ]]; then
+            GATEWAY_IP="$CUSTOM_GATEWAY"
+        elif [[ -n "$CUSTOM_IP" ]]; then
+            GATEWAY_IP="${CUSTOM_IP%.*}.1"
+        else
+            GATEWAY_IP="$DEF_MAIN_GATEWAY"
+        fi
         NETWORK_CONF=$(cat <<EOF
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ROUTER_IP'
@@ -68,15 +75,10 @@ uci set network.lan.dns='$GATEWAY_IP 223.5.5.5'
 uci set network.wan.proto='none' 2>/dev/null
 uci set network.wan6.proto='none' 2>/dev/null
 uci set dhcp.lan.ignore='1'
-uci delete dhcp.lan.start 2>/dev/null
-uci delete dhcp.lan.limit 2>/dev/null
-uci delete dhcp.lan.leasetime 2>/dev/null
 EOF
 )
     else
         ROUTER_IP="${CUSTOM_IP:-$DEF_MAIN_IP}"
-        HOSTNAME="Router-Main"
-        
         if [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]]; then
             WAN_CONF=$(cat <<EOF
 uci set network.wan.proto='pppoe'
@@ -92,7 +94,6 @@ uci set network.wan6.proto='dhcpv6'
 EOF
 )
         fi
-        
         NETWORK_CONF=$(cat <<EOF
 uci set network.lan.ipaddr='$ROUTER_IP'
 $WAN_CONF
@@ -104,6 +105,7 @@ EOF
 )
     fi
 
+    HOSTNAME="Router-${PROFILE_TYPE^}"
     mkdir -p files/etc/uci-defaults
     cat > files/etc/uci-defaults/99-custom-config <<EOF
 #!/bin/sh
@@ -124,13 +126,12 @@ EOF
     chmod +x files/etc/uci-defaults/99-custom-config
     echo "✓ 生成配置脚本"
 
-    if [[ -n "$ROOT_PASSWORD" ]]; then
+    [[ -n "$ROOT_PASSWORD" ]] && {
         ENCRYPTED_PASS=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin 2>/dev/null)
-
         if [[ -n "$ENCRYPTED_PASS" ]]; then
             mkdir -p files/etc
             [[ -f "package/base-files/files/etc/shadow" ]] && cp package/base-files/files/etc/shadow files/etc/shadow || \
-                cat > files/etc/shadow <<'EOF'
+                cat > files/etc/shadow <<'SHADOW_EOF'
 root::0:0:99999:7:::
 daemon:*:0:0:99999:7:::
 ftp:*:0:0:99999:7:::
@@ -138,13 +139,13 @@ network:*:0:0:99999:7:::
 nobody:*:0:0:99999:7:::
 dnsmasq:*:0:0:99999:7:::
 logd:*:0:0:99999:7:::
-EOF
+SHADOW_EOF
             awk -F: -v hash="$ENCRYPTED_PASS" 'BEGIN{OFS=":"} $1=="root"{$2=hash}1' files/etc/shadow > files/etc/shadow.tmp && mv -f files/etc/shadow.tmp files/etc/shadow
             echo "✓ 设置 root 密码"
         else
-            echo "⚠ 系统缺少 OpenSSL，密码未设置"
+            echo "⚠ OpenSSL 不可用，密码未设置"
         fi
-    fi
+    }
 
     echo "✓ 配置完成"
     exit 0

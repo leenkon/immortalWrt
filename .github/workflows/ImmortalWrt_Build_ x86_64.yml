@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '选择精确发布版本'
+        description: '版本'
         required: true
         type: choice
         options:
@@ -16,43 +16,19 @@ on:
           - 24.10.5
           - 24.10.6
       profile:
-        description: '选择配置文件'
+        description: '配置'
         required: true
         type: choice
         options:
           - mini-bypass
           - default-main
           - full-main
-      custom_ip:
-        description: '自定义 IP 地址'
-        required: false
-        type: string
-        default: ''
-      custom_gateway:
-        description: '自定义网关(旁路由模式必填，指向主路由IP)'
-        required: false
-        type: string
-        default: ''
-      pppoe_username:
-        description: 'PPPoE账号'
-        required: false
-        type: string
-        default: ''
-      pppoe_password:
-        description: 'PPPoE密码'
-        required: false
-        type: string
-        default: ''
-      install_oaf:
-        description: '安装OpenAppFilter(OAF)'
-        required: true
-        type: boolean
-        default: false
-      root_password:
-        description: '设置root密码（默认无需密码）'
-        required: false
-        type: string
-        default: ''
+      custom_ip: {description: '自定义IP', type: string, default: ''}
+      custom_gateway: {description: '网关(旁路由)', type: string, default: ''}
+      pppoe_username: {description: 'PPPoE账号', type: string, default: ''}
+      pppoe_password: {description: 'PPPoE密码', type: string, default: ''}
+      install_oaf: {description: '安装OAF', type: boolean, default: false}
+      root_password: {description: 'root密码', type: string, default: ''}
 
 permissions:
   contents: write
@@ -63,41 +39,37 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: 初始化环境变量
+      - name: 初始化
         env:
-          INPUT_VERSION: ${{ github.event.inputs.version }}
-          INPUT_PROFILE: ${{ github.event.inputs.profile }}
-          INPUT_CUSTOM_IP: ${{ github.event.inputs.custom_ip }}
-          INPUT_CUSTOM_GATEWAY: ${{ github.event.inputs.custom_gateway }}
-          INPUT_PPPOE_USER: ${{ github.event.inputs.pppoe_username }}
-          INPUT_PPPOE_PASS: ${{ github.event.inputs.pppoe_password }}
-          INPUT_INSTALL_OAF: ${{ github.event.inputs.install_oaf }}
-          INPUT_ROOT_PASSWORD: ${{ github.event.inputs.root_password }}
+          IP: ${{ inputs.custom_ip }}
+          GW: ${{ inputs.custom_gateway }}
+          PPPOE_USER: ${{ inputs.pppoe_username }}
+          PPPOE_PASS: ${{ inputs.pppoe_password }}
+          OAF: ${{ inputs.install_oaf }}
+          ROOT_PASS: ${{ inputs.root_password }}
         run: |
           set -e
-          VERSION="$INPUT_VERSION"
-          PROFILE="$INPUT_PROFILE"
+          VERSION=${{ inputs.version }}
+          PROFILE=${{ inputs.profile }}
           IFS="-" read -r CONFIG_TYPE PROFILE_TYPE <<< "$PROFILE"
           VERSION_MAJOR=${VERSION%.*}
-          FINAL_CONFIG="${VERSION_MAJOR}-${CONFIG_TYPE}.config"
+          
+          {
+            echo "RELEASE_TAG=$VERSION"
+            echo "VERSION_MAJOR=$VERSION_MAJOR"
+            echo "CONFIG_FILE=${VERSION_MAJOR}-${CONFIG_TYPE}.config"
+            echo "PROFILE_TYPE=$PROFILE_TYPE"
+            echo "INSTALL_OAF=$OAF"
+            printf 'CUSTOM_IP=%s\n' "$IP"
+            printf 'CUSTOM_GATEWAY=%s\n' "$GW"
+            printf 'PPPOE_USERNAME=%s\n' "$PPPOE_USER"
+            printf 'PPPOE_PASSWORD=%s\n' "$PPPOE_PASS"
+            printf 'ROOT_PASSWORD=%s\n' "$ROOT_PASS"
+          } >> $GITHUB_ENV
 
-          echo "RELEASE_TAG=$VERSION" >> $GITHUB_ENV
-          echo "RUN_TIMESTAMP=$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
-          echo "VERSION_MAJOR=$VERSION_MAJOR" >> $GITHUB_ENV
-          echo "CONFIG_FILE=$FINAL_CONFIG" >> $GITHUB_ENV
-          echo "PROFILE_TYPE=$PROFILE_TYPE" >> $GITHUB_ENV
-          echo "INSTALL_OAF=$INPUT_INSTALL_OAF" >> $GITHUB_ENV
-
-          printf 'CUSTOM_IP=%s\n' "$INPUT_CUSTOM_IP" >> $GITHUB_ENV
-          printf 'CUSTOM_GATEWAY=%s\n' "$INPUT_CUSTOM_GATEWAY" >> $GITHUB_ENV
-          printf 'PPPOE_USER=%s\n' "$INPUT_PPPOE_USER" >> $GITHUB_ENV
-          printf 'PPPOE_PASS=%s\n' "$INPUT_PPPOE_PASS" >> $GITHUB_ENV
-          printf 'ROOT_PASSWORD=%s\n' "$INPUT_ROOT_PASSWORD" >> $GITHUB_ENV
-
-      - name: 安装系统依赖
+      - name: 安装依赖
         run: |
           sudo apt update -y
           sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
@@ -109,63 +81,52 @@ jobs:
           python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs \
           upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
 
-      - name: 克隆 ImmortalWrt 源码
+      - name: 克隆源码
         run: |
-          sudo rm -rf openwrt
+          set -e
+          rm -rf openwrt
           git clone https://github.com/immortalwrt/immortalwrt openwrt
           cd openwrt
-          git fetch --tags
           git checkout "v$RELEASE_TAG"
 
-      - name: 编译前置配置
+      - name: 配置与编译
         run: |
           set -e
           cd openwrt
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
-
-          "$GITHUB_WORKSPACE/scripts/diy.sh" -v "${VERSION_MAJOR}" -p before
-
-          CONFIG_SRC="$GITHUB_WORKSPACE/configs/${CONFIG_FILE}"
+          
+          "$GITHUB_WORKSPACE/scripts/diy.sh" -v "$VERSION_MAJOR" -p before
+          
+          CONFIG_SRC="$GITHUB_WORKSPACE/configs/$CONFIG_FILE"
           if [ ! -f "$CONFIG_SRC" ]; then
             echo "错误: 配置文件不存在: $CONFIG_SRC" >&2
             exit 1
           fi
           cp "$CONFIG_SRC" .config
-          echo "✓ 已加载配置: ${CONFIG_FILE}"
-
+          
           ./scripts/feeds update -a
-
-          oaf_args=(-v "${VERSION_MAJOR}" -p oaf -t "${PROFILE_TYPE}")
+          
+          oaf_args=(-v "$VERSION_MAJOR" -p oaf -t "$PROFILE_TYPE")
           [[ "$INSTALL_OAF" == "true" ]] && oaf_args+=(--install-oaf)
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${oaf_args[@]}"
-
+          
           ./scripts/feeds install -a
-
-          args=(-v "${VERSION_MAJOR}" -p after -t "${PROFILE_TYPE}")
+          
+          args=(-v "$VERSION_MAJOR" -p after -t "$PROFILE_TYPE")
           [[ -n "$CUSTOM_IP" ]] && args+=(--ip "$CUSTOM_IP")
           [[ "$PROFILE_TYPE" == "bypass" && -n "$CUSTOM_GATEWAY" ]] && args+=(--gateway "$CUSTOM_GATEWAY")
-          [[ "$PROFILE_TYPE" == "main" && -n "$PPPOE_USER" && -n "$PPPOE_PASS" ]] && args+=(--pppoe-user "$PPPOE_USER" --pppoe-pass "$PPPOE_PASS")
+          [[ "$PROFILE_TYPE" == "main" && -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && args+=(--pppoe-user "$PPPOE_USERNAME" --pppoe-pass "$PPPOE_PASSWORD")
           [[ -n "$ROOT_PASSWORD" ]] && args+=(--root-pass "$ROOT_PASSWORD")
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${args[@]}"
+          
+          make defconfig && make download -j$(nproc)
+          make -j$(nproc) V=s || make -j1 V=s
 
-      - name: 生成配置并下载依赖
-        run: |
-          set -e
-          cd openwrt
-          make defconfig
-          make download -j$(nproc)
-
-      - name: 开始编译固件
-        run: |
-          set -e
-          cd openwrt
-          make -j$(nproc) V=s || { echo "并行构建失败，退回单线程重试..."; make -j1 V=s; }
-
-      - name: 上传固件到 Release
+      - name: 上传固件
         uses: softprops/action-gh-release@v2
         with:
-          name: ImmortalWrt x86_64 ${{ env.RELEASE_TAG }} (${{ env.PROFILE_TYPE }}) ${{ env.RUN_TIMESTAMP }}
-          tag_name: ${{ env.RELEASE_TAG }}-${{ env.PROFILE_TYPE }}-${{ env.RUN_TIMESTAMP }}
+          name: ImmortalWrt x86_64 ${{ env.RELEASE_TAG }} (${{ env.PROFILE_TYPE }})
+          tag_name: ${{ env.RELEASE_TAG }}-${{ env.PROFILE_TYPE }}-${{ github.run_id }}
           files: openwrt/bin/targets/x86/64/*combined*.img.gz
           draft: false
           prerelease: false
