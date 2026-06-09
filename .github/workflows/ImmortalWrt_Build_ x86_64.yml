@@ -3,16 +3,8 @@ name: ImmortalWrt x86_64
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: '版本'
-        required: true
-        type: choice
-        options: [25.12.0, 24.10.1, 24.10.2, 24.10.3, 24.10.4, 24.10.5, 24.10.6]
-      profile:
-        description: '配置'
-        required: true
-        type: choice
-        options: [mini-bypass, default-main, full-main]
+      version: {description: '版本', required: true, type: choice, options: [25.12.0, 24.10.1, 24.10.2, 24.10.3, 24.10.4, 24.10.5, 24.10.6]}
+      profile: {description: '配置', required: true, type: choice, options: [mini-bypass, default-main, full-main]}
       custom_ip: {description: '自定义IP', type: string, default: ''}
       custom_gateway: {description: '网关(旁路由)', type: string, default: ''}
       pppoe_username: {description: 'PPPoE账号', type: string, default: ''}
@@ -31,30 +23,16 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 初始化
-        env:
-          IP: ${{ inputs.custom_ip }}
-          GW: ${{ inputs.custom_gateway }}
-          PPPOE_USER: ${{ inputs.pppoe_username }}
-          PPPOE_PASS: ${{ inputs.pppoe_password }}
-          OAF: ${{ inputs.install_oaf }}
-          ROOT_PASS: ${{ inputs.root_password }}
-        run: |
-          set -e
-          IFS="-" read -r CONFIG_TYPE PROFILE_TYPE <<< "${{ inputs.profile }}"
-          VERSION=${{ inputs.version }}
-          {
-            echo "RELEASE_TAG=$VERSION"
-            echo "VERSION_MAJOR=${VERSION%.*}"
-            echo "CONFIG_FILE=${VERSION_MAJOR}-${CONFIG_TYPE}.config"
-            echo "PROFILE_TYPE=$PROFILE_TYPE"
-            echo "INSTALL_OAF=$OAF"
-            printf 'CUSTOM_IP=%s\n' "$IP"
-            printf 'CUSTOM_GATEWAY=%s\n' "$GW"
-            printf 'PPPOE_USERNAME=%s\n' "$PPPOE_USER"
-            printf 'PPPOE_PASSWORD=%s\n' "$PPPOE_PASS"
-            printf 'ROOT_PASSWORD=%s\n' "$ROOT_PASS"
-          } >> $GITHUB_ENV
+      - name: 配置缓存
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            /var/cache/apt/archives
+            openwrt/.git
+            openwrt/feeds
+            openwrt/dl
+          key: build-cache-${{ inputs.version }}-${{ hashFiles('scripts/diy.sh', 'configs/*.config') }}
 
       - name: 安装依赖
         run: |
@@ -68,31 +46,57 @@ jobs:
           python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs \
           upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
 
-      - name: 克隆源码
+      - name: 获取源码
         run: |
-          set -e
-          rm -rf openwrt
-          git clone https://github.com/immortalwrt/immortalwrt openwrt
-          cd openwrt && git checkout "v$RELEASE_TAG"
+          IFS="-" read -r CONFIG_TYPE PROFILE_TYPE <<< "${{ inputs.profile }}"
+          VERSION=${{ inputs.version }}
+          
+          echo "--- 编译参数 ---"
+          echo "版本: $VERSION"
+          echo "配置: $CONFIG_TYPE-$PROFILE_TYPE"
+          [[ -n "${{ inputs.custom_ip }}" ]] && echo "自定义IP: ${{ inputs.custom_ip }}" || echo "自定义IP: (使用默认)"
+          [[ -n "${{ inputs.custom_gateway }}" ]] && echo "自定义网关: ${{ inputs.custom_gateway }}" || echo "自定义网关: (使用默认)"
+          [[ -n "${{ inputs.pppoe_username }}" ]] && echo "PPPoE账号: ${{ inputs.pppoe_username }}"
+          [[ -n "${{ inputs.root_password }}" ]] && echo "root密码: 已设置"
+          echo "----------------"
+          
+          {
+            echo "RELEASE_TAG=$VERSION"
+            echo "VERSION_MAJOR=${VERSION%.*}"
+            echo "CONFIG_FILE=${VERSION_MAJOR}-${CONFIG_TYPE}.config"
+            echo "PROFILE_TYPE=$PROFILE_TYPE"
+            printf 'CUSTOM_IP=%s\n' "${{ inputs.custom_ip }}"
+            printf 'CUSTOM_GATEWAY=%s\n' "${{ inputs.custom_gateway }}"
+            printf 'PPPOE_USERNAME=%s\n' "${{ inputs.pppoe_username }}"
+            printf 'PPPOE_PASSWORD=%s\n' "${{ inputs.pppoe_password }}"
+            printf 'ROOT_PASSWORD=%s\n' "${{ inputs.root_password }}"
+            printf 'INSTALL_OAF=%s\n' "${{ inputs.install_oaf }}"
+          } >> $GITHUB_ENV
+
+          [[ ! -d openwrt/.git ]] && rm -rf openwrt && git clone --depth 1 --branch "v$VERSION" https://github.com/immortalwrt/immortalWrt openwrt || (cd openwrt && git fetch && git checkout "v$VERSION")
 
       - name: 配置与编译
         run: |
-          set -e
           cd openwrt
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
-          "$GITHUB_WORKSPACE/scripts/diy.sh" -v "$VERSION_MAJOR" -p before
-          CONFIG_SRC="$GITHUB_WORKSPACE/configs/$CONFIG_FILE"
-          [ -f "$CONFIG_SRC" ] && cp "$CONFIG_SRC" .config || { echo "错误: 配置文件不存在: $CONFIG_SRC" >&2; exit 1; }
+          
+          [[ "${{ steps.cache.outputs.cache-hit }}" != "true" ]] && "$GITHUB_WORKSPACE/scripts/diy.sh" -v "$VERSION_MAJOR" -p before
+          
+          [ -f "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" .config || { echo "错误: 配置文件不存在" >&2; exit 1; }
+          
           oaf_args=(-v "$VERSION_MAJOR" -p oaf -t "$PROFILE_TYPE")
           [[ "$INSTALL_OAF" == "true" ]] && oaf_args+=(--install-oaf)
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${oaf_args[@]}"
+          
           ./scripts/feeds install -a
+          
           args=(-v "$VERSION_MAJOR" -p after -t "$PROFILE_TYPE")
           [[ -n "$CUSTOM_IP" ]] && args+=(--ip "$CUSTOM_IP")
           [[ "$PROFILE_TYPE" == "bypass" && -n "$CUSTOM_GATEWAY" ]] && args+=(--gateway "$CUSTOM_GATEWAY")
           [[ "$PROFILE_TYPE" == "main" && -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && args+=(--pppoe-user "$PPPOE_USERNAME" --pppoe-pass "$PPPOE_PASSWORD")
           [[ -n "$ROOT_PASSWORD" ]] && args+=(--root-pass "$ROOT_PASSWORD")
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${args[@]}"
+          
           make defconfig && make download -j$(nproc)
           make -j$(nproc) V=s || make -j1 V=s
 

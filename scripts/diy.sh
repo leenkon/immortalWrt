@@ -3,11 +3,7 @@ set -euo pipefail
 
 VERSION="" PHASE="" PROFILE_TYPE="" INSTALL_OAF=false
 CUSTOM_IP="" CUSTOM_GATEWAY="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
-
-DEF_MAIN_IP="10.10.10.1"
-DEF_BYPASS_IP="10.10.10.99"
-DEF_MAIN_GATEWAY="10.10.10.1"
-
+DEF_MAIN_IP="10.10.10.1" DEF_BYPASS_IP="10.10.10.99" DEF_GATEWAY="10.10.10.1"
 _escape_sq() { printf '%s' "${1//\'/\'\\\'\'}"; }
 
 while [[ $# -gt 0 ]]; do
@@ -31,10 +27,20 @@ done
 
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
+[[ "$PHASE" == "after" ]] && {
+    echo "--- 配置参数 ---"
+    echo "路由类型: $PROFILE_TYPE"
+    [[ "$PROFILE_TYPE" == "bypass" ]] && echo "IP地址: ${CUSTOM_IP:-$DEF_BYPASS_IP}" || echo "IP地址: ${CUSTOM_IP:-$DEF_MAIN_IP}"
+    echo "网关: ${CUSTOM_GATEWAY:-$DEF_GATEWAY}"
+    [[ -n "$PPPOE_USERNAME" ]] && echo "PPPoE: $PPPOE_USERNAME"
+    [[ -n "$ROOT_PASSWORD" ]] && echo "密码: 已设置"
+    echo "-----------------"
+}
+
 # before: feeds 配置与冲突处理
 if [[ "$PHASE" == "before" ]]; then
     rm -f feeds.conf
-    [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf.default && echo "✓ feeds: $VERSION.conf" || echo "ℹ feeds: 使用默认"
+    [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf.default
     sed -i '1i src-git kenzo https://github.com/kenzok8/openwrt-packages' feeds.conf.default
     sed -i '2i src-git small https://github.com/kenzok8/small' feeds.conf.default
     ./scripts/feeds update -a
@@ -48,7 +54,7 @@ if [[ "$PHASE" == "oaf" ]]; then
     rm -rf feeds/packages/net/{oaf,open-app-filter} package/feeds/packages/{oaf,luci-app-oaf,open-app-filter} 2>/dev/null || true
     [[ "$INSTALL_OAF" == true ]] && {
         [[ "$PROFILE_TYPE" == "bypass" ]] && echo "⚠ 旁路由安装 OAF 可能与流量转发软件冲突"
-        git clone --depth 1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter 2>/dev/null && echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config && echo "✓ 安装 OAF" || echo "✗ OAF 安装失败"
+        git clone --depth 1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter 2>/dev/null && echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
     }
     exit 0
 fi
@@ -57,7 +63,8 @@ fi
 if [[ "$PHASE" == "after" ]]; then
     if [[ "$PROFILE_TYPE" == "bypass" ]]; then
         ROUTER_IP="${CUSTOM_IP:-$DEF_BYPASS_IP}"
-        [[ -n "$CUSTOM_GATEWAY" ]] && GATEWAY_IP="$CUSTOM_GATEWAY" || { [[ -n "$CUSTOM_IP" ]] && GATEWAY_IP="${CUSTOM_IP%.*}.1" || GATEWAY_IP="$DEF_MAIN_GATEWAY"; }
+        GATEWAY_IP="${CUSTOM_GATEWAY:-${CUSTOM_IP:+${CUSTOM_IP%.*}.1}}"
+        [[ -z "$GATEWAY_IP" ]] && GATEWAY_IP="$DEF_GATEWAY"
         NETWORK_CONF="uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.255.0'
@@ -98,7 +105,6 @@ uci commit
 /etc/init.d/network reload 2>/dev/null
 exit 0
 EOF
-    chmod +x files/etc/uci-defaults/99-custom-config
 
     [[ -n "$ROOT_PASSWORD" ]] && {
         ENCRYPTED_PASS=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin 2>/dev/null)
@@ -114,9 +120,6 @@ dnsmasq:*:0:0:99999:7:::
 logd:*:0:0:99999:7:::
 SHADOW_EOF
             awk -F: -v h="$ENCRYPTED_PASS" 'BEGIN{OFS=":"} $1=="root"{$2=h}1' files/etc/shadow > files/etc/shadow.tmp && mv -f files/etc/shadow.tmp files/etc/shadow
-            echo "✓ 设置 root 密码"
-        else
-            echo "⚠ OpenSSL 不可用，密码未设置"
         fi
     }
     echo "✓ 配置完成"
