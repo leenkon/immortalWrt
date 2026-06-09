@@ -8,7 +8,6 @@ DEF_MAIN_IP="192.168.1.1"
 DEF_BYPASS_IP="192.168.1.2"
 DEF_MAIN_GATEWAY="192.168.1.1"
 
-# 将单引号 ' 转义为 shell 安全的 '\''
 _escape_sq() {
     printf '%s' "${1//\'/\'\\\'\'}"
 }
@@ -35,10 +34,8 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-# --- before: feeds 配置 ---
 if [[ "$PHASE" == "before" ]]; then
     rm -f feeds.conf
-
     FEEDS_CONF="$PROJECT_ROOT/feeds/$VERSION.conf"
     if [[ -f "$FEEDS_CONF" ]]; then
         cp "$FEEDS_CONF" feeds.conf.default
@@ -49,7 +46,6 @@ if [[ "$PHASE" == "before" ]]; then
     exit 0
 fi
 
-# --- oaf: 清理并可选安装 ---
 if [[ "$PHASE" == "oaf" ]]; then
     rm -rf feeds/packages/net/oaf feeds/packages/net/open-app-filter \
            package/feeds/packages/oaf package/feeds/packages/luci-app-oaf \
@@ -68,9 +64,7 @@ if [[ "$PHASE" == "oaf" ]]; then
     exit 0
 fi
 
-# --- after: 系统配置 ---
 if [[ "$PHASE" == "after" ]]; then
-
     if [[ "$PROFILE_TYPE" == "bypass" ]]; then
         ROUTER_IP="${CUSTOM_IP:-$DEF_BYPASS_IP}"
         GATEWAY_IP="${CUSTOM_GATEWAY:-${CUSTOM_IP:+${CUSTOM_IP%.*}.1}}"
@@ -89,12 +83,12 @@ if [[ "$PHASE" == "after" ]]; then
     mkdir -p files/etc/uci-defaults
     BOOT_SCRIPT="files/etc/uci-defaults/99-custom-config"
 
-    {
-        echo '#!/bin/sh'
-        echo ''
+    cat > "$BOOT_SCRIPT" <<'XYZ123'
+#!/bin/sh
+XYZ123
 
-        if [[ "$PROFILE_TYPE" == "bypass" ]]; then
-            cat <<CUSTOM_EOF
+    if [[ "$PROFILE_TYPE" == "bypass" ]]; then
+        cat >> "$BOOT_SCRIPT" <<XYZ123
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.255.0'
@@ -107,37 +101,37 @@ uci delete dhcp.lan.start 2>/dev/null
 uci delete dhcp.lan.limit 2>/dev/null
 uci delete dhcp.lan.leasetime 2>/dev/null
 
-CUSTOM_EOF
-        else
-            cat <<CUSTOM_EOF
+XYZ123
+    else
+        cat >> "$BOOT_SCRIPT" <<XYZ123
 uci set network.lan.ipaddr='$ROUTER_IP'
-CUSTOM_EOF
+XYZ123
 
-            if [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]]; then
-                cat <<CUSTOM_EOF
+        if [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]]; then
+            cat >> "$BOOT_SCRIPT" <<XYZ123
 uci set network.wan.proto='pppoe'
 uci set network.wan.username='$PPPOE_USERNAME_SAFE'
 uci set network.wan.password='$PPPOE_PASSWORD_SAFE'
 uci set network.wan.ipv6='auto'
-CUSTOM_EOF
-            else
-                cat <<'CUSTOM_EOF'
+XYZ123
+        else
+            cat >> "$BOOT_SCRIPT" <<'XYZ123'
 uci set network.wan.proto='dhcp'
 uci set network.wan6.proto='dhcpv6'
-CUSTOM_EOF
-            fi
+XYZ123
+        fi
 
-            cat <<'CUSTOM_EOF'
+        cat >> "$BOOT_SCRIPT" <<'XYZ123'
 
 uci set dhcp.lan.ignore='0'
 uci set dhcp.lan.start='100'
 uci set dhcp.lan.limit='150'
 uci set dhcp.lan.leasetime='12h'
 
-CUSTOM_EOF
-        fi
+XYZ123
+    fi
 
-        cat <<CUSTOM_EOF
+    cat >> "$BOOT_SCRIPT" <<XYZ123
 uci set system.@system[0].hostname='$HOSTNAME'
 uci set system.@system[0].timezone='CST-8'
 uci set system.@system[0].zonename='Asia/Shanghai'
@@ -150,15 +144,13 @@ uci set system.ntp.enable_server='1'
 uci commit
 /etc/init.d/network reload 2>/dev/null
 exit 0
-CUSTOM_EOF
-    } > "$BOOT_SCRIPT"
+XYZ123
 
     chmod +x "$BOOT_SCRIPT"
     echo "✓ uci-defaults 脚本创建完成"
 
     if [[ -n "$ROOT_PASSWORD" ]]; then
         echo "→ 设置 root 密码..."
-
         ENCRYPTED_PASS=""
         if command -v mkpasswd &>/dev/null; then
             ENCRYPTED_PASS=$(printf '%s' "$ROOT_PASSWORD" | mkpasswd -m sha-512 -s 2>/dev/null) || true
@@ -172,7 +164,7 @@ CUSTOM_EOF
             if [[ -f "package/base-files/files/etc/shadow" ]]; then
                 cp package/base-files/files/etc/shadow files/etc/shadow
             else
-                cat > files/etc/shadow <<'SHADOW_EOF'
+                cat > files/etc/shadow <<'SHADOW_ABC'
 root::0:0:99999:7:::
 daemon:*:0:0:99999:7:::
 ftp:*:0:0:99999:7:::
@@ -180,9 +172,9 @@ network:*:0:0:99999:7:::
 nobody:*:0:0:99999:7:::
 dnsmasq:*:0:0:99999:7:::
 logd:*:0:0:99999:7:::
-SHADOW_EOF
+SHADOW_ABC
             fi
-            awk -F: -v hash="$ENCRYPTED_PASS" 'BEGIN{OFS=":"} $1=="root"{$2=hash} {print}' files/etc/shadow > files/etc/shadow.tmp && mv files/etc/shadow.tmp files/etc/shadow
+            awk -F: -v hash="$ENCRYPTED_PASS" 'BEGIN{OFS=":"} $1=="root"{$2=hash}1' files/etc/shadow > files/etc/shadow.tmp && mv -f files/etc/shadow.tmp files/etc/shadow
             echo "✓ root 密码设置完成（SHA-512 加密）"
         else
             echo "⚠ 系统缺少 mkpasswd/openssl，密码无法提前加密"
