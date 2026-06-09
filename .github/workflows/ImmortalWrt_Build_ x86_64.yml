@@ -80,28 +80,19 @@ jobs:
       - name: 配置与编译
         run: |
           cd openwrt
-          chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
-          
-          "$GITHUB_WORKSPACE/scripts/diy.sh" -v "$VERSION_MAJOR" -p before
-          
-          echo "正在查找配置文件: $GITHUB_WORKSPACE/configs/$CONFIG_FILE"
-          ls "$GITHUB_WORKSPACE/configs/"
-          
+          chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"          
+          "$GITHUB_WORKSPACE/scripts/diy.sh" -v "$VERSION_MAJOR" -p before                  
           [ -f "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" .config || { echo "错误: 配置文件不存在" >&2; exit 1; }
-          
           oaf_args=(-v "$VERSION_MAJOR" -p oaf -t "$PROFILE_TYPE")
           [[ "$INSTALL_OAF" == "true" ]] && oaf_args+=(--install-oaf)
-          "$GITHUB_WORKSPACE/scripts/diy.sh" "${oaf_args[@]}"
-          
-          ./scripts/feeds install -a
-          
+          "$GITHUB_WORKSPACE/scripts/diy.sh" "${oaf_args[@]}"          
+          ./scripts/feeds install -a          
           args=(-v "$VERSION_MAJOR" -p after -t "$PROFILE_TYPE")
           [[ -n "$CUSTOM_IP" ]] && args+=(--ip "$CUSTOM_IP")
           [[ "$PROFILE_TYPE" == "bypass" && -n "$CUSTOM_GATEWAY" ]] && args+=(--gateway "$CUSTOM_GATEWAY")
           [[ "$PROFILE_TYPE" == "main" && -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && args+=(--pppoe-user "$PPPOE_USERNAME" --pppoe-pass "$PPPOE_PASSWORD")
           [[ -n "$ROOT_PASSWORD" ]] && args+=(--root-pass "$ROOT_PASSWORD")
-          "$GITHUB_WORKSPACE/scripts/diy.sh" "${args[@]}"
-          
+          "$GITHUB_WORKSPACE/scripts/diy.sh" "${args[@]}"          
           make defconfig && make download -j$(nproc)
           make -j$(nproc) V=s || make -j1 V=s
 
