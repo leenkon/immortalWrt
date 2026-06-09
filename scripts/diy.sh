@@ -75,44 +75,61 @@ if [[ "$PHASE" == "oaf" ]]; then
 fi
 
 if [[ "$PHASE" == "after" ]]; then
+    mkdir -p files/etc/uci-defaults
+    OUTPUT="files/etc/uci-defaults/99-custom-config"
+    chmod +x "$OUTPUT"
+
+    cat > "$OUTPUT" <<EOF
+#!/bin/sh
+EOF
+
     if [[ "$PROFILE_TYPE" == "bypass" ]]; then
         ROUTER_IP="${CUSTOM_IP:-$DEF_BYPASS_IP}"
         GATEWAY_IP="${CUSTOM_GATEWAY:-${CUSTOM_IP:+${CUSTOM_IP%.*}.1}}"
         [[ -z "$GATEWAY_IP" ]] && GATEWAY_IP="$DEF_GATEWAY"
 
-        NETWORK_CONF="uci set network.lan.proto='static'
+        cat >> "$OUTPUT" <<EOF
+uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.255.0'
 uci set network.lan.gateway='$GATEWAY_IP'
 uci set network.lan.dns='$GATEWAY_IP 223.5.5.5'
 uci set network.wan.proto='none' 2>/dev/null
 uci set network.wan6.proto='none' 2>/dev/null
-uci set dhcp.lan.ignore='1'"
+uci set dhcp.lan.ignore='1'
+EOF
     else
         ROUTER_IP="${CUSTOM_IP:-$DEF_MAIN_IP}"
+        cat >> "$OUTPUT" <<EOF
+uci set network.lan.ipaddr='$ROUTER_IP'
+EOF
+
         if [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]]; then
-            WAN_CONF="uci set network.wan.proto='pppoe'
-uci set network.wan.username='$(_escape_sq "$PPPOE_USERNAME")'
-uci set network.wan.password='$(_escape_sq "$PPPOE_PASSWORD")'
-uci set network.wan.ipv6='auto'"
+            USER_ESC=$(_escape_sq "$PPPOE_USERNAME")
+            PASS_ESC=$(_escape_sq "$PPPOE_PASSWORD")
+            cat >> "$OUTPUT" <<EOF
+uci set network.wan.proto='pppoe'
+uci set network.wan.username='$USER_ESC'
+uci set network.wan.password='$PASS_ESC'
+uci set network.wan.ipv6='auto'
+EOF
         else
-            WAN_CONF="uci set network.wan.proto='dhcp'
-uci set network.wan6.proto='dhcpv6'"
+            cat >> "$OUTPUT" <<EOF
+uci set network.wan.proto='dhcp'
+uci set network.wan6.proto='dhcpv6'
+EOF
         fi
 
-        NETWORK_CONF="uci set network.lan.ipaddr='$ROUTER_IP'
-$WAN_CONF
+        cat >> "$OUTPUT" <<EOF
 uci set dhcp.lan.ignore='0'
 uci set dhcp.lan.start='100'
 uci set dhcp.lan.limit='150'
-uci set dhcp.lan.leasetime='12h'"
+uci set dhcp.lan.leasetime='12h'
+EOF
     fi
 
-    mkdir -p files/etc/uci-defaults
-    cat > files/etc/uci-defaults/99-custom-config <<'EOF'
-#!/bin/sh
-NETWORK_CONF_PLACEHOLDER
-uci set system.@system[0].hostname='Router-PROFILE_TYPE'
+    cat >> "$OUTPUT" <<EOF
+uci set system.@system[0].hostname='Router-${PROFILE_TYPE}'
 uci set system.@system[0].timezone='CST-8'
 uci set system.@system[0].zonename='Asia/Shanghai'
 uci delete system.ntp.server 2>/dev/null
@@ -125,10 +142,6 @@ uci commit
 /etc/init.d/network reload
 exit 0
 EOF
-
-    sed -i "s|NETWORK_CONF_PLACEHOLDER|$NETWORK_CONF|g" files/etc/uci-defaults/99-custom-config
-    sed -i "s|PROFILE_TYPE|$PROFILE_TYPE|g" files/etc/uci-defaults/99-custom-config
-    chmod +x files/etc/uci-defaults/99-custom-config
 
     if [[ -n "$ROOT_PASSWORD" ]]; then
         ENCRYPTED_PASS=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin 2>/dev/null || true)
@@ -152,7 +165,7 @@ SHADOW
         fi
     fi
 
-    echo "✓ 系统配置生成完成"
+    echo "✓ 配置完成"
     exit 0
 fi
 
