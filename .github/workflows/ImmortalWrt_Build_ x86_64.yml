@@ -7,22 +7,12 @@ on:
         description: '版本'
         required: true
         type: choice
-        options:
-          - 25.12.0
-          - 24.10.1
-          - 24.10.2
-          - 24.10.3
-          - 24.10.4
-          - 24.10.5
-          - 24.10.6
+        options: [25.12.0, 24.10.1, 24.10.2, 24.10.3, 24.10.4, 24.10.5, 24.10.6]
       profile:
         description: '配置'
         required: true
         type: choice
-        options:
-          - mini-bypass
-          - default-main
-          - full-main
+        options: [mini-bypass, default-main, full-main]
       custom_ip: {description: '自定义IP', type: string, default: ''}
       custom_gateway: {description: '网关(旁路由)', type: string, default: ''}
       pppoe_username: {description: 'PPPoE账号', type: string, default: ''}
@@ -30,16 +20,15 @@ on:
       install_oaf: {description: '安装OAF', type: boolean, default: false}
       root_password: {description: 'root密码', type: string, default: ''}
 
-permissions:
-  contents: write
+permissions: write
 
 jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
-
     steps:
-      - uses: actions/checkout@v4
+      - name: 检出代码
+        uses: actions/checkout@v4
 
       - name: 初始化
         env:
@@ -51,14 +40,11 @@ jobs:
           ROOT_PASS: ${{ inputs.root_password }}
         run: |
           set -e
+          IFS="-" read -r CONFIG_TYPE PROFILE_TYPE <<< "${{ inputs.profile }}"
           VERSION=${{ inputs.version }}
-          PROFILE=${{ inputs.profile }}
-          IFS="-" read -r CONFIG_TYPE PROFILE_TYPE <<< "$PROFILE"
-          VERSION_MAJOR=${VERSION%.*}
-          
           {
             echo "RELEASE_TAG=$VERSION"
-            echo "VERSION_MAJOR=$VERSION_MAJOR"
+            echo "VERSION_MAJOR=${VERSION%.*}"
             echo "CONFIG_FILE=${VERSION_MAJOR}-${CONFIG_TYPE}.config"
             echo "PROFILE_TYPE=$PROFILE_TYPE"
             echo "INSTALL_OAF=$OAF"
@@ -86,39 +72,26 @@ jobs:
           set -e
           rm -rf openwrt
           git clone https://github.com/immortalwrt/immortalwrt openwrt
-          cd openwrt
-          git checkout "v$RELEASE_TAG"
+          cd openwrt && git checkout "v$RELEASE_TAG"
 
       - name: 配置与编译
         run: |
           set -e
           cd openwrt
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
-          
           "$GITHUB_WORKSPACE/scripts/diy.sh" -v "$VERSION_MAJOR" -p before
-          
           CONFIG_SRC="$GITHUB_WORKSPACE/configs/$CONFIG_FILE"
-          if [ ! -f "$CONFIG_SRC" ]; then
-            echo "错误: 配置文件不存在: $CONFIG_SRC" >&2
-            exit 1
-          fi
-          cp "$CONFIG_SRC" .config
-          
-          ./scripts/feeds update -a
-          
+          [ -f "$CONFIG_SRC" ] && cp "$CONFIG_SRC" .config || { echo "错误: 配置文件不存在: $CONFIG_SRC" >&2; exit 1; }
           oaf_args=(-v "$VERSION_MAJOR" -p oaf -t "$PROFILE_TYPE")
           [[ "$INSTALL_OAF" == "true" ]] && oaf_args+=(--install-oaf)
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${oaf_args[@]}"
-          
           ./scripts/feeds install -a
-          
           args=(-v "$VERSION_MAJOR" -p after -t "$PROFILE_TYPE")
           [[ -n "$CUSTOM_IP" ]] && args+=(--ip "$CUSTOM_IP")
           [[ "$PROFILE_TYPE" == "bypass" && -n "$CUSTOM_GATEWAY" ]] && args+=(--gateway "$CUSTOM_GATEWAY")
           [[ "$PROFILE_TYPE" == "main" && -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && args+=(--pppoe-user "$PPPOE_USERNAME" --pppoe-pass "$PPPOE_PASSWORD")
           [[ -n "$ROOT_PASSWORD" ]] && args+=(--root-pass "$ROOT_PASSWORD")
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${args[@]}"
-          
           make defconfig && make download -j$(nproc)
           make -j$(nproc) V=s || make -j1 V=s
 
@@ -128,7 +101,5 @@ jobs:
           name: ImmortalWrt x86_64 ${{ env.RELEASE_TAG }} (${{ env.PROFILE_TYPE }})
           tag_name: ${{ env.RELEASE_TAG }}-${{ env.PROFILE_TYPE }}-${{ github.run_id }}
           files: openwrt/bin/targets/x86/64/*combined*.img.gz
-          draft: false
-          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
