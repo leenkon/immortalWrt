@@ -41,7 +41,13 @@ PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # before: feeds 配置与冲突处理
 if [[ "$PHASE" == "before" ]]; then
     rm -f feeds.conf
-    [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf.default || cp feeds.conf.default feeds.conf.default.bak
+    # 关键修复：不存在就不替换，用默认，不报错
+    if [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]]; then
+        cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf.default
+        echo "✓ 已应用自定义 feeds: $VERSION.conf"
+    else
+        echo "ℹ 未找到自定义 feeds，使用默认配置"
+    fi
     ./scripts/feeds update -a
     if grep -qs 'src-git small' feeds.conf.default; then
         rm -rf feeds/luci/applications/luci-app-mosdns feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} feeds/packages/utils/v2dat 2>/dev/null || true
