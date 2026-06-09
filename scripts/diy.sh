@@ -44,7 +44,8 @@ if [[ "$PHASE" == "before" ]]; then
     ./scripts/feeds update -a
     if grep -qs 'src-git small' feeds.conf.default; then
         rm -rf feeds/luci/applications/luci-app-mosdns feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} feeds/packages/utils/v2dat 2>/dev/null || true
-        rm -rf feeds/packages/lang/golang && git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang feeds/packages/lang/golang 2>/dev/null && echo "✓ 替换 golang 版本"
+        rm -rf feeds/packages/lang/golang && git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang feeds/packages/lang/golang 2>/dev/null
+    fi
     exit 0
 fi
 
