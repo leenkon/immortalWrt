@@ -20,7 +20,8 @@ on:
       install_oaf: {description: '安装OAF', type: boolean, default: false}
       root_password: {description: 'root密码', type: string, default: ''}
 
-permissions: write
+permissions:
+  contents: write
 
 jobs:
   build:
