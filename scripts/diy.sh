@@ -94,7 +94,7 @@ if [[ "$PHASE" == "after" ]]; then
         echo ''
 
         if [[ "$PROFILE_TYPE" == "bypass" ]]; then
-            cat <<EOF
+            cat <<CUSTOM_EOF
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.255.0'
@@ -107,37 +107,37 @@ uci delete dhcp.lan.start 2>/dev/null
 uci delete dhcp.lan.limit 2>/dev/null
 uci delete dhcp.lan.leasetime 2>/dev/null
 
-EOF
+CUSTOM_EOF
         else
-            cat <<EOF
+            cat <<CUSTOM_EOF
 uci set network.lan.ipaddr='$ROUTER_IP'
-EOF
+CUSTOM_EOF
 
             if [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]]; then
-                cat <<EOF
+                cat <<CUSTOM_EOF
 uci set network.wan.proto='pppoe'
 uci set network.wan.username='$PPPOE_USERNAME_SAFE'
 uci set network.wan.password='$PPPOE_PASSWORD_SAFE'
 uci set network.wan.ipv6='auto'
-EOF
+CUSTOM_EOF
             else
-                cat <<'EOF'
+                cat <<'CUSTOM_EOF'
 uci set network.wan.proto='dhcp'
 uci set network.wan6.proto='dhcpv6'
-EOF
+CUSTOM_EOF
             fi
 
-            cat <<'EOF'
+            cat <<'CUSTOM_EOF'
 
 uci set dhcp.lan.ignore='0'
 uci set dhcp.lan.start='100'
 uci set dhcp.lan.limit='150'
 uci set dhcp.lan.leasetime='12h'
 
-EOF
+CUSTOM_EOF
         fi
 
-        cat <<EOF
+        cat <<CUSTOM_EOF
 uci set system.@system[0].hostname='$HOSTNAME'
 uci set system.@system[0].timezone='CST-8'
 uci set system.@system[0].zonename='Asia/Shanghai'
@@ -150,7 +150,7 @@ uci set system.ntp.enable_server='1'
 uci commit
 /etc/init.d/network reload 2>/dev/null
 exit 0
-EOF
+CUSTOM_EOF
     } > "$BOOT_SCRIPT"
 
     chmod +x "$BOOT_SCRIPT"
