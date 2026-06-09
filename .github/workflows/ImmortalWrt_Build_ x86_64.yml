@@ -165,21 +165,6 @@ jobs:
           cd openwrt
           make -j$(nproc) V=s || { echo "并行构建失败，退回单线程重试..."; make -j1 V=s; }
 
-      - name: 收集固件作为 Artifact
-        run: |
-          set -e
-          mkdir -p artifacts
-          cp openwrt/bin/targets/x86/64/*combined*.img.gz artifacts/ 2>/dev/null || true
-          ls -lh artifacts/ || true
-
-      - name: 上传 Artifact（无论 Release 是否成功）
-        uses: actions/upload-artifact@v4
-        with:
-          name: immortalwrt-${{ env.RELEASE_TAG }}-${{ env.PROFILE_TYPE }}-${{ env.RUN_TIMESTAMP }}
-          path: artifacts/*
-          if-no-files-found: warn
-          retention-days: 30
-
       - name: 上传固件到 Release
         uses: softprops/action-gh-release@v2
         with:
