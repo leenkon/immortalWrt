@@ -86,7 +86,9 @@ jobs:
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${before_args[@]}"                  
           ./scripts/feeds install -a          
           [ -f "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" .config || { echo "错误: 配置文件不存在" >&2; exit 1; }
+          make defconfig
           [[ "$INSTALL_OAF" == "true" ]] && echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
+          [[ "$INSTALL_OAF" == "true" ]] && make defconfig
           args=(-v "$VERSION_MAJOR" -p after -t "$PROFILE_TYPE")
           [[ -n "$CUSTOM_IP" ]] && args+=(--ip "$CUSTOM_IP")
           [[ "$PROFILE_TYPE" == "bypass" && -n "$CUSTOM_GATEWAY" ]] && args+=(--gateway "$CUSTOM_GATEWAY")
