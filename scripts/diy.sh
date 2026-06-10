@@ -38,6 +38,13 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+[[ -z "$VERSION" || -z "$PHASE" ]] && error_exit "必须指定版本和阶段"
+[[ "$PHASE" == "after" && -z "$PROFILE_TYPE" ]] && error_exit "after 阶段必须指定路由类型"
+[[ -n "$PROFILE_TYPE" && "$PROFILE_TYPE" != "main" && "$PROFILE_TYPE" != "bypass" ]] && error_exit "路由类型必须是 main 或 bypass"
+
+PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)
+[[ -z "$PROJECT_ROOT" || ! -d "$PROJECT_ROOT" ]] && error_exit "无法定位项目根目录"
+
 case "$PHASE" in
     before)
         rm -f feeds.conf feeds.conf.default
