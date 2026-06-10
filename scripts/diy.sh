@@ -7,7 +7,7 @@ error_exit() {
     exit 1
 }
 
-# 增强的 UCI 字符转义
+# UCI 字符转义
 _escape_uci() {
     local str="$1"
     str="${str//\\/\\\\}"
@@ -16,13 +16,16 @@ _escape_uci() {
     printf '%s' "$str"
 }
 
+# 默认配置
 DEF_MAIN_IP="10.10.10.1"
 DEF_BYPASS_IP="10.10.10.10"
 DEF_GATEWAY="10.10.10.1"
 
+# 变量初始化
 VERSION="" PHASE="" PROFILE_TYPE="" INSTALL_OAF=false
 CUSTOM_IP="" CUSTOM_GATEWAY="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
 
+# 参数解析
 while [[ $# -gt 0 ]]; do
     case $1 in
         -v|--version) VERSION="$2"; shift 2 ;;
@@ -38,22 +41,29 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# 参数验证
 [[ -z "$VERSION" || -z "$PHASE" ]] && error_exit "必须指定版本和阶段"
 [[ "$PHASE" == "after" && -z "$PROFILE_TYPE" ]] && error_exit "after 阶段必须指定路由类型"
 [[ -n "$PROFILE_TYPE" && "$PROFILE_TYPE" != "main" && "$PROFILE_TYPE" != "bypass" ]] && error_exit "路由类型必须是 main 或 bypass"
 
+# 获取项目根目录
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)
 [[ -z "$PROJECT_ROOT" || ! -d "$PROJECT_ROOT" ]] && error_exit "无法定位项目根目录"
 
 case "$PHASE" in
     before)
+        # 更新 feeds 配置
         rm -f feeds.conf feeds.conf.default
-        [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf || error_exit "feeds 配置文件不存在: $PROJECT_ROOT/feeds/$VERSION.conf"
+        [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf || error_exit "feeds 配置文件不存在"
         ./scripts/feeds update -a 2>&1 || true
+
+        # 处理 small feeds
         if grep -qs '^[^#].*src-git small' feeds.conf; then
             rm -rf feeds/luci/applications/luci-app-mosdns feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} feeds/packages/utils/v2dat 2>/dev/null
             rm -rf feeds/packages/lang/golang && git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang feeds/packages/lang/golang 2>/dev/null || true
         fi
+
+        # 安装 OAF（仅主路由）
         if [[ "$INSTALL_OAF" == true && "$PROFILE_TYPE" != "bypass" ]]; then
             rm -rf package/OpenAppFilter 2>/dev/null
             git clone --depth 1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter 2>/dev/null || true
@@ -61,9 +71,11 @@ case "$PHASE" in
         ;;
 
     after)
+        # 创建配置目录
         mkdir -p files/etc/uci-defaults || error_exit "创建配置目录失败"
         OUTPUT="files/etc/uci-defaults/99-custom-config"
 
+        # 旁路由配置
         if [[ "$PROFILE_TYPE" == "bypass" ]]; then
             ROUTER_IP="${CUSTOM_IP:-$DEF_BYPASS_IP}"
             GATEWAY_IP="${CUSTOM_GATEWAY:-${CUSTOM_IP:+${CUSTOM_IP%.*}.1}:-$DEF_GATEWAY}"
@@ -78,6 +90,7 @@ uci set network.lan6.proto='none'
 uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'"
         else
+            # 主路由配置
             ROUTER_IP="${CUSTOM_IP:-$DEF_MAIN_IP}"
             WAN_CONF=$([[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && \
                 echo "uci set network.wan.proto='pppoe'
@@ -87,7 +100,7 @@ uci set network.wan.ipv6='auto'" || \
                 echo "uci set network.wan.proto='dhcp'
 uci set network.wan6.proto='dhcpv6'")
             GATEWAY_CONF=$([[ -n "$CUSTOM_GATEWAY" ]] && echo "uci set network.lan.gateway='$CUSTOM_GATEWAY'")
-            
+
             NETWORK_CONF="uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.255.0'

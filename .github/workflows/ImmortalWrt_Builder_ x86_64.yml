@@ -44,11 +44,7 @@ jobs:
           echo "版本: $VERSION"
           echo "主版本: $VERSION_MAJOR"
           echo "配置: $CONFIG_TYPE-$PROFILE_TYPE"
-          [[ -n "${{ inputs.custom_ip }}" ]] && echo "自定义IP: ${{ inputs.custom_ip }}" || echo "自定义IP: (使用默认)"
-          [[ -n "${{ inputs.custom_gateway }}" ]] && echo "自定义网关: ${{ inputs.custom_gateway }}" || echo "自定义网关: (使用默认)"
-          [[ -n "${{ inputs.pppoe_username }}" ]] && echo "PPPoE账号: ${{ inputs.pppoe_username }}"
-          [[ -n "${{ inputs.root_password }}" ]] && echo "root密码: 已设置"
-          echo "----------------"          
+          echo "----------------"
           {
             echo "RELEASE_TAG=$VERSION"
             echo "VERSION_MAJOR=${VERSION_MAJOR}"
@@ -66,36 +62,26 @@ jobs:
       - name: 配置与编译
         run: |
           cd openwrt
-          chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"          
-          before_args=(-v "$VERSION_MAJOR" -p before -t "$PROFILE_TYPE")
-          [[ "$INSTALL_OAF" == "true" ]] && before_args+=(--install-oaf)
-          "$GITHUB_WORKSPACE/scripts/diy.sh" "${before_args[@]}"
-          echo "------- feeds install 开始 -------"
-          echo "当前 feeds.conf 内容:"
-          cat feeds.conf
-          # 只安装必要的 feeds，避免安装不存在的包
-          ./scripts/feeds install -a -p packages 2>&1 || true
-          ./scripts/feeds install -a -p luci 2>&1 || true
-          echo "------- feeds install 结束 -------"         
-          [ -f "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" .config || { echo "错误: 配置文件不存在" >&2; exit 1; }                
+          chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
+          "$GITHUB_WORKSPACE/scripts/diy.sh" -v "$VERSION_MAJOR" -p before -t "$PROFILE_TYPE"
+          [[ "$INSTALL_OAF" == "true" ]] && "$GITHUB_WORKSPACE/scripts/diy.sh" -v "$VERSION_MAJOR" -p before -t "$PROFILE_TYPE" --install-oaf
+          [ -f "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" .config || { echo "错误: 配置文件不存在" >&2; exit 1; }
           [[ "$INSTALL_OAF" == "true" && "$PROFILE_TYPE" != "bypass" ]] && echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
           args=(-v "$VERSION_MAJOR" -p after -t "$PROFILE_TYPE")
           [[ -n "$CUSTOM_IP" ]] && args+=(--ip "$CUSTOM_IP")
           [[ "$PROFILE_TYPE" == "bypass" && -n "$CUSTOM_GATEWAY" ]] && args+=(--gateway "$CUSTOM_GATEWAY")
           [[ "$PROFILE_TYPE" == "main" && -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && args+=(--pppoe-user "$PPPOE_USERNAME" --pppoe-pass "$PPPOE_PASSWORD")
           [[ -n "$ROOT_PASSWORD" ]] && args+=(--root-pass "$ROOT_PASSWORD")
-          "$GITHUB_WORKSPACE/scripts/diy.sh" "${args[@]}" 
-          make clean
-          export TERM=dumb
-          make download -j$(nproc) && make defconfig
-          make -j$(nproc) || make V=s -j1
+          "$GITHUB_WORKSPACE/scripts/diy.sh" "${args[@]}"
+          make defconfig
+          make download -j$(nproc) && make -j$(nproc) || make V=s -j1
 
       - name: 上传固件
         uses: softprops/action-gh-release@v2
         with:
           name: ImmortalWrt x86_64 ${{ env.RELEASE_TAG }} (${{ env.PROFILE_TYPE }})
           tag_name: ${{ env.RELEASE_TAG }}-${{ env.PROFILE_TYPE }}
-          files: 
+          files:
             openwrt/bin/targets/x86/64/*squashfs-combined.img.gz
             openwrt/bin/targets/x86/64/*ext4-combined.img.gz
         env:
