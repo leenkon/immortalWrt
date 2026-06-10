@@ -100,7 +100,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: ImmortalWrt x86_64 ${{ env.RELEASE_TAG }} (${{ env.PROFILE_TYPE }})
-          tag_name: ${{ env.RELEASE_TAG }}-${{ env.PROFILE_TYPE }}-${{ github.run_id }}
+          tag_name: ${{ env.RELEASE_TAG }}-${{ env.PROFILE_TYPE }}
           files: openwrt/bin/targets/x86/64/*combined*.img.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
