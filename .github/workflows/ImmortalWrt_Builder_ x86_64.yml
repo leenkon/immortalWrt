@@ -40,7 +40,6 @@ jobs:
           IFS="-" read -r CONFIG_TYPE PROFILE_TYPE <<< "${{ inputs.profile }}"
           VERSION=${{ inputs.version }}
           VERSION_MAJOR="${VERSION%.*}"
-
           echo "--- 编译参数 ---"
           echo "版本: $VERSION"
           echo "主版本: $VERSION_MAJOR"
@@ -49,8 +48,7 @@ jobs:
           [[ -n "${{ inputs.custom_gateway }}" ]] && echo "自定义网关: ${{ inputs.custom_gateway }}" || echo "自定义网关: (使用默认)"
           [[ -n "${{ inputs.pppoe_username }}" ]] && echo "PPPoE账号: ${{ inputs.pppoe_username }}"
           [[ -n "${{ inputs.root_password }}" ]] && echo "root密码: 已设置"
-          echo "----------------"
-          
+          echo "----------------"          
           {
             echo "RELEASE_TAG=$VERSION"
             echo "VERSION_MAJOR=${VERSION_MAJOR}"
@@ -63,7 +61,6 @@ jobs:
             printf 'ROOT_PASSWORD=%s\n' "${{ inputs.root_password }}"
             printf 'INSTALL_OAF=%s\n' "${{ inputs.install_oaf }}"
           } >> $GITHUB_ENV
-
           [[ ! -d openwrt/.git ]] && rm -rf openwrt && git clone --depth 1 --branch "v$VERSION" https://github.com/immortalwrt/immortalWrt openwrt || (cd openwrt && git fetch && git checkout "v$VERSION")
 
       - name: 配置与编译

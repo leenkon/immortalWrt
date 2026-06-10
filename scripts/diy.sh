@@ -38,15 +38,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# 必选参数检查
-[[ -z "$VERSION" || -z "$PHASE" ]] && error_exit "必须指定版本和阶段"
-[[ "$PHASE" == "after" && -z "$PROFILE_TYPE" ]] && error_exit "after 阶段必须指定路由类型"
-[[ -n "$PROFILE_TYPE" && "$PROFILE_TYPE" != "main" && "$PROFILE_TYPE" != "bypass" ]] && error_exit "路由类型必须是 main 或 bypass"
-
-# 项目根目录检查
-PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)
-[[ -z "$PROJECT_ROOT" || ! -d "$PROJECT_ROOT" ]] && error_exit "无法定位项目根目录"
-
 case "$PHASE" in
     before)
         rm -f feeds.conf feeds.conf.default
@@ -67,15 +58,8 @@ case "$PHASE" in
         OUTPUT="files/etc/uci-defaults/99-custom-config"
 
         if [[ "$PROFILE_TYPE" == "bypass" ]]; then
-            # 旁路由 IP/网关配置
             ROUTER_IP="${CUSTOM_IP:-$DEF_BYPASS_IP}"
-            if [[ -n "$CUSTOM_GATEWAY" ]]; then
-                GATEWAY_IP="$CUSTOM_GATEWAY"
-            elif [[ -n "$CUSTOM_IP" ]]; then
-                GATEWAY_IP="${CUSTOM_IP%.*}.1"
-            else
-                GATEWAY_IP="$DEF_GATEWAY"
-            fi
+            GATEWAY_IP="${CUSTOM_GATEWAY:-${CUSTOM_IP:+${CUSTOM_IP%.*}.1}:-$DEF_GATEWAY}"
             NETWORK_CONF="uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.255.0'
@@ -83,27 +67,27 @@ uci set network.lan.gateway='$GATEWAY_IP'
 uci set network.lan.dns='$GATEWAY_IP 8.8.8.8 223.5.5.5'
 uci set network.wan.proto='none'
 uci set network.wan6.proto='none'
-uci set dhcp.lan.ignore='1'"
+uci set network.lan6.proto='none'
+uci set dhcp.lan.ignore='1'
+uci set dhcp.lan6.ignore='1'"
         else
-            # 主路由 IP/网关配置
             ROUTER_IP="${CUSTOM_IP:-$DEF_MAIN_IP}"
-            if [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]]; then
-                WAN_CONF="uci set network.wan.proto='pppoe'
+            WAN_CONF=$([[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && \
+                echo "uci set network.wan.proto='pppoe'
 uci set network.wan.username='$(_escape_uci "$PPPOE_USERNAME")'
 uci set network.wan.password='$(_escape_uci "$PPPOE_PASSWORD")'
-uci set network.wan.ipv6='auto'"
-            else
-                WAN_CONF="uci set network.wan.proto='dhcp'
-uci set network.wan6.proto='dhcpv6'"
-            fi
-            GATEWAY_CONF=""
-            [[ -n "$CUSTOM_GATEWAY" ]] && GATEWAY_CONF="uci set network.lan.gateway='$CUSTOM_GATEWAY'"
+uci set network.wan.ipv6='auto'" || \
+                echo "uci set network.wan.proto='dhcp'
+uci set network.wan6.proto='dhcpv6'")
+            GATEWAY_CONF=$([[ -n "$CUSTOM_GATEWAY" ]] && echo "uci set network.lan.gateway='$CUSTOM_GATEWAY'")
             
             NETWORK_CONF="uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.255.0'
 ${GATEWAY_CONF}
 ${WAN_CONF}
+uci set network.wan.dns='8.8.8.8 223.5.5.5'
+uci delete dnsmasq.@dnsmasq[0].server && uci add_list dnsmasq.@dnsmasq[0].server='8.8.8.8' && uci add_list dnsmasq.@dnsmasq[0].server='223.5.5.5'
 uci set dhcp.lan.start='11'
 uci set dhcp.lan.limit='150'"
         fi
