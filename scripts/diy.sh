@@ -56,20 +56,22 @@ case "$PHASE" in
         cat feeds.conf
         echo "=================================="
         echo ">>> 更新 feeds..."
-        ./scripts/feeds update -a || error_exit "feeds 更新失败"
+        ./scripts/feeds update -a 2>&1 && echo "feeds update 成功" || { echo "feeds update 失败，继续..."; true; }
         echo ">>> 检查 small feeds..."
         if grep -qs '^[^#].*src-git small' feeds.conf; then
             echo ">>> 处理 small feeds..."
             rm -rf feeds/luci/applications/luci-app-mosdns feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} feeds/packages/utils/v2dat 2>/dev/null
-            rm -rf feeds/packages/lang/golang && git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang feeds/packages/lang/golang 2>/dev/null || error_exit "克隆 golang 失败"
+            rm -rf feeds/packages/lang/golang && git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang feeds/packages/lang/golang 2>/dev/null || echo "克隆 golang 失败，跳过"
+        else
+            echo ">>> small feeds 未启用，跳过"
         fi
         echo ">>> 检查 OAF 安装..."
         [[ "$INSTALL_OAF" == true ]] && {
             [[ "$PROFILE_TYPE" == "bypass" ]] && echo "⚠ 旁路由安装 OAF 可能冲突"
             echo ">>> 安装 OAF..."
             rm -rf package/OpenAppFilter 2>/dev/null
-            git clone --depth 1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter 2>/dev/null || error_exit "克隆 OpenAppFilter 失败"
-        }
+            git clone --depth 1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter 2>/dev/null || echo "克隆 OpenAppFilter 失败，跳过"
+        } || echo ">>> OAF 未启用"
         echo ">>> before 阶段完成"
         ;;
 
