@@ -73,19 +73,16 @@ jobs:
           before_args=(-v "$VERSION_MAJOR" -p before -t "$PROFILE_TYPE")
           [[ "$INSTALL_OAF" == "true" ]] && before_args+=(--install-oaf)
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${before_args[@]}"  
-          echo "-------安装feeds---------"   
           ./scripts/feeds install -a         
           [ -f "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" .config || { echo "错误: 配置文件不存在" >&2; exit 1; }                
-          [[ "$INSTALL_OAF" == "true" ]] && echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
+          [[ "$INSTALL_OAF" == "true" && "$PROFILE_TYPE" != "bypass" ]] && echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
           args=(-v "$VERSION_MAJOR" -p after -t "$PROFILE_TYPE")
           [[ -n "$CUSTOM_IP" ]] && args+=(--ip "$CUSTOM_IP")
           [[ "$PROFILE_TYPE" == "bypass" && -n "$CUSTOM_GATEWAY" ]] && args+=(--gateway "$CUSTOM_GATEWAY")
           [[ "$PROFILE_TYPE" == "main" && -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && args+=(--pppoe-user "$PPPOE_USERNAME" --pppoe-pass "$PPPOE_PASSWORD")
           [[ -n "$ROOT_PASSWORD" ]] && args+=(--root-pass "$ROOT_PASSWORD")
-          "$GITHUB_WORKSPACE/scripts/diy.sh" "${args[@]}"
-          echo "-------准备配置---------"          
-          make defconfig && make download -j$(nproc)
-          echo "---------编译中---------"          
+          "$GITHUB_WORKSPACE/scripts/diy.sh" "${args[@]}"        
+          make defconfig && make download -j$(nproc)       
           make V=s -j$(nproc) || make V=s -j1
 
       - name: 上传固件
