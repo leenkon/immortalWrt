@@ -85,7 +85,8 @@ jobs:
           [[ "$PROFILE_TYPE" == "main" && -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && args+=(--pppoe-user "$PPPOE_USERNAME" --pppoe-pass "$PPPOE_PASSWORD")
           [[ -n "$ROOT_PASSWORD" ]] && args+=(--root-pass "$ROOT_PASSWORD")
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${args[@]}" 
-          make clean       
+          make clean
+          export TERM=dumb
           make download -j$(nproc) && make defconfig
           make -j$(nproc) || make V=s -j1
 
