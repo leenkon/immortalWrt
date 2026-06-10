@@ -50,12 +50,11 @@ PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)
 case "$PHASE" in
     before)
         rm -f feeds.conf feeds.conf.default
-        [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf
+        [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf || error_exit "feeds 配置文件不存在: $PROJECT_ROOT/feeds/$VERSION.conf"
         echo "==== 当前生效的 feeds.conf 内容 ===="
         cat feeds.conf
         echo "=================================="
         ./scripts/feeds update -a || error_exit "feeds 更新失败"
-        
         if grep -qs '^[^#].*src-git small' feeds.conf; then
             rm -rf feeds/luci/applications/luci-app-mosdns feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} feeds/packages/utils/v2dat 2>/dev/null
             rm -rf feeds/packages/lang/golang && git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang feeds/packages/lang/golang 2>/dev/null || error_exit "克隆 golang 失败"
@@ -70,7 +69,6 @@ case "$PHASE" in
     after)
         mkdir -p files/etc/uci-defaults || error_exit "创建配置目录失败"
         OUTPUT="files/etc/uci-defaults/99-custom-config"
-        > "$OUTPUT" # 清空文件
 
         if [[ "$PROFILE_TYPE" == "bypass" ]]; then
             # 旁路由 IP/网关配置
@@ -87,8 +85,8 @@ uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.255.0'
 uci set network.lan.gateway='$GATEWAY_IP'
 uci set network.lan.dns='$GATEWAY_IP 8.8.8.8 223.5.5.5'
-uci set network.wan.proto='none' 2>/dev/null || true
-uci set network.wan6.proto='none' 2>/dev/null || true
+uci set network.wan.proto='none'
+uci set network.wan6.proto='none'
 uci set dhcp.lan.ignore='1'"
         else
             # 主路由 IP/网关配置
