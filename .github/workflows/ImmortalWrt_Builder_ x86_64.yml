@@ -69,6 +69,9 @@ jobs:
       - name: 配置与编译
         run: |
           cd openwrt
+          rm -rf tmp feeds .config package/feeds build_dir staging_dir dl
+          find . -name "*.rej" -delete
+          find . -name "*.orig" -delete
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"          
           before_args=(-v "$VERSION_MAJOR" -p before -t "$PROFILE_TYPE")
           [[ "$INSTALL_OAF" == "true" ]] && before_args+=(--install-oaf)
