@@ -82,11 +82,11 @@ jobs:
           cd openwrt
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"          
           "$GITHUB_WORKSPACE/scripts/diy.sh" -v "$VERSION_MAJOR" -p before                  
+          ./scripts/feeds install -a          
           [ -f "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" .config || { echo "错误: 配置文件不存在" >&2; exit 1; }
           oaf_args=(-v "$VERSION_MAJOR" -p oaf -t "$PROFILE_TYPE")
           [[ "$INSTALL_OAF" == "true" ]] && oaf_args+=(--install-oaf)
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${oaf_args[@]}"          
-          ./scripts/feeds install -a          
           args=(-v "$VERSION_MAJOR" -p after -t "$PROFILE_TYPE")
           [[ -n "$CUSTOM_IP" ]] && args+=(--ip "$CUSTOM_IP")
           [[ "$PROFILE_TYPE" == "bypass" && -n "$CUSTOM_GATEWAY" ]] && args+=(--gateway "$CUSTOM_GATEWAY")
