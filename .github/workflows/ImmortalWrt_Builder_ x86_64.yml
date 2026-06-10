@@ -73,11 +73,10 @@ jobs:
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"          
           before_args=(-v "$VERSION_MAJOR" -p before -t "$PROFILE_TYPE")
           [[ "$INSTALL_OAF" == "true" ]] && before_args+=(--install-oaf)
-          "$GITHUB_WORKSPACE/scripts/diy.sh" "${before_args[@]}"                  
+          "$GITHUB_WORKSPACE/scripts/diy.sh" "${before_args[@]}"  
+          [ -f "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" .config || { echo "错误: 配置文件不存在" >&2; exit 1; }                
           ./scripts/feeds update -a
-          ./scripts/feeds install -a          
-          [ -f "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" .config || { echo "错误: 配置文件不存在" >&2; exit 1; }
-          make defconfig
+          ./scripts/feeds install -a         
           [[ "$INSTALL_OAF" == "true" ]] && echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
           args=(-v "$VERSION_MAJOR" -p after -t "$PROFILE_TYPE")
           [[ -n "$CUSTOM_IP" ]] && args+=(--ip "$CUSTOM_IP")
