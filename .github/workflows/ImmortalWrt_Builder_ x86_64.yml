@@ -70,11 +70,11 @@ jobs:
       - name: 配置与编译
         run: |
           cd openwrt
-          make -r prereq-build V=99
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"          
           before_args=(-v "$VERSION_MAJOR" -p before -t "$PROFILE_TYPE")
           [[ "$INSTALL_OAF" == "true" ]] && before_args+=(--install-oaf)
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${before_args[@]}"                  
+          ./scripts/feeds update -a
           ./scripts/feeds install -a          
           [ -f "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" .config || { echo "错误: 配置文件不存在" >&2; exit 1; }
           make defconfig
