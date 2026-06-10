@@ -49,21 +49,28 @@ PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)
 
 case "$PHASE" in
     before)
+        echo ">>> 开始 before 阶段..."
         rm -f feeds.conf feeds.conf.default
         [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf || error_exit "feeds 配置文件不存在: $PROJECT_ROOT/feeds/$VERSION.conf"
         echo "==== 当前生效的 feeds.conf 内容 ===="
         cat feeds.conf
         echo "=================================="
+        echo ">>> 更新 feeds..."
         ./scripts/feeds update -a || error_exit "feeds 更新失败"
+        echo ">>> 检查 small feeds..."
         if grep -qs '^[^#].*src-git small' feeds.conf; then
+            echo ">>> 处理 small feeds..."
             rm -rf feeds/luci/applications/luci-app-mosdns feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} feeds/packages/utils/v2dat 2>/dev/null
             rm -rf feeds/packages/lang/golang && git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang feeds/packages/lang/golang 2>/dev/null || error_exit "克隆 golang 失败"
-        fi       
+        fi
+        echo ">>> 检查 OAF 安装..."
         [[ "$INSTALL_OAF" == true ]] && {
             [[ "$PROFILE_TYPE" == "bypass" ]] && echo "⚠ 旁路由安装 OAF 可能冲突"
-            rm -rf feeds/packages/net/{oaf,open-app-filter} package/feeds/packages/{oaf,luci-app-oaf,open-app-filter} 2>/dev/null
+            echo ">>> 安装 OAF..."
+            rm -rf package/OpenAppFilter 2>/dev/null
             git clone --depth 1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter 2>/dev/null || error_exit "克隆 OpenAppFilter 失败"
         }
+        echo ">>> before 阶段完成"
         ;;
 
     after)
