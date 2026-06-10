@@ -52,21 +52,18 @@ PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)
 
 case "$PHASE" in
     before)
-        # 更新 feeds 配置
         rm -f feeds.conf feeds.conf.default
         [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf || error_exit "feeds 配置文件不存在"
-        ./scripts/feeds update -a 2>&1 || true
+        ./scripts/feeds update -a
 
-        # 处理 small feeds
         if grep -qs '^[^#].*src-git small' feeds.conf; then
             rm -rf feeds/luci/applications/luci-app-mosdns feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} feeds/packages/utils/v2dat 2>/dev/null
             rm -rf feeds/packages/lang/golang && git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang feeds/packages/lang/golang 2>/dev/null || true
         fi
 
-        # 安装 OAF（仅主路由）
         if [[ "$INSTALL_OAF" == true && "$PROFILE_TYPE" != "bypass" ]]; then
-            rm -rf package/OpenAppFilter 2>/dev/null
-            git clone --depth 1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter 2>/dev/null || true
+            rm -rf package/OpenAppFilter
+            git clone --depth 1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
         fi
         ;;
 
