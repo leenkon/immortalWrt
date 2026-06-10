@@ -51,7 +51,10 @@ case "$PHASE" in
     before)
         rm -f feeds.conf feeds.conf.default
         [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf
-        ./scripts/feeds update -a || error_exit "更新 feeds 失败"
+        echo "==== 当前生效的 feeds.conf 内容 ===="
+        cat feeds.conf
+        echo "=================================="
+        ./scripts/feeds update -a || error_exit "feeds 更新失败"
         
         if grep -qs '^[^#].*src-git small' feeds.conf; then
             rm -rf feeds/luci/applications/luci-app-mosdns feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} feeds/packages/utils/v2dat 2>/dev/null
