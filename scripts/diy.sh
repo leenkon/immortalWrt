@@ -59,16 +59,26 @@ case "$PHASE" in
         fi
 
         if [[ "$INSTALL_OAF" == true && "$PROFILE_TYPE" != "bypass" ]]; then
-
             if grep -qs "^#.*src-git oaf" feeds.conf; then
                 sed -i "s/^#\(.*src-git oaf.*\)/\1/" feeds.conf
             elif ! grep -qs "^[^#].*src-git oaf" feeds.conf; then
                 echo "src-git oaf https://github.com/destan19/OpenAppFilter.git" >> feeds.conf
             fi
             ./scripts/feeds update oaf
+            [[ -f "feeds/oaf/open-app-filter/files/feature.cfg" ]] && rm -rf feeds/oaf 2>/dev/null
             rm -rf feeds/luci/applications/luci-app-oaf 2>/dev/null
             rm -rf feeds/packages/net/appfilter feeds/packages/net/oaf 2>/dev/null
             rm -rf feeds/packages/kernel/kmod-oaf 2>/dev/null
+            if [[ -d "$PROJECT_ROOT/oaf_files" ]]; then
+                echo "检测到oaf_files文件夹，开始复制自定义文件..."
+                if [[ -f "$PROJECT_ROOT/oaf_files/feature.cfg" ]]; then
+                    cp -f "$PROJECT_ROOT/oaf_files/feature.cfg" feeds/oaf/open-app-filter/files/ || echo "复制feature.cfg失败"
+                fi
+                if [[ -d "$PROJECT_ROOT/oaf_files/app_icons" ]]; then
+                    mkdir -p feeds/luci-app-oaf/htdocs/luci-static/resources/ || echo "创建app_icons目标目录失败"
+                    cp -rf "$PROJECT_ROOT/oaf_files/app_icons" feeds/luci-app-oaf/htdocs/luci-static/resources/ || echo "复制app_icons文件夹失败"
+                fi
+            fi
         else
             if grep -qs "^[^#].*src-git oaf" feeds.conf; then
                 sed -i "s/^\(.*src-git oaf.*\)/#\1/" feeds.conf
