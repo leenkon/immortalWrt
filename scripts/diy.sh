@@ -84,7 +84,7 @@ case "$PHASE" in
         OUTPUT="files/etc/uci-defaults/99-custom-config"
         if [[ "$PROFILE_TYPE" == "bypass" ]]; then
             ROUTER_IP="${CUSTOM_IP:-$DEF_BYPASS_IP}"
-            GATEWAY_IP="${CUSTOM_GATEWAY:-${CUSTOM_IP:+${CUSTOM_IP%.*}.1}:-$DEF_GATEWAY}"
+            GATEWAY_IP="${CUSTOM_GATEWAY:-$( [[ -n "$CUSTOM_IP" ]] && echo "${CUSTOM_IP%.*}.1" || echo "$DEF_GATEWAY" )}"
             NETWORK_CONF="uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.255.0'
