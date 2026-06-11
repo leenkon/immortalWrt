@@ -54,17 +54,29 @@ case "$PHASE" in
     before)
         rm -f feeds.conf feeds.conf.default
         [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf || error_exit "feeds 配置文件不存在"
-        ./scripts/feeds update -a
-
+        
         if grep -qs '^[^#].*src-git small' feeds.conf; then
             rm -rf feeds/luci/applications/luci-app-mosdns feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} feeds/packages/utils/v2dat 2>/dev/null
             rm -rf feeds/packages/lang/golang && git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang feeds/packages/lang/golang 2>/dev/null || true
         fi
 
         if [[ "$INSTALL_OAF" == true && "$PROFILE_TYPE" != "bypass" ]]; then
-            rm -rf package/OpenAppFilter
-            git clone --depth 1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
+            OAF_FEED_LINE="src-git oaf https://github.com/destan19/OpenAppFilter.git"
+            if ! grep -qs '^[^#].*src-git oaf' feeds.conf; then
+                # 无有效行：检查是否有注释行，有则取消注释；无则追加
+                if grep -qs '^#.*src-git oaf' feeds.conf; then
+                    sed -i 's/^#\(.*src-git oaf.*\)/\1/' feeds.conf
+                else
+                    echo "$OAF_FEED_LINE" >> feeds.conf
+                fi
+            fi
+        else
+            # 不安装 OAF：检查 feeds.conf 中有有效 OAF 源则注释
+            if grep -qs '^[^#].*src-git oaf' feeds.conf; then
+                sed -i 's/^\(.*src-git oaf.*\)/#\1/' feeds.conf
+            fi
         fi
+        ./scripts/feeds update -a
         ;;
 
     after)
