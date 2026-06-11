@@ -61,30 +61,25 @@ case "$PHASE" in
         fi
 
         if [[ "$INSTALL_OAF" == true && "$PROFILE_TYPE" != "bypass" ]]; then
-            OAF_FEED_LINE="src-git oaf https://github.com/destan19/OpenAppFilter.git"
-            if ! grep -qs '^[^#].*src-git oaf' feeds.conf; then
-                # 无有效行：检查是否有注释行，有则取消注释；无则追加
-                if grep -qs '^#.*src-git oaf' feeds.conf; then
-                    sed -i 's/^#\(.*src-git oaf.*\)/\1/' feeds.conf
-                else
-                    echo "$OAF_FEED_LINE" >> feeds.conf
-                fi
+            rm -rf packages/OpenAppFilter
+            if grep -qs "^#.*src-git oaf" feeds.conf; then
+                sed -i "s/^#\(.*src-git oaf.*\)/\1/" feeds.conf
+            elif ! grep -qs "^[^#].*src-git oaf" feeds.conf; then
+                echo "src-git oaf https://gitee.com/mirrors/OpenAppFilter.git" >> feeds.conf
             fi
+            ./scripts/feeds update oaf
         else
-            # 不安装 OAF：检查 feeds.conf 中有有效 OAF 源则注释
-            if grep -qs '^[^#].*src-git oaf' feeds.conf; then
-                sed -i 's/^\(.*src-git oaf.*\)/#\1/' feeds.conf
+            if grep -qs "^[^#].*src-git oaf" feeds.conf; then
+                sed -i "s/^\(.*src-git oaf.*\)/#\1/" feeds.conf
+                rm -rf feeds/oaf 2>/dev/null
             fi
         fi
         ./scripts/feeds update -a
         ;;
 
     after)
-        # 创建配置目录
         mkdir -p files/etc/uci-defaults || error_exit "创建配置目录失败"
         OUTPUT="files/etc/uci-defaults/99-custom-config"
-
-        # 旁路由配置
         if [[ "$PROFILE_TYPE" == "bypass" ]]; then
             ROUTER_IP="${CUSTOM_IP:-$DEF_BYPASS_IP}"
             GATEWAY_IP="${CUSTOM_GATEWAY:-${CUSTOM_IP:+${CUSTOM_IP%.*}.1}:-$DEF_GATEWAY}"
