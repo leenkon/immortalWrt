@@ -1,6 +1,4 @@
 #!/bin/bash
-set -euo pipefail
-
 # 自定义错误处理
 error_exit() {
     echo "错误：$1" >&2
