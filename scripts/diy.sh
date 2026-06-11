@@ -61,15 +61,16 @@ case "$PHASE" in
         fi
 
         if [[ "$INSTALL_OAF" == true && "$PROFILE_TYPE" != "bypass" ]]; then
-            rm -rf feeds/luci/applications/luci-app-oaf 2>/dev/null
-            rm -rf feeds/packages/net/appfilter feeds/packages/net/oaf 2>/dev/null
-            rm -rf feeds/packages/kernel/kmod-oaf 2>/dev/null
+
             if grep -qs "^#.*src-git oaf" feeds.conf; then
                 sed -i "s/^#\(.*src-git oaf.*\)/\1/" feeds.conf
             elif ! grep -qs "^[^#].*src-git oaf" feeds.conf; then
-                echo "src-git oaf https://gitee.com/mirrors/OpenAppFilter.git" >> feeds.conf
+                echo "src-git oaf https://github.com/destan19/OpenAppFilter.git" >> feeds.conf
             fi
             ./scripts/feeds update oaf
+            rm -rf feeds/luci/applications/luci-app-oaf 2>/dev/null
+            rm -rf feeds/packages/net/appfilter feeds/packages/net/oaf 2>/dev/null
+            rm -rf feeds/packages/kernel/kmod-oaf 2>/dev/null
         else
             if grep -qs "^[^#].*src-git oaf" feeds.conf; then
                 sed -i "s/^\(.*src-git oaf.*\)/#\1/" feeds.conf
