@@ -84,7 +84,7 @@ jobs:
         with:
           name: ImmortalWrt x86_64 ${{ env.RELEASE_TAG }} (${{ env.PROFILE_TYPE }})
           tag_name: ${{ env.RELEASE_TAG }}-${{ env.PROFILE_TYPE }}
-          files:
+          files: |
             openwrt/bin/targets/x86/64/*squashfs-combined.img.gz
             openwrt/bin/targets/x86/64/*ext4-combined.img.gz
         env:
