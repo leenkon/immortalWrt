@@ -4,7 +4,6 @@ error_exit() {
     echo "错误：$1" >&2
     exit 1
 }
-
 # UCI 字符转义
 _escape_uci() {
     local str="$1"
@@ -13,16 +12,13 @@ _escape_uci() {
     str="${str//\'/\\\'}"
     printf '%s' "$str"
 }
-
 # 默认配置
 DEF_MAIN_IP="10.10.10.1"
 DEF_BYPASS_IP="10.10.10.10"
 DEF_GATEWAY="10.10.10.1"
-
 # 变量初始化
 VERSION="" PHASE="" PROFILE_TYPE="" INSTALL_OAF=false
 CUSTOM_IP="" CUSTOM_GATEWAY="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
-
 # 参数解析
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -34,41 +30,48 @@ while [[ $# -gt 0 ]]; do
         --pppoe-user) PPPOE_USERNAME="$2"; shift 2 ;;
         --pppoe-pass) PPPOE_PASSWORD="$2"; shift 2 ;;
         --install-oaf) INSTALL_OAF=true; shift ;;
-        --root-pass) ROOT_PASSWORD="$2"; shift 2 ;;
+        --root-pass) ROOT_PASSWORD="$2"; shift ;;
         *) error_exit "未知选项 $1" ;;
     esac
 done
-
 # 参数验证
 [[ -z "$VERSION" || -z "$PHASE" ]] && error_exit "必须指定版本和阶段"
 [[ "$PHASE" == "after" && -z "$PROFILE_TYPE" ]] && error_exit "after 阶段必须指定路由类型"
 [[ -n "$PROFILE_TYPE" && "$PROFILE_TYPE" != "main" && "$PROFILE_TYPE" != "bypass" ]] && error_exit "路由类型必须是 main 或 bypass"
-
 # 获取项目根目录
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)
 [[ -z "$PROJECT_ROOT" || ! -d "$PROJECT_ROOT" ]] && error_exit "无法定位项目根目录"
-
 case "$PHASE" in
     before)
         rm -f feeds.conf feeds.conf.default
         [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf || error_exit "feeds 配置文件不存在"
-        
         if grep -qs '^[^#].*src-git small' feeds.conf; then
             rm -rf feeds/luci/applications/luci-app-mosdns feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} feeds/packages/utils/v2dat 2>/dev/null
             rm -rf feeds/packages/lang/golang && git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang feeds/packages/lang/golang 2>/dev/null || true
         fi
-
+        rm -rf feeds/oaf 2>/dev/null
+        rm -rf feeds/luci/applications/luci-app-oaf 2>/dev/null
+        rm -rf feeds/packages/net/appfilter feeds/packages/net/oaf 2>/dev/null
+        rm -rf feeds/packages/kernel/kmod-oaf 2>/dev/null
         if [[ "$INSTALL_OAF" == true && "$PROFILE_TYPE" != "bypass" ]]; then
+            # 启用 OAF 源
             if grep -qs "^#.*src-git oaf" feeds.conf; then
                 sed -i "s/^#\(.*src-git oaf.*\)/\1/" feeds.conf
             elif ! grep -qs "^[^#].*src-git oaf" feeds.conf; then
                 echo "src-git oaf https://github.com/destan19/OpenAppFilter.git" >> feeds.conf
             fi
-            ./scripts/feeds update oaf
-            [[ -f "feeds/oaf/open-app-filter/files/feature.cfg" ]] && rm -rf feeds/oaf 2>/dev/null
-            rm -rf feeds/luci/applications/luci-app-oaf 2>/dev/null
-            rm -rf feeds/packages/net/appfilter feeds/packages/net/oaf 2>/dev/null
-            rm -rf feeds/packages/kernel/kmod-oaf 2>/dev/null
+        else
+            # 禁用 OAF 源
+            if grep -qs "^[^#].*src-git oaf" feeds.conf; then
+                sed -i "s/^\(.*src-git oaf.*\)/#\1/" feeds.conf
+                [[ -d "feeds/oaf" ]] && rm -rf feeds/oaf 2>/dev/null
+            fi
+        fi
+        ./scripts/feeds update -a
+        ;;
+    after)
+        # 在全局 feeds update -a 完成后，替换 OAF 自定义文件
+        if [[ "$INSTALL_OAF" == true && "$PROFILE_TYPE" != "bypass" ]]; then
             if [[ -d "$PROJECT_ROOT/oaf_files" ]]; then
                 echo "检测到oaf_files文件夹，开始复制自定义文件..."
                 if [[ -f "$PROJECT_ROOT/oaf_files/feature.cfg" ]]; then
@@ -79,16 +82,8 @@ case "$PHASE" in
                     cp -rf "$PROJECT_ROOT/oaf_files/app_icons" feeds/luci-app-oaf/htdocs/luci-static/resources/ || echo "复制app_icons文件夹失败"
                 fi
             fi
-        else
-            if grep -qs "^[^#].*src-git oaf" feeds.conf; then
-                sed -i "s/^\(.*src-git oaf.*\)/#\1/" feeds.conf
-                [[ -d "feeds/oaf" ]] && rm -rf feeds/oaf 2>/dev/null
-            fi
         fi
-        ./scripts/feeds update -a
-        ;;
 
-    after)
         mkdir -p files/etc/uci-defaults || error_exit "创建配置目录失败"
         OUTPUT="files/etc/uci-defaults/99-custom-config"
         if [[ "$PROFILE_TYPE" == "bypass" ]]; then
@@ -98,12 +93,14 @@ case "$PHASE" in
 uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.255.0'
 uci set network.lan.gateway='$GATEWAY_IP'
-uci set network.lan.dns='$GATEWAY_IP 8.8.8.8 223.5.5.5'
+uci set network.lan.dns='223.5.5.5 114.114.114.114'
 uci set network.wan.proto='none'
 uci set network.wan6.proto='none'
 uci set network.lan6.proto='none'
 uci set dhcp.lan.ignore='1'
-uci set dhcp.lan6.ignore='1'"
+uci set dhcp.lan6.ignore='1'
+# 防火墙拒绝LAN转发，彻底杜绝流量回流跳转
+uci set firewall.@zone[0].forward='reject'"
         else
             # 主路由配置
             ROUTER_IP="${CUSTOM_IP:-$DEF_MAIN_IP}"
@@ -115,7 +112,6 @@ uci set network.wan.ipv6='auto'" || \
                 echo "uci set network.wan.proto='dhcp'
 uci set network.wan6.proto='dhcpv6'")
             GATEWAY_CONF=$([[ -n "$CUSTOM_GATEWAY" ]] && echo "uci set network.lan.gateway='$CUSTOM_GATEWAY'")
-
             NETWORK_CONF="uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.255.0'
@@ -126,7 +122,6 @@ uci delete dnsmasq.@dnsmasq[0].server && uci add_list dnsmasq.@dnsmasq[0].server
 uci set dhcp.lan.start='11'
 uci set dhcp.lan.limit='150'"
         fi
-
         # 写入自定义配置
         cat > "$OUTPUT" <<EOF
 #!/bin/sh
@@ -142,7 +137,6 @@ uci commit
 exit 0
 EOF
         chmod +x "$OUTPUT"
-
         # Root 密码配置
         [[ -n "$ROOT_PASSWORD" ]] && {
             ENCRYPTED_PASS=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin 2>/dev/null)
@@ -158,6 +152,5 @@ EOF
             }
         }
         ;;
-
     *) error_exit "无效阶段 $PHASE" ;;
 esac
