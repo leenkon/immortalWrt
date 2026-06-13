@@ -80,7 +80,7 @@ jobs:
           [[ -n "$ROOT_PASSWORD" ]] && args+=(--root-pass "$ROOT_PASSWORD")
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${args[@]}"
           make defconfig
-          make download -j$(nproc) && make -j$(nproc) || make V=s -j1
+          make download -j$(nproc) && make -j$(nproc) V=s || make V=s -j1
 
       - name: 上传固件
         uses: softprops/action-gh-release@v2
