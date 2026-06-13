@@ -92,9 +92,9 @@ jobs:
           ROOTPWD="${{ github.event.inputs.root_password }}"
           USE_OAF="${{ github.event.inputs.install_oaf }}"
           # 标准拆分profile，修复here-document报错
-          IFS='-' read -r CFG_TYPE RUN_TYPE <<< "$PRO"
-          VER_MAJOR="${VER%.*}"
-          CFG_FILE="${VER_MAJOR}.config"
+          IFS='-' read -r CFG_PREFIX RUN_TYPE <<< "$PRO"
+          VER_MAIN="${VER%.*}"
+          CFG_FILE="${VER_MAIN}-${CFG_PREFIX}.config"
           # 执行diy before
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
           DIY_BEFORE=(-v "$VER_MAJOR" -p before -t "$RUN_TYPE")
