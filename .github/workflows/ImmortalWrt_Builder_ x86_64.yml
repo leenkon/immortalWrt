@@ -65,22 +65,41 @@ jobs:
       - name: 配置与编译
         run: |
           set +e
+          echo "=== 进入 openwrt 目录 ==="
           cd openwrt
+          
+          echo "=== 赋予 diy.sh 执行权限 ==="
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
+          
+          echo "=== 开始执行 diy.sh before 阶段 ==="
           DIY_ARGS=(-v "$VERSION_MAJOR" -p before -t "$PROFILE_TYPE")
           [[ "$INSTALL_OAF" == "true" ]] && DIY_ARGS+=(--install-oaf)
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${DIY_ARGS[@]}"
+          
+          echo "=== 执行 feeds update -a ==="
           ./scripts/feeds update -a
+          
+          echo "=== 执行 feeds install -a ==="
           ./scripts/feeds install -a
+          
+          echo "=== 拷贝 .config 配置 ==="
           [ -f "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" .config || { echo "错误: 配置文件不存在" >&2; exit 1; }
+          
+          echo "=== 追加 OAF 配置项 ==="
           [[ "$INSTALL_OAF" == "true" && "$PROFILE_TYPE" != "bypass" ]] && echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
+          
+          echo "=== 开始执行 diy.sh after 阶段 ==="
           args=(-v "$VERSION_MAJOR" -p after -t "$PROFILE_TYPE")
           [[ -n "$CUSTOM_IP" ]] && args+=(--ip "$CUSTOM_IP")
           [[ "$PROFILE_TYPE" == "bypass" && -n "$CUSTOM_GATEWAY" ]] && args+=(--gateway "$CUSTOM_GATEWAY")
           [[ "$PROFILE_TYPE" == "main" && -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && args+=(--pppoe-user "$PPPOE_USERNAME" --pppoe-pass "$PPPOE_PASSWORD")
           [[ -n "$ROOT_PASSWORD" ]] && args+=(--root-pass "$ROOT_PASSWORD")
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${args[@]}"
+          
+          echo "=== 执行 make defconfig ==="
           make defconfig
+          
+          echo "=== 开始 make download + 编译 ==="
           make download -j$(nproc) && make -j$(nproc) V=s || make V=s -j1
 
       - name: 上传固件
