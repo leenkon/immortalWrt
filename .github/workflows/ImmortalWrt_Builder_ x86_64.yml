@@ -74,11 +74,7 @@ jobs:
       - name: 克隆指定版本源码
         run: |
           VERSION="${{ github.event.inputs.version }}"
-          PROFILE="${{ github.event.inputs.profile }}"
-          FULL_TAG="v${VERSION}"
-          echo "当前选择版本: ${VERSION}"
-          echo "完整标签: ${FULL_TAG}"
-          echo "配置项: ${PROFILE}"
+          FULL_TAG="v${VERSION}"          
           sudo rm -rf openwrt
           git clone https://github.com/immortalwrt/immortalwrt openwrt
           cd openwrt
@@ -98,6 +94,8 @@ jobs:
           IFS="-" read -r CONFIG_TYPE PROFILE_TYPE << "${PROFILE}"
           VERSION_MAJOR="${VERSION%.*}"
           CONFIG_FILE="${VERSION_MAJOR}.config"
+          echo "配置文件: ${PROFILE}"
+          echo "选择版本: ${VERSION}"
           cd openwrt
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
           DIY_ARGS=(-v "${VERSION_MAJOR}" -p before -t "${PROFILE_TYPE}")
