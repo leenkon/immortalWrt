@@ -68,7 +68,9 @@ jobs:
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
           DIY_ARGS=(-v "$VERSION_MAJOR" -p before -t "$PROFILE_TYPE")
           [[ "$INSTALL_OAF" == "true" ]] && DIY_ARGS+=(--install-oaf)
-          "$GITHUB_WORKSPACE/scripts/diy.sh" "${DIY_ARGS[@]}"
+          "$GITHUB_WORKSPACE/scripts/diy.sh" "${DIY_ARGS[@]}"          
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
           [ -f "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" .config || { echo "错误: 配置文件不存在" >&2; exit 1; }
           [[ "$INSTALL_OAF" == "true" && "$PROFILE_TYPE" != "bypass" ]] && echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
           args=(-v "$VERSION_MAJOR" -p after -t "$PROFILE_TYPE")
@@ -77,8 +79,6 @@ jobs:
           [[ "$PROFILE_TYPE" == "main" && -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && args+=(--pppoe-user "$PPPOE_USERNAME" --pppoe-pass "$PPPOE_PASSWORD")
           [[ -n "$ROOT_PASSWORD" ]] && args+=(--root-pass "$ROOT_PASSWORD")
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${args[@]}"
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
           make defconfig
           make download -j$(nproc) && make -j$(nproc) || make V=s -j1
 
