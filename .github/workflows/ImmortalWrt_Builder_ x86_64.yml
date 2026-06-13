@@ -56,10 +56,9 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
     steps:
-      - name: 检出项目代码
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: 安装系统编译依赖
+      - name: 安装依赖
         run: |
           sudo apt update -y
           sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
@@ -67,71 +66,63 @@ jobs:
           g++-multilib git gnutls-dev gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev \
           libglib2.0-dev libgmp-dev libltdl-dev libmpc-dev libmpfr-dev libncurses-dev libpython3-dev \
           libreadline-dev libssl-dev libtool libyaml-dev libz-dev lld llvm lrzsz mkisofs msmtp nano \
-          ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip python3-ply python3-docutils \
+          ninja-build p7zip-full patch pkgconf python3 python3-pip python3-ply python3-docutils \
           python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs \
           upx-ucl unzip vim wget xmlto xxd zlib1g-dev
 
-      - name: 克隆指定版本源码
+      - name: 拉取并切换源码
         run: |
-          VERSION="${{ github.event.inputs.version }}"
-          FULL_TAG="v${VERSION}"          
+          VER="${{ github.event.inputs.version }}"
+          TAG="v$VER"
           sudo rm -rf openwrt
-          git clone https://github.com/immortalwrt/immortalwrt openwrt
+          timeout 180 git clone https://github.com/immortalwrt/immortalwrt openwrt || true
           cd openwrt
           git fetch --tags
-          git checkout "${FULL_TAG}"
+          git checkout "$TAG"
 
-      - name: 配置并编译固件
+      - name: 配置并编译
         run: |
-          VERSION="${{ github.event.inputs.version }}"
-          PROFILE="${{ github.event.inputs.profile }}"
-          CUSTOM_IP="${{ github.event.inputs.custom_ip }}"
-          CUSTOM_GATEWAY="${{ github.event.inputs.custom_gateway }}"
-          PPPOE_USER="${{ github.event.inputs.pppoe_username }}"
-          PPPOE_PASS="${{ github.event.inputs.pppoe_password }}"
-          ROOT_PWD="${{ github.event.inputs.root_password }}"
-          INSTALL_OAF="${{ github.event.inputs.install_oaf }}"
-          IFS="-" read -r CONFIG_TYPE PROFILE_TYPE << "${PROFILE}"
-          VERSION_MAJOR="${VERSION%.*}"
-          CONFIG_FILE="${VERSION_MAJOR}.config"
-          echo "配置文件: ${PROFILE}"
-          echo "选择版本: ${VERSION}"
           cd openwrt
+          VER="${{ github.event.inputs.version }}"
+          PRO="${{ github.event.inputs.profile }}"
+          CIP="${{ github.event.inputs.custom_ip }}"
+          CGW="${{ github.event.inputs.custom_gateway }}"
+          PUSER="${{ github.event.inputs.pppoe_username }}"
+          PPASS="${{ github.event.inputs.pppoe_password }}"
+          ROOTPWD="${{ github.event.inputs.root_password }}"
+          USE_OAF="${{ github.event.inputs.install_oaf }}"
+          # 标准拆分profile，修复here-document报错
+          IFS='-' read -r CFG_TYPE RUN_TYPE <<< "$PRO"
+          VER_MAJOR="${VER%.*}"
+          CFG_FILE="${VER_MAJOR}.config"
+          # 执行diy before
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
-          DIY_ARGS=(-v "${VERSION_MAJOR}" -p before -t "${PROFILE_TYPE}")
-          [[ "${INSTALL_OAF}" == "true" ]] && DIY_ARGS+=(--install-oaf)
-          "$GITHUB_WORKSPACE/scripts/diy.sh" "${DIY_ARGS[@]}"
+          DIY_BEFORE=(-v "$VER_MAJOR" -p before -t "$RUN_TYPE")
+          [[ "$USE_OAF" == "true" ]] && DIY_BEFORE+=(--install-oaf)
+          "$GITHUB_WORKSPACE/scripts/diy.sh" "${DIY_BEFORE[@]}"
+          # feeds基础操作
           ./scripts/feeds install -a
-          cp "$GITHUB_WORKSPACE/configs/${CONFIG_FILE}" .config
-                    rm -rf package/feeds/packages/oaf \
-                 package/feeds/packages/luci-app-oaf \
-                 package/feeds/packages/open-app-filter 2>/dev/null
-          #清空 .config 里旧的 OAF 残留配置（只清历史，此时还未新增）
+          cp "$GITHUB_WORKSPACE/configs/$CFG_FILE" .config
+          # 清理feeds自带OAF（防循环依赖）
+          rm -rf package/feeds/packages/oaf package/feeds/packages/luci-app-oaf package/feeds/packages/open-app-filter 2>/dev/null
           sed -i '/CONFIG_PACKAGE.*oaf/d' .config
-          #主路由 + 开启OAF：克隆源码 + 导入自定义文件 + 写入启用配置
-          if [[ "${INSTALL_OAF}" == "true" && "${PROFILE_TYPE}" == "main" ]]; then
-            git clone https://github.com/destan19/OpenAppFilter package/OpenAppFilter
-            PROJECT_ROOT="$GITHUB_WORKSPACE"
-            if [[ -d "${PROJECT_ROOT}/oaf_files" ]]; then
-              [[ -f "${PROJECT_ROOT}/oaf_files/feature.cfg" ]] && \
-              cp -f "${PROJECT_ROOT}/oaf_files/feature.cfg" package/OpenAppFilter/open-app-filter/files/
-              if [[ -d "${PROJECT_ROOT}/oaf_files/app_icons" ]]; then
-                mkdir -p package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
-                cp -rf "${PROJECT_ROOT}/oaf_files/app_icons" package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
-              fi
-            fi
+          # 安装OAF（网络容错，保留自定义文件）
+          if [[ "$USE_OAF" == "true" && "$RUN_TYPE" == "main" ]]; then
+            timeout 120 git clone https://github.com/destan19/OpenAppFilter package/OpenAppFilter || true
+            ROOT_WS="$GITHUB_WORKSPACE"
+            [[ -d "$ROOT_WS/oaf_files" && -f "$ROOT_WS/oaf_files/feature.cfg" ]] && cp -f "$ROOT_WS/oaf_files/feature.cfg" package/OpenAppFilter/open-app-filter/files/
+            [[ -d "$ROOT_WS/oaf_files/app_icons" ]] && mkdir -p package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/ && cp -rf "$ROOT_WS/oaf_files/app_icons" package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
             echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
           fi
-          # 执行 diy after (网络/IP/PPPoE/时区/密码)
-          AFTER_ARGS=(-v "${VERSION_MAJOR}" -p after -t "${PROFILE_TYPE}")
-          [[ -n "${CUSTOM_IP}" ]] && AFTER_ARGS+=(--ip "${CUSTOM_IP}")
-          [[ -n "${CUSTOM_GATEWAY}" ]] && AFTER_ARGS+=(--gateway "${CUSTOM_GATEWAY}")
-          [[ -n "${PPPOE_USER}" && -n "${PPPOE_PASS}" ]] && \
-          AFTER_ARGS+=(--pppoe-user "${PPPOE_USER}" --pppoe-pass "${PPPOE_PASS}")
-          [[ -n "${ROOT_PWD}" ]] && AFTER_ARGS+=(--root-pass "${ROOT_PWD}")
-          "$GITHUB_WORKSPACE/scripts/diy.sh" "${AFTER_ARGS}"
+          # 执行diy after
+          DIY_AFTER=(-v "$VER_MAJOR" -p after -t "$RUN_TYPE")
+          [[ -n "$CIP" ]] && DIY_AFTER+=(--ip "$CIP")
+          [[ -n "$CGW" ]] && DIY_AFTER+=(--gateway "$CGW")
+          [[ -n "$PUSER" && -n "$PPASS" ]] && DIY_AFTER+=(--pppoe-user "$PUSER" --pppoe-pass "$PPASS")
+          [[ -n "$ROOTPWD" ]] && DIY_AFTER+=(--root-pass "$ROOTPWD")
+          "$GITHUB_WORKSPACE/scripts/diy.sh" "${DIY_AFTER[@]}"
           make defconfig && make download -j$(nproc) && make -j$(nproc) V=s || make -j1 V=s
-          
+
       - name: 上传固件
         uses: softprops/action-gh-release@v2
         with:
