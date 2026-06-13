@@ -45,35 +45,27 @@ case "$PHASE" in
     before)
         rm -f feeds.conf feeds.conf.default
         [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf || error_exit "feeds 配置文件不存在"
+        
         if grep -qs '^[^#].*src-git small' feeds.conf; then
             rm -rf feeds/luci/applications/luci-app-mosdns feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} feeds/packages/utils/v2dat 2>/dev/null
-            rm -rf feeds/packages/lang/golang && git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang feeds/packages/lang/golang 2>/dev/null || true
+            rm -rf feeds/packages/lang/golang
+            # 增加超时，防止git clone无限卡死
+            timeout 120 git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang feeds/packages/lang/golang 2>/dev/null || true
         fi
-        rm -rf feeds/oaf 2>/dev/null
-        rm -rf feeds/luci/applications/luci-app-oaf 2>/dev/null
-        rm -rf feeds/packages/net/appfilter feeds/packages/net/oaf 2>/dev/null
-        rm -rf feeds/packages/kernel/kmod-oaf 2>/dev/null
+
         if [[ "$INSTALL_OAF" == true && "$PROFILE_TYPE" != "bypass" ]]; then
-            # 启用 OAF 源
+            rm -rf feeds/oaf 2>/dev/null
+            rm -rf feeds/luci/applications/luci-app-oaf 2>/dev/null
+            rm -rf feeds/packages/net/appfilter feeds/packages/net/oaf 2>/dev/null
+            rm -rf feeds/packages/kernel/kmod-oaf 2>/dev/null
             if grep -qs "^#.*src-git oaf" feeds.conf; then
                 sed -i "s/^#\(.*src-git oaf.*\)/\1/" feeds.conf
             elif ! grep -qs "^[^#].*src-git oaf" feeds.conf; then
                 echo "src-git oaf https://github.com/destan19/OpenAppFilter.git" >> feeds.conf
             fi
-        else
-            # 禁用 OAF 源
-            if grep -qs "^[^#].*src-git oaf" feeds.conf; then
-                sed -i "s/^\(.*src-git oaf.*\)/#\1/" feeds.conf
-                [[ -d "feeds/oaf" ]] && rm -rf feeds/oaf 2>/dev/null
-            fi
-        fi
-        ./scripts/feeds update -a
-        ;;
-    after)
-        # 在全局 feeds update -a 完成后，替换 OAF 自定义文件
-        if [[ "$INSTALL_OAF" == true && "$PROFILE_TYPE" != "bypass" ]]; then
+            timeout 120 ./scripts/feeds update oaf
+
             if [[ -d "$PROJECT_ROOT/oaf_files" ]]; then
-                echo "检测到oaf_files文件夹，开始复制自定义文件..."
                 if [[ -f "$PROJECT_ROOT/oaf_files/feature.cfg" ]]; then
                     cp -f "$PROJECT_ROOT/oaf_files/feature.cfg" feeds/oaf/open-app-filter/files/ || echo "复制feature.cfg失败"
                 fi
@@ -82,8 +74,15 @@ case "$PHASE" in
                     cp -rf "$PROJECT_ROOT/oaf_files/app_icons" feeds/luci-app-oaf/htdocs/luci-static/resources/ || echo "复制app_icons文件夹失败"
                 fi
             fi
+        else
+            if grep -qs "^[^#].*src-git oaf" feeds.conf; then
+                sed -i "s/^\(.*src-git oaf.*\)/#\1/" feeds.conf
+                [[ -d "feeds/oaf" ]] && rm -rf feeds/oaf 2>/dev/null
+            fi
         fi
-
+        ./scripts/feeds update -a
+        ;;
+    after)
         mkdir -p files/etc/uci-defaults || error_exit "创建配置目录失败"
         OUTPUT="files/etc/uci-defaults/99-custom-config"
         if [[ "$PROFILE_TYPE" == "bypass" ]]; then
@@ -93,14 +92,12 @@ case "$PHASE" in
 uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.255.0'
 uci set network.lan.gateway='$GATEWAY_IP'
-uci set network.lan.dns='223.5.5.5 114.114.114.114'
+uci set network.lan.dns='$GATEWAY_IP 8.8.8.8 223.5.5.5'
 uci set network.wan.proto='none'
 uci set network.wan6.proto='none'
 uci set network.lan6.proto='none'
 uci set dhcp.lan.ignore='1'
-uci set dhcp.lan6.ignore='1'
-# 防火墙拒绝LAN转发，彻底杜绝流量回流跳转
-uci set firewall.@zone[0].forward='reject'"
+uci set dhcp.lan6.ignore='1'"
         else
             # 主路由配置
             ROUTER_IP="${CUSTOM_IP:-$DEF_MAIN_IP}"
