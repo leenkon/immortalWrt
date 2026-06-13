@@ -64,6 +64,7 @@ jobs:
 
       - name: 配置与编译
         run: |
+          set +e
           cd openwrt
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
           DIY_ARGS=(-v "$VERSION_MAJOR" -p before -t "$PROFILE_TYPE")
