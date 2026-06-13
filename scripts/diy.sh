@@ -29,8 +29,8 @@ while [[ $# -gt 0 ]]; do
         --gateway) CUSTOM_GATEWAY="$2"; shift 2 ;;
         --pppoe-user) PPPOE_USERNAME="$2"; shift 2 ;;
         --pppoe-pass) PPPOE_PASSWORD="$2"; shift 2 ;;
-        --install-oaf) INSTALL_OAF=true; shift ;;
-        --root-pass) ROOT_PASSWORD="$2"; shift ;;
+        --install-oaf) INSTALL_OAF=true; shift 2 ;;
+        --root-pass) ROOT_PASSWORD="$2"; shift 2 ;;
         *) error_exit "未知选项 $1" ;;
     esac
 done
