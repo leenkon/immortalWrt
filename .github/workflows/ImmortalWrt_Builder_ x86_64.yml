@@ -87,6 +87,16 @@ jobs:
           
           echo "=== 追加 OAF 配置项 ==="
           [[ "$INSTALL_OAF" == "true" && "$PROFILE_TYPE" != "bypass" ]] && echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
+          if [[ "$PROFILE_TYPE" == "main" ]]; then
+                    # 删除 feeds 挂载的 OAF 目录
+            rm -rf package/feeds/packages/oaf \
+            package/feeds/packages/luci-app-oaf \
+            package/feeds/packages/open-app-filter 2>/dev/null
+            echo "===== 开始拉取 OpenAppFilter 源码 ====="
+            git clone --depth 1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
+            # 仅开启 luci 界面，依赖由 defconfig 自动补全
+            echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
+          fi
           
           echo "=== 开始执行 diy.sh after 阶段 ==="
           args=(-v "$VERSION_MAJOR" -p after -t "$PROFILE_TYPE")
