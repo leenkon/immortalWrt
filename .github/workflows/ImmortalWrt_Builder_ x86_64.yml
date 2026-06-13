@@ -23,7 +23,6 @@ on:
         options:
           - mini-bypass
           - default-main
-          - full-main
       custom_ip:
         description: '自定义IP'
         type: string
@@ -59,25 +58,13 @@ jobs:
       - name: 检出仓库代码
         uses: actions/checkout@v4
 
-      - name: 安装系统编译依赖
-        run: |
-          sudo apt update -y
-          sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
-          bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib \
-          g++-multilib git gnutls-dev gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev \
-          libglib2.0-dev libgmp-dev libltdl-dev libmpc-dev libmpfr-dev libncurses-dev libpython3-dev \
-          libreadline-dev libssl-dev libtool libyaml-dev libz-dev lld llvm lrzsz mkisofs msmtp nano \
-          ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip python3-ply python3-docutils \
-          python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs \
-          upx-ucl unzip vim wget xmlto xxd zlib1g-dev
-
-      # 单独解析变量、写入环境变量（不切换目录）
-      - name: 解析编译参数 & 环境变量
+      # 【独立变量步骤】保证全局环境变量永久生效，解决 checkout v 报错
+      - name: 初始化全局环境变量
         run: |
           IFS="-" read -r CONFIG_TYPE PROFILE_TYPE << "${{ inputs.profile }}"
           VERSION="${{ inputs.version }}"
           VERSION_MAJOR="${VERSION%.*}"
-          CONFIG_FILE="${VERSION_MAJOR}-${CONFIG_TYPE}.config"
+          CONFIG_FILE="${VERSION_MAJOR}.config"
 
           echo "RELEASE_TAG=$VERSION" >> $GITHUB_ENV
           echo "VERSION_MAJOR=$VERSION_MAJOR" >> $GITHUB_ENV
@@ -90,82 +77,79 @@ jobs:
           echo "ROOT_PASSWORD=${{ inputs.root_password }}" >> $GITHUB_ENV
           echo "INSTALL_OAF=${{ inputs.install_oaf }}" >> $GITHUB_ENV
 
-      # 单独克隆+切换源码（独立步骤，保证目录一定存在）
-      - name: 克隆并切换 ImmortalWrt 版本
+      # 【合并大步骤】依赖 + 克隆源码 + 前置配置 + OAF + diy 全套
+      - name: 环境&源码&编译前置配置
         run: |
+          # 安装编译依赖
+          sudo apt update -y
+          sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+          bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib \
+          g++-multilib git gnutls-dev gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev \
+          libglib2.0-dev libgmp-dev libltdl-dev libmpc-dev libmpfr-dev libncurses-dev libpython3-dev \
+          libreadline-dev libssl-dev libtool libyaml-dev libz-dev lld llvm lrzsz mkisofs msmtp nano \
+          ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip python3-ply python3-docutils \
+          python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs \
+          upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+
+          # 清理并克隆源码
           sudo rm -rf openwrt
           git clone https://github.com/immortalwrt/immortalwrt openwrt
+          [ ! -d "openwrt" ] && echo "目录创建失败" && exit 1
           cd openwrt
-          git fetch --tags
-          git checkout "v${RELEASE_TAG}"
-          echo "=== openwrt 目录准备完成 ==="
 
-      # 编译前置全流程（现在 openwrt 目录必然存在）
-      - name: 编译前置配置 & OAF部署
-        run: |
-          cd openwrt
-          chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
+          # 修复 git checkout 报错：使用完整变量，强制标签格式
+          git fetch --tags
+          echo "当前可用标签:"
+          git tag | grep "${RELEASE_TAG}"
+          git checkout "v${RELEASE_TAG}"
 
           # 执行 diy before
-          echo "=== 执行 diy.sh before ==="
+          chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
           DIY_ARGS=(-v "$VERSION_MAJOR" -p before -t "$PROFILE_TYPE")
           [[ "$INSTALL_OAF" == "true" ]] && DIY_ARGS+=(--install-oaf)
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${DIY_ARGS[@]}"
 
-          # 标准 feeds 安装
-          echo "=== 执行 feeds install -a ==="
+          # Feeds 标准操作
           ./scripts/feeds install -a
+          cp "$GITHUB_WORKSPACE/configs/${CONFIG_FILE}" .config
 
-          # 加载基础配置文件
-          echo "=== 加载 .config 配置 ==="
-          cp "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" .config
-
-          # 主路由 + 开启OAF：克隆源码 + 导入自定义文件
+          # 部署 OAF + 自定义文件
           if [[ "$INSTALL_OAF" == "true" && "$PROFILE_TYPE" == "main" ]]; then
-            echo "=== 部署 OAF 源码 ==="
             git clone https://github.com/destan19/OpenAppFilter package/OpenAppFilter
-
             PROJECT_ROOT="$GITHUB_WORKSPACE"
             if [[ -d "$PROJECT_ROOT/oaf_files" ]]; then
-              [[ -f "$PROJECT_ROOT/oaf_files/feature.cfg" ]] && \
-              cp -f "$PROJECT_ROOT/oaf_files/feature.cfg" package/OpenAppFilter/open-app-filter/files/
-
+              [[ -f "$PROJECT_ROOT/oaf_files/feature.cfg" ]] && cp -f "$PROJECT_ROOT/oaf_files/feature.cfg" package/OpenAppFilter/open-app-filter/files/
               if [[ -d "$PROJECT_ROOT/oaf_files/app_icons" ]]; then
                 mkdir -p package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
                 cp -rf "$PROJECT_ROOT/oaf_files/app_icons" package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
               fi
             fi
-            # 启用OAF
             echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
           fi
 
-          # 清理 feeds 内置OAF（防循环依赖）
-          echo "=== 清理冲突OAF包 ==="
+          # 清理 feeds 内置 OAF 防循环依赖
           rm -rf package/feeds/packages/oaf \
                  package/feeds/packages/luci-app-oaf \
                  package/feeds/packages/open-app-filter 2>/dev/null
           sed -i '/CONFIG_PACKAGE.*oaf/d' .config
 
           # 执行 diy after
-          echo "=== 执行 diy.sh after ==="
           AFTER_ARGS=(-v "$VERSION_MAJOR" -p after -t "$PROFILE_TYPE")
           [[ -n "$CUSTOM_IP" ]] && AFTER_ARGS+=(--ip "$CUSTOM_IP")
           [[ -n "$CUSTOM_GATEWAY" ]] && AFTER_ARGS+=(--gateway "$CUSTOM_GATEWAY")
-          [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && AFTER_ARGS+=(--pppoe-user "$PPPOE_USERNAME" --pppoe-password "$PPPOE_PASSWORD")
+          [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && AFTER_ARGS+=(--pppoe-user "$PPPOE_USERNAME" --pppoe-pass "$PPPOE_PASSWORD")
           [[ -n "$ROOT_PASSWORD" ]] && AFTER_ARGS+=(--root-pass "$ROOT_PASSWORD")
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${AFTER_ARGS}"
 
-      - name: 生成配置 & 下载编译依赖
+      # 合并：生成配置 + 下载依赖 + 编译
+      - name: 配置&下载&编译固件
         run: |
           cd openwrt
           make defconfig
           make download -j$(nproc)
-
-      - name: 编译固件
-        run: |
-          cd openwrt
           make -j$(nproc) V=s || make -j1 V=s
 
+      # 发布固件
       - name: 上传固件到 Release
         uses: softprops/action-gh-release@v2
         with:
