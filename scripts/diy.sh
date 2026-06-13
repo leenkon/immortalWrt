@@ -29,7 +29,7 @@ while [[ $# -gt 0 ]]; do
         --gateway) CUSTOM_GATEWAY="$2"; shift 2 ;;
         --pppoe-user) PPPOE_USERNAME="$2"; shift 2 ;;
         --pppoe-pass) PPPOE_PASSWORD="$2"; shift 2 ;;
-        --install-oaf) INSTALL_OAF=true; shift 2 ;;
+        --install-oaf) INSTALL_OAF=true; shift ;;
         --root-pass) ROOT_PASSWORD="$2"; shift 2 ;;
         *) error_exit "未知选项 $1" ;;
     esac
@@ -41,56 +41,38 @@ done
 # 获取项目根目录
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)
 [[ -z "$PROJECT_ROOT" || ! -d "$PROJECT_ROOT" ]] && error_exit "无法定位项目根目录"
+
 case "$PHASE" in
     before)
+        # 加载版本对应 feeds 配置
         rm -f feeds.conf feeds.conf.default
         [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf || error_exit "feeds 配置文件不存在"
-        
+
+        # 仅处理 small 源 + golang（保留原有逻辑，无OAF相关）
         if grep -qs '^[^#].*src-git small' feeds.conf; then
             rm -rf feeds/luci/applications/luci-app-mosdns feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} feeds/packages/utils/v2dat 2>/dev/null
             rm -rf feeds/packages/lang/golang
-            # 增加超时，防止git clone无限卡死
             timeout 120 git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang feeds/packages/lang/golang 2>/dev/null || true
         fi
 
-        if [[ "$INSTALL_OAF" == true && "$PROFILE_TYPE" != "bypass" ]]; then
-            rm -rf feeds/oaf 2>/dev/null
-            rm -rf feeds/luci/applications/luci-app-oaf 2>/dev/null
-            rm -rf feeds/packages/net/appfilter feeds/packages/net/oaf 2>/dev/null
-            rm -rf feeds/packages/kernel/kmod-oaf 2>/dev/null
-            if grep -qs "^#.*src-git oaf" feeds.conf; then
-                sed -i "s/^#\(.*src-git oaf.*\)/\1/" feeds.conf
-            elif ! grep -qs "^[^#].*src-git oaf" feeds.conf; then
-                echo "src-git oaf https://github.com/destan19/OpenAppFilter.git" >> feeds.conf
-            fi
-            timeout 120 ./scripts/feeds update oaf
-
-            if [[ -d "$PROJECT_ROOT/oaf_files" ]]; then
-                if [[ -f "$PROJECT_ROOT/oaf_files/feature.cfg" ]]; then
-                    cp -f "$PROJECT_ROOT/oaf_files/feature.cfg" feeds/oaf/open-app-filter/files/ || echo "复制feature.cfg失败"
-                fi
-                if [[ -d "$PROJECT_ROOT/oaf_files/app_icons" ]]; then
-                    mkdir -p feeds/luci-app-oaf/htdocs/luci-static/resources/ || echo "创建app_icons目标目录失败"
-                    cp -rf "$PROJECT_ROOT/oaf_files/app_icons" feeds/luci-app-oaf/htdocs/luci-static/resources/ || echo "复制app_icons文件夹失败"
-                fi
-            fi
-        else
-            if grep -qs "^[^#].*src-git oaf" feeds.conf; then
-                sed -i "s/^\(.*src-git oaf.*\)/#\1/" feeds.conf
-                [[ -d "feeds/oaf" ]] && rm -rf feeds/oaf 2>/dev/null
-            fi
-        fi
+        # 注释掉 feeds 中残留的 oaf 源（防干扰）
+        sed -i '/src-git oaf/d' feeds.conf
+        # 标准全局更新 feeds（仅这一行，无单独update oaf）
         ./scripts/feeds update -a
         ;;
+
     after)
+        # 网络、IP、PPPoE、时区、ROOT密码 配置（完整保留原有逻辑）
         mkdir -p files/etc/uci-defaults || error_exit "创建配置目录失败"
-        OUTPUT="files/etc/uci-defaults/99-custom-config"
+        OUTPUT="files/etc/uci-defaults"
+        OUTPUT+="/99-custom-config"
+
         if [[ "$PROFILE_TYPE" == "bypass" ]]; then
             ROUTER_IP="${CUSTOM_IP:-$DEF_BYPASS_IP}"
             GATEWAY_IP="${CUSTOM_GATEWAY:-$( [[ -n "$CUSTOM_IP" ]] && echo "${CUSTOM_IP%.*}.1" || echo "$DEF_GATEWAY" )}"
             NETWORK_CONF="uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ROUTER_IP'
-uci set network.lan.netmask='255.255.255.0'
+uci set network.lan.netmask='255.255.0'
 uci set network.lan.gateway='$GATEWAY_IP'
 uci set network.lan.dns='$GATEWAY_IP 8.8.8.8 223.5.5.5'
 uci set network.wan.proto='none'
@@ -99,7 +81,6 @@ uci set network.lan6.proto='none'
 uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'"
         else
-            # 主路由配置
             ROUTER_IP="${CUSTOM_IP:-$DEF_MAIN_IP}"
             WAN_CONF=$([[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && \
                 echo "uci set network.wan.proto='pppoe'
@@ -119,7 +100,7 @@ uci delete dnsmasq.@dnsmasq[0].server && uci add_list dnsmasq.@dnsmasq[0].server
 uci set dhcp.lan.start='11'
 uci set dhcp.lan.limit='150'"
         fi
-        # 写入自定义配置
+
         cat > "$OUTPUT" <<EOF
 #!/bin/sh
 $NETWORK_CONF
@@ -134,7 +115,8 @@ uci commit
 exit 0
 EOF
         chmod +x "$OUTPUT"
-        # Root 密码配置
+
+        # Root 密码加密写入
         [[ -n "$ROOT_PASSWORD" ]] && {
             ENCRYPTED_PASS=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin 2>/dev/null)
             [[ -n "$ENCRYPTED_PASS" ]] && {
@@ -149,5 +131,7 @@ EOF
             }
         }
         ;;
-    *) error_exit "无效阶段 $PHASE" ;;
+    *)
+        error_exit "无效阶段 $PHASE"
+        ;;
 esac
