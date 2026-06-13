@@ -121,7 +121,7 @@ jobs:
 
           # 清理feeds自带OAF 防循环依赖
           rm -rf package/feeds/packages/oaf package/feeds/packages/luci-app-oaf package/feeds/packages/open-app-filter 2>/dev/null
-          sed -i '/CONFIG_PACKAGE.*oaf/d'
+          sed -i '/CONFIG_PACKAGE.*oaf/d' .config
 
           # 安装OAF
           if [[ "$USE_OAF" == "true" && "$RUN_TYPE" == "main" ]]; then
