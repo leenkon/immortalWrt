@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '版本'
+        description: '编译版本'
         required: true
         type: choice
         options:
@@ -17,12 +17,13 @@ on:
           - 24.10.2
           - 24.10.1
       profile:
-        description: '配置'
+        description: '配置文件'
         required: true
         type: choice
         options:
           - mini-bypass
           - default-main
+          - full-main
       custom_ip:
         description: '自定义IP'
         type: string
@@ -40,11 +41,11 @@ on:
         type: string
         default: ''
       install_oaf:
-        description: '安装OAF'
+        description: '安装OAF应用过滤'
         type: boolean
         default: false
       root_password:
-        description: 'root密码'
+        description: 'Root密码'
         type: string
         default: ''
 permissions:
@@ -55,18 +56,21 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
     steps:
-      - name: 检出仓库代码
+      - name: 检出项目代码
         uses: actions/checkout@v4
 
-      # 【独立变量步骤】保证全局环境变量永久生效，解决 checkout v 报错
-      - name: 初始化全局环境变量
+      # 独立步骤：解析全局变量（全程不切换目录，变量永久生效）
+      - name: 初始化全局变量
         run: |
           IFS="-" read -r CONFIG_TYPE PROFILE_TYPE << "${{ inputs.profile }}"
           VERSION="${{ inputs.version }}"
           VERSION_MAJOR="${VERSION%.*}"
           CONFIG_FILE="${VERSION_MAJOR}.config"
+          FULL_TAG="v${VERSION}"
 
+          # 写入全局环境变量
           echo "RELEASE_TAG=$VERSION" >> $GITHUB_ENV
+          echo "FULL_TAG=$FULL_TAG" >> $GITHUB_ENV
           echo "VERSION_MAJOR=$VERSION_MAJOR" >> $GITHUB_ENV
           echo "CONFIG_FILE=$CONFIG_FILE" >> $GITHUB_ENV
           echo "PROFILE_TYPE=$PROFILE_TYPE" >> $GITHUB_ENV
@@ -77,8 +81,19 @@ jobs:
           echo "ROOT_PASSWORD=${{ inputs.root_password }}" >> $GITHUB_ENV
           echo "INSTALL_OAF=${{ inputs.install_oaf }}" >> $GITHUB_ENV
 
-      # 【合并大步骤】依赖 + 克隆源码 + 前置配置 + OAF + diy 全套
-      - name: 环境&源码&编译前置配置
+      # 独立步骤：克隆源码 + 切换标签（隔离目录，变量绝对稳定）
+      - name: 克隆并切换 ImmortalWrt 版本
+        run: |
+          sudo rm -rf openwrt
+          git clone https://github.com/immortalwrt/immortalwrt openwrt
+          [ ! -d "openwrt" ] && echo "错误：openwrt 目录创建失败" && exit 1
+          cd openwrt
+          git fetch --tags
+          echo "目标标签: ${FULL_TAG}"
+          git checkout "${FULL_TAG}"
+
+      # 合并步骤：依赖安装 + diy前后置 + feeds + OAF部署 + 冲突清理
+      - name: 编译前置全配置
         run: |
           # 安装编译依赖
           sudo apt update -y
@@ -91,29 +106,19 @@ jobs:
           python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs \
           upx-ucl unzip vim wget xmlto xxd zlib1g-dev
 
-          # 清理并克隆源码
-          sudo rm -rf openwrt
-          git clone https://github.com/immortalwrt/immortalwrt openwrt
-          [ ! -d "openwrt" ] && echo "目录创建失败" && exit 1
           cd openwrt
-
-          # 修复 git checkout 报错：使用完整变量，强制标签格式
-          git fetch --tags
-          echo "当前可用标签:"
-          git tag | grep "${RELEASE_TAG}"
-          git checkout "v${RELEASE_TAG}"
-
-          # 执行 diy before
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
+
+          # 执行 diy before（已修复卡死问题）
           DIY_ARGS=(-v "$VERSION_MAJOR" -p before -t "$PROFILE_TYPE")
           [[ "$INSTALL_OAF" == "true" ]] && DIY_ARGS+=(--install-oaf)
-          "$GITHUB_WORKSPACE/scripts/diy.sh" "${DIY_ARGS[@]}"
+          "$GITHUB_WORKSPACE/scripts/diy.sh"
 
-          # Feeds 标准操作
+          # 标准feeds操作
           ./scripts/feeds install -a
           cp "$GITHUB_WORKSPACE/configs/${CONFIG_FILE}" .config
 
-          # 部署 OAF + 自定义文件
+          # 部署OAF + 导入自定义配置/图标
           if [[ "$INSTALL_OAF" == "true" && "$PROFILE_TYPE" == "main" ]]; then
             git clone https://github.com/destan19/OpenAppFilter package/OpenAppFilter
             PROJECT_ROOT="$GITHUB_WORKSPACE"
@@ -127,7 +132,7 @@ jobs:
             echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
           fi
 
-          # 清理 feeds 内置 OAF 防循环依赖
+          # 彻底清理feeds内置OAF，解决循环依赖
           rm -rf package/feeds/packages/oaf \
                  package/feeds/packages/luci-app-oaf \
                  package/feeds/packages/open-app-filter 2>/dev/null
@@ -137,23 +142,23 @@ jobs:
           AFTER_ARGS=(-v "$VERSION_MAJOR" -p after -t "$PROFILE_TYPE")
           [[ -n "$CUSTOM_IP" ]] && AFTER_ARGS+=(--ip "$CUSTOM_IP")
           [[ -n "$CUSTOM_GATEWAY" ]] && AFTER_ARGS+=(--gateway "$CUSTOM_GATEWAY")
-          [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && AFTER_ARGS+=(--pppoe-user "$PPPOE_USERNAME" --pppoe-pass "$PPPOE_PASSWORD")
+          [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && AFTER_ARGS+=(--pppoe-user "$PPPOE_USERNAME")
           [[ -n "$ROOT_PASSWORD" ]] && AFTER_ARGS+=(--root-pass "$ROOT_PASSWORD")
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${AFTER_ARGS}"
 
-      # 合并：生成配置 + 下载依赖 + 编译
-      - name: 配置&下载&编译固件
+      # 合并步骤：生成配置 + 下载依赖 + 编译固件
+      - name: 编译固件
         run: |
           cd openwrt
           make defconfig
           make download -j$(nproc)
           make -j$(nproc) V=s || make -j1 V=s
 
-      # 发布固件
-      - name: 上传固件到 Release
+      # 发布固件到Release
+      - name: 上传固件
         uses: softprops/action-gh-release@v2
         with:
-          name: ImmortalWrt x86 ${{ env.RELEASE_TAG }} (${{ env.PROFILE_TYPE }})
+          name: ImmortalWrt ${{ env.RELEASE_TAG }} (${{ env.PROFILE_TYPE }})
           tag_name: ${{ env.RELEASE_TAG }}-${{ env.PROFILE_TYPE }}
           files: |
             openwrt/bin/targets/x86/64/*squashfs-combined.img.gz
