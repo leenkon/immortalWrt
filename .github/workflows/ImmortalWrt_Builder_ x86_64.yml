@@ -56,10 +56,10 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
     steps:
-      - name: 检出代码
+      - name: 检出仓库代码
         uses: actions/checkout@v4
 
-      - name: 安装系统依赖
+      - name: 安装系统编译依赖
         run: |
           sudo apt update -y
           sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
@@ -71,10 +71,11 @@ jobs:
           python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs \
           upx-ucl unzip vim wget xmlto xxd zlib1g-dev
 
-      - name: 拉取并切换 ImmortalWrt 源码
+      # 单独解析变量、写入环境变量（不切换目录）
+      - name: 解析编译参数 & 环境变量
         run: |
           IFS="-" read -r CONFIG_TYPE PROFILE_TYPE << "${{ inputs.profile }}"
-          VERSION=${{ inputs.version }}
+          VERSION="${{ inputs.version }}"
           VERSION_MAJOR="${VERSION%.*}"
           CONFIG_FILE="${VERSION_MAJOR}-${CONFIG_TYPE}.config"
 
@@ -89,38 +90,41 @@ jobs:
           echo "ROOT_PASSWORD=${{ inputs.root_password }}" >> $GITHUB_ENV
           echo "INSTALL_OAF=${{ inputs.install_oaf }}" >> $GITHUB_ENV
 
-          # 完整克隆+切换版本，修复detached HEAD警告
+      # 单独克隆+切换源码（独立步骤，保证目录一定存在）
+      - name: 克隆并切换 ImmortalWrt 版本
+        run: |
           sudo rm -rf openwrt
           git clone https://github.com/immortalwrt/immortalwrt openwrt
           cd openwrt
           git fetch --tags
-          git checkout "v$VERSION"
+          git checkout "v${RELEASE_TAG}"
+          echo "=== openwrt 目录准备完成 ==="
 
-      - name: 编译前置流程（线性无冗余）
+      # 编译前置全流程（现在 openwrt 目录必然存在）
+      - name: 编译前置配置 & OAF部署
         run: |
           cd openwrt
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
 
-          # 1. 执行 diy before（仅feeds+golang，无OAF）
+          # 执行 diy before
           echo "=== 执行 diy.sh before ==="
           DIY_ARGS=(-v "$VERSION_MAJOR" -p before -t "$PROFILE_TYPE")
           [[ "$INSTALL_OAF" == "true" ]] && DIY_ARGS+=(--install-oaf)
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${DIY_ARGS[@]}"
 
-          # 2. 标准 feeds 安装
-          echo "=== feeds install -a ==="
+          # 标准 feeds 安装
+          echo "=== 执行 feeds install -a ==="
           ./scripts/feeds install -a
 
-          # 3. 加载基础配置文件
-          echo "=== 加载 .config ==="
+          # 加载基础配置文件
+          echo "=== 加载 .config 配置 ==="
           cp "$GITHUB_WORKSPACE/configs/$CONFIG_FILE" .config
 
-          # 4. 主路由 + 开启OAF：克隆源码 + 导入自定义配置/图标
+          # 主路由 + 开启OAF：克隆源码 + 导入自定义文件
           if [[ "$INSTALL_OAF" == "true" && "$PROFILE_TYPE" == "main" ]]; then
             echo "=== 部署 OAF 源码 ==="
             git clone https://github.com/destan19/OpenAppFilter package/OpenAppFilter
 
-            # 兼容原有 oaf_files 资源
             PROJECT_ROOT="$GITHUB_WORKSPACE"
             if [[ -d "$PROJECT_ROOT/oaf_files" ]]; then
               [[ -f "$PROJECT_ROOT/oaf_files/feature.cfg" ]] && \
@@ -131,28 +135,27 @@ jobs:
                 cp -rf "$PROJECT_ROOT/oaf_files/app_icons" package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
               fi
             fi
-
-            # 启用OAF主配置
+            # 启用OAF
             echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
           fi
 
-          # 5. 精准清理 feeds 自带OAF（防循环依赖）
-          echo "=== 清理 feeds 内置OAF ==="
+          # 清理 feeds 内置OAF（防循环依赖）
+          echo "=== 清理冲突OAF包 ==="
           rm -rf package/feeds/packages/oaf \
                  package/feeds/packages/luci-app-oaf \
                  package/feeds/packages/open-app-filter 2>/dev/null
           sed -i '/CONFIG_PACKAGE.*oaf/d' .config
 
-          # 6. 执行 diy after（网络/PPPoE/时区/密码）
+          # 执行 diy after
           echo "=== 执行 diy.sh after ==="
           AFTER_ARGS=(-v "$VERSION_MAJOR" -p after -t "$PROFILE_TYPE")
           [[ -n "$CUSTOM_IP" ]] && AFTER_ARGS+=(--ip "$CUSTOM_IP")
           [[ -n "$CUSTOM_GATEWAY" ]] && AFTER_ARGS+=(--gateway "$CUSTOM_GATEWAY")
-          [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && AFTER_ARGS+=(--pppoe-user "$PPPOE_USERNAME" --pppoe-pass "$PPPOE_PASSWORD")
+          [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && AFTER_ARGS+=(--pppoe-user "$PPPOE_USERNAME" --pppoe-password "$PPPOE_PASSWORD")
           [[ -n "$ROOT_PASSWORD" ]] && AFTER_ARGS+=(--root-pass "$ROOT_PASSWORD")
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${AFTER_ARGS}"
 
-      - name: 生成配置 & 下载依赖
+      - name: 生成配置 & 下载编译依赖
         run: |
           cd openwrt
           make defconfig
@@ -166,7 +169,7 @@ jobs:
       - name: 上传固件到 Release
         uses: softprops/action-gh-release@v2
         with:
-          name: ImmortalWrt x86_64 ${{ env.RELEASE_TAG }} (${{ env.PROFILE_TYPE }})
+          name: ImmortalWrt x86 ${{ env.RELEASE_TAG }} (${{ env.PROFILE_TYPE }})
           tag_name: ${{ env.RELEASE_TAG }}-${{ env.PROFILE_TYPE }}
           files: |
             openwrt/bin/targets/x86/64/*squashfs-combined.img.gz
