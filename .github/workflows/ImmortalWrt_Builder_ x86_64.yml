@@ -56,11 +56,9 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
     steps:
-      # 1. 检出你的仓库(scripts/configs/oaf_files/feeds)
       - name: 检出项目代码
         uses: actions/checkout@v4
 
-      # 2. 基础依赖安装（独立步骤，稳定无干扰）
       - name: 安装系统编译依赖
         run: |
           sudo apt update -y
@@ -73,35 +71,22 @@ jobs:
           python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs \
           upx-ucl unzip vim wget xmlto xxd zlib1g-dev
 
-      # 3. 【核心修复】直接读取输入参数，不依赖跨步骤全局变量
-      - name: 克隆并切换指定版本源码
+      - name: 克隆指定版本源码
         run: |
-          # 读取原生输入，绝对不会为空
           VERSION="${{ github.event.inputs.version }}"
           PROFILE="${{ github.event.inputs.profile }}"
           FULL_TAG="v${VERSION}"
           echo "当前选择版本: ${VERSION}"
           echo "完整标签: ${FULL_TAG}"
           echo "配置项: ${PROFILE}"
-
-          # 清理旧目录
           sudo rm -rf openwrt
-          # 克隆 ImmortalWrt 源码
           git clone https://github.com/immortalwrt/immortalwrt openwrt
-          if [ ! -d "openwrt" ]; then
-            echo "ERROR: openwrt 目录创建失败"
-            exit 1
-          fi
-
-          # 进入目录切换标签
           cd openwrt
           git fetch --tags
           git checkout "${FULL_TAG}"
 
-      # 4. 编译前置全套流程(diy + feeds + OAF + 冲突清理)
-      - name: 编译前置配置
+      - name: 配置并编译固件
         run: |
-          # 读取输入参数，本步骤内局部使用，杜绝跨步骤变量问题
           VERSION="${{ github.event.inputs.version }}"
           PROFILE="${{ github.event.inputs.profile }}"
           CUSTOM_IP="${{ github.event.inputs.custom_ip }}"
@@ -110,24 +95,16 @@ jobs:
           PPPOE_PASS="${{ github.event.inputs.pppoe_password }}"
           ROOT_PWD="${{ github.event.inputs.root_password }}"
           INSTALL_OAF="${{ github.event.inputs.install_oaf }}"
-
-          # 拆分profile
           IFS="-" read -r CONFIG_TYPE PROFILE_TYPE << "${PROFILE}"
           VERSION_MAJOR="${VERSION%.*}"
           CONFIG_FILE="${VERSION_MAJOR}.config"
-
           cd openwrt
           chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
-
-          # 执行 diy before (已修复卡死)
           DIY_ARGS=(-v "${VERSION_MAJOR}" -p before -t "${PROFILE_TYPE}")
           [[ "${INSTALL_OAF}" == "true" ]] && DIY_ARGS+=(--install-oaf)
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${DIY_ARGS[@]}"
-
-          # 标准 feeds 操作
           ./scripts/feeds install -a
           cp "$GITHUB_WORKSPACE/configs/${CONFIG_FILE}" .config
-
           # 主路由 + 开启OAF：部署源码 + 导入自定义文件
           if [[ "${INSTALL_OAF}" == "true" && "${PROFILE_TYPE}" == "main" ]]; then
             git clone https://github.com/destan19/OpenAppFilter package/OpenAppFilter
@@ -142,7 +119,6 @@ jobs:
             fi
             echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
           fi
-
           # 深度清理 feeds 内置OAF，根治循环依赖
           rm -rf package/feeds/packages/oaf \
                  package/feeds/packages/luci-app-oaf \
@@ -157,16 +133,8 @@ jobs:
           AFTER_ARGS+=(--pppoe-user "${PPPOE_USER}" --pppoe-pass "${PPPOE_PASS}")
           [[ -n "${ROOT_PWD}" ]] && AFTER_ARGS+=(--root-pass "${ROOT_PWD}")
           "$GITHUB_WORKSPACE/scripts/diy.sh" "${AFTER_ARGS}"
-
-      # 5. 生成配置 + 下载依赖 + 编译固件
-      - name: 编译固件
-        run: |
-          cd openwrt
-          make defconfig
-          make download -j$(nproc)
-          make -j$(nproc) V=s || make -j1 V=s
-
-      # 6. 发布固件到 Release
+          make defconfig && make download -j$(nproc) && make -j$(nproc) V=s || make -j1 V=s
+          
       - name: 上传固件
         uses: softprops/action-gh-release@v2
         with:
