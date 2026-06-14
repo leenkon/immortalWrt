@@ -96,7 +96,6 @@ jobs:
         with:
           name: ImmortalWrt ${{ github.event.inputs.version }} (${{ github.event.inputs.profile }})
           tag_name: ${{ github.event.inputs.version }}-${{ github.event.inputs.profile }}-${{ github.run_id }}
-          draft: true
           files: openwrt/bin/targets/x86/64/*combined*.img.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
