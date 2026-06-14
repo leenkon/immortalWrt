@@ -74,6 +74,8 @@ jobs:
           sed -i '/CONFIG_PACKAGE.*oaf/d' .config
 
           if [[ $USE_OAF == true && $RUN_TYPE == main ]]; then
+            rm -rf package/feeds/packages/oaf package/feeds/packages/luci-app-oaf package/feeds/packages/open-app-filter 2>/dev/null
+            sed -i '/CONFIG_PACKAGE.*oaf/d' .config
             OAF=package/OpenAppFilter
             rm -rf $OAF
             timeout 120 git clone --depth 1 https://github.com/destan19/OpenAppFilter $OAF
