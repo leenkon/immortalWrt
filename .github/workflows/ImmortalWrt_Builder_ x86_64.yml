@@ -8,44 +8,28 @@ on:
         description: 编译版本
         required: true
         type: choice
-        options:
-          - 25.12.0
-          - 24.10.6
-          - 24.10.5
-          - 24.10.4
-          - 24.10.3
-          - 24.10.2
-          - 24.10.1
+        options: [25.12.0, 24.10.6, 24.10.5, 24.10.4, 24.10.3, 24.10.2, 24.10.1]
       profile:
         description: 配置文件
         required: true
         type: choice
-        options:
-          - mini-bypass
-          - default-main
-          - full-main
+        options: [mini-bypass, default-main, full-main]
       custom_ip:
-        description: 自定义IP(留空为默认)
         type: string
         default: ''
       custom_gateway:
-        description: 网关(留空为默认)
         type: string
         default: ''
       pppoe_username:
-        description: PPPoE账号(留空不启用)
         type: string
         default: ''
       pppoe_password:
-        description: PPPoE密码(留空不启用)
         type: string
         default: ''
       install_oaf:
-        description: 安装OAF应用过滤
         type: boolean
         default: true
       root_password:
-        description: root密码(留空为password)
         type: string
         default: ''
 permissions:
@@ -56,8 +40,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
     steps:
-      - name: 拉取源代码
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: 安装依赖
         run: |
@@ -71,86 +54,71 @@ jobs:
           python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig uglifyjs \
           upx-ucl unzip vim wget xmlto xxd zlib1g-dev
 
-      - name: 拉取并切换源码
+      - name: 拉取源码
         run: |
-          VER="${{ github.event.inputs.version }}"
-          TAG="v$VER"
-          sudo rm -rf openwrt
-          timeout 180 git clone https://github.com/immortalwrt/immortalwrt openwrt || true
+          set -e
+          VER=${{ github.event.inputs.version }}
+          TAG=v$VER
+          rm -rf openwrt
+          timeout 180 git clone --depth 1 https://github.com/immortalwrt/immortalwrt openwrt
           cd openwrt
-          git fetch --tags
-          git checkout "$TAG"
+          timeout 60 git fetch origin tag $TAG --depth 1
+          git checkout $TAG
 
-      - name: 配置编译
+      - name: 配置与编译
         run: |
           set -e
           cd openwrt
-          # 读取原始输入
-          FULL_VER="${{ github.event.inputs.version }}"
-          PROFILE="${{ github.event.inputs.profile }}"
-          CIP="${{ github.event.inputs.custom_ip }}"
-          CGW="${{ github.event.inputs.custom_gateway }}"
-          PUSER="${{ github.event.inputs.pppoe_username }}"
-          PPASS="${{ github.event.inputs.pppoe_password }}"
-          RAW_ROOT="${{ github.event.inputs.root_password }}"
-          USE_OAF="${{ github.event.inputs.install_oaf }}"
+          FULL_VER=${{ github.event.inputs.version }}
+          PROFILE=${{ github.event.inputs.profile }}
+          CIP=${{ github.event.inputs.custom_ip }}
+          CGW=${{ github.event.inputs.custom_gateway }}
+          PUSER=${{ github.event.inputs.pppoe_username }}
+          PPASS=${{ github.event.inputs.pppoe_password }}
+          RAW_ROOT=${{ github.event.inputs.root_password }}
+          USE_OAF=${{ github.event.inputs.install_oaf }}
 
-          # root密码判空：空则赋值为 password
-          if [[ -z "$RAW_ROOT" ]]; then
-            ROOTPWD="password"
-          else
-            ROOTPWD="$RAW_ROOT"
-          fi
-
-          # 拆分配置前缀 + 运行类型
+          ROOTPWD=${RAW_ROOT:-password}
           IFS='-' read -r CFG_PREFIX RUN_TYPE <<< "$PROFILE"
-          MAIN_VER="${FULL_VER%.*}"
-          CFG_FILE="${MAIN_VER}-${CFG_PREFIX}.config"
+          MAIN_VER=${FULL_VER%.*}
+          CFG_FILE=${MAIN_VER}-${CFG_PREFIX}.config
+          DIY=$GITHUB_WORKSPACE/scripts/diy.sh
+          chmod +x $DIY
 
-          chmod +x "$GITHUB_WORKSPACE/scripts/diy.sh"
-
-          # 执行 diy before
-          "$GITHUB_WORKSPACE/scripts/diy.sh" \
-            -v "${MAIN_VER}" \
-            -p before \
-            -t "${RUN_TYPE}" \
-            ${USE_OAF:+--install-oaf}
-
+          $DIY -v $MAIN_VER -p before -t $RUN_TYPE ${USE_OAF:+--install-oaf}
           ./scripts/feeds install -a
-          cp "$GITHUB_WORKSPACE/configs/$CFG_FILE" .config
+          cp $GITHUB_WORKSPACE/configs/$CFG_FILE .config
 
-          # 清理feeds自带OAF 防循环依赖
-          rm -rf package/feeds/packages/oaf package/feeds/packages/luci-app-oaf package/feeds/packages/open-app-filter 2>/dev/null
+          rm -rf package/feeds/packages/*oaf* 2>/dev/null
           sed -i '/CONFIG_PACKAGE.*oaf/d' .config
 
-          # 安装OAF
-          if [[ "$USE_OAF" == "true" && "$RUN_TYPE" == "main" ]]; then
-            timeout 120 git clone https://github.com/destan19/OpenAppFilter package/OpenAppFilter || true
-            ROOT_WS="$GITHUB_WORKSPACE"
-            [[ -d "$ROOT_WS/oaf_files" && -f "$ROOT_WS/oaf_files/feature.cfg" ]] && cp -f "$ROOT_WS/oaf_files/feature.cfg" package/OpenAppFilter/open-app-filter/files/
-            [[ -d "$ROOT_WS/oaf_files/app_icons" ]] && mkdir -p package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/ && cp -rf "$ROOT_WS/oaf_files/app_icons" package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
+          if [[ $USE_OAF == true && $RUN_TYPE == main ]]; then
+            OAF=package/OpenAppFilter
+            rm -rf $OAF
+            timeout 120 git clone --depth 1 https://github.com/destan19/OpenAppFilter $OAF
+            WS=$GITHUB_WORKSPACE
+            [[ -f $WS/oaf_files/feature.cfg ]] && cp -f $WS/oaf_files/feature.cfg $OAF/open-app-filter/files/
+            [[ -d $WS/oaf_files/app_icons ]] && cp -rf $WS/oaf_files/app_icons $OAF/luci-app-oaf/htdocs/luci-static/resources/
             echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
           fi
 
-          # 执行 diy after：IP/网关/PPPOE 空则不传参；root空固定为password
-          "$GITHUB_WORKSPACE/scripts/diy.sh" \
-            -v "${MAIN_VER}" \
-            -p after \
-            -t "${RUN_TYPE}" \
-            ${CIP:+--ip "${CIP}"} \
-            ${CGW:+--gateway "${CGW}"} \
-            ${PUSER:+--pppoe-user "${PUSER}"} \
-            ${PPASS:+--pppoe-pass "${PPASS}"} \
-            --root-pass "${ROOTPWD}"
-          make defconfig  && make download -j$(nproc) && make -j$(nproc) V=s || make -j1 V=s
+          $DIY \
+            -v $MAIN_VER -p after -t $RUN_TYPE \
+            ${CIP:+--ip "$CIP"} ${CGW:+--gateway "$CGW"} \
+            ${PUSER:+--pppoe-user "$PUSER"} ${PPASS:+--pppoe-pass "$PPASS"} \
+            --root-pass "$ROOTPWD"
+
+          export PATH=/usr/lib/ccache:$PATH
+          make oldconfig -q
+          make download -j1
+          make -j$(nproc)|| make -j1 V=s
 
       - name: 上传固件
         uses: softprops/action-gh-release@v2
         with:
           name: ImmortalWrt ${{ github.event.inputs.version }} (${{ github.event.inputs.profile }})
-          tag_name: ${{ github.event.inputs.version }}-${{ github.event.inputs.profile }}
-          files: |
-            openwrt/bin/targets/x86/64/*squashfs-combined.img.gz
-            openwrt/bin/targets/x86/64/*ext4-combined.img.gz
+          tag_name: ${{ github.event.inputs.version }}-${{ github.event.inputs.profile }}-${{ github.run_id }}
+          draft: true
+          files: openwrt/bin/targets/x86/64/*combined*.img.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
