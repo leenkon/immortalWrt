@@ -43,7 +43,7 @@ on:
       install_oaf:
         description: 安装OAF应用过滤
         type: boolean
-        default: false
+        default: true
       root_password:
         description: root密码(留空为password)
         type: string
@@ -84,7 +84,6 @@ jobs:
         run: |
           set -e
           cd openwrt
-
           # 读取原始输入
           FULL_VER="${{ github.event.inputs.version }}"
           PROFILE="${{ github.event.inputs.profile }}"
@@ -142,11 +141,7 @@ jobs:
             ${PUSER:+--pppoe-user "${PUSER}"} \
             ${PPASS:+--pppoe-pass "${PPASS}"} \
             --root-pass "${ROOTPWD}"
-
-          # 编译
-          make defconfig
-          make download -j$(nproc)
-          make -j$(nproc) V=s || make -j1 V=s
+          make defconfig  && make download -j$(nproc) && make -j$(nproc) V=s || make -j1 V=s
 
       - name: 上传固件
         uses: softprops/action-gh-release@v2

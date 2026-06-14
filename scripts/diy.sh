@@ -57,7 +57,6 @@ case "$PHASE" in
 
         # 注释掉 feeds 中残留的 oaf 源（防干扰）
         sed -i '/src-git oaf/d' feeds.conf
-        # 标准全局更新 feeds（仅这一行，无单独update oaf）
         ./scripts/feeds update -a
         ;;
 
@@ -72,7 +71,7 @@ case "$PHASE" in
             GATEWAY_IP="${CUSTOM_GATEWAY:-$( [[ -n "$CUSTOM_IP" ]] && echo "${CUSTOM_IP%.*}.1" || echo "$DEF_GATEWAY" )}"
             NETWORK_CONF="uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ROUTER_IP'
-uci set network.lan.netmask='255.255.0'
+uci set network.lan.netmask='255.255.0.0'
 uci set network.lan.gateway='$GATEWAY_IP'
 uci set network.lan.dns='$GATEWAY_IP 8.8.8.8 223.5.5.5'
 uci set network.wan.proto='none'
@@ -92,11 +91,11 @@ uci set network.wan6.proto='dhcpv6'")
             GATEWAY_CONF=$([[ -n "$CUSTOM_GATEWAY" ]] && echo "uci set network.lan.gateway='$CUSTOM_GATEWAY'")
             NETWORK_CONF="uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ROUTER_IP'
-uci set network.lan.netmask='255.255.255.0'
+uci set network.lan.netmask='255.255.0.0'
 ${GATEWAY_CONF}
 ${WAN_CONF}
 uci set network.wan.dns='8.8.8.8 223.5.5.5'
-uci delete dnsmasq.@dnsmasq[0].server && uci add_list dnsmasq.@dnsmasq[0].server='8.8.8.8' && uci add_list dnsmasq.@dnsmasq[0].server='223.5.5.5'
+uci -q delete dnsmasq.@dnsmasq[0].server && uci add_list dnsmasq.@dnsmasq[0].server='8.8.8.8' && uci add_list dnsmasq.@dnsmasq[0].server='223.5.5.5'
 uci set dhcp.lan.start='11'
 uci set dhcp.lan.limit='150'"
         fi
@@ -107,11 +106,18 @@ $NETWORK_CONF
 uci set system.@system[0].hostname='Router-${PROFILE_TYPE}'
 uci set system.@system[0].timezone='CST-8'
 uci set system.@system[0].zonename='Asia/Shanghai'
-uci delete system.ntp.server 2>/dev/null
+uci del_list system.ntp.server
 uci set system.ntp.enable_server='1'
-for server in ntp.aliyun.com ntp.tencent.com ntp.ntsc.ac.cn cn.pool.ntp.org; do uci add_list system.ntp.server="\$server"; done
+for server in ntp.aliyun.com ntp.tencent.com ntp.ntsc.ac.cn cn.pool.ntp.org
+do
+    uci add_list system.ntp.server="$server"
+done
+uci commit
 uci commit
 /etc/init.d/network reload
+/etc/init.d/dnsmasq restart
+/etc/init.d/sysntpd restart
+/etc/init.d/system reload
 exit 0
 EOF
         chmod +x "$OUTPUT"
