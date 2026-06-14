@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 360
     steps:
       - name: 检出代码
-      - uses: actions/checkout@v4
+        uses: actions/checkout@v4
 
       - name: 安装依赖
         run: |
@@ -90,9 +90,8 @@ jobs:
             --root-pass "$ROOTPWD"
 
           export PATH=/usr/lib/ccache:$PATH
-          #make oldconfig -q
           make download -j1
-          make -j$(nproc)|| make -j1 V=s
+          { make -j$(nproc); } || make -j1 V=s
 
       - name: 上传固件
         uses: softprops/action-gh-release@v2
