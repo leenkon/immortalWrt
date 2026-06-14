@@ -69,10 +69,6 @@ jobs:
           $DIY -v $MAIN_VER -p before -t $RUN_TYPE ${USE_OAF:+--install-oaf}
           ./scripts/feeds install -a
           cp $GITHUB_WORKSPACE/configs/$CFG_FILE .config
-
-          rm -rf package/feeds/packages/*oaf* 2>/dev/null
-          sed -i '/CONFIG_PACKAGE.*oaf/d' .config
-
           if [[ $USE_OAF == true && $RUN_TYPE == main ]]; then
             rm -rf package/feeds/packages/oaf package/feeds/packages/luci-app-oaf package/feeds/packages/open-app-filter 2>/dev/null
             sed -i '/CONFIG_PACKAGE.*oaf/d' .config
