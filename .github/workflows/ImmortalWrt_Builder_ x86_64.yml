@@ -87,9 +87,9 @@ jobs:
             ${PUSER:+--pppoe-user "$PUSER"} ${PPASS:+--pppoe-pass "$PPASS"} \
             --root-pass "$ROOTPWD"
 
-          export PATH=/usr/lib/ccache:$PATH
+          make defconfig
           make download -j1
-          { make -j$(nproc); } || make -j1 V=s
+          make -j$(nproc)|| make -j1 V=s
 
       - name: 上传固件
         uses: softprops/action-gh-release@v2
