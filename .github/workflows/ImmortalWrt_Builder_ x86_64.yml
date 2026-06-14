@@ -4,34 +4,14 @@ env:
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: 编译版本
-        required: true
-        type: choice
-        options: [25.12.0, 24.10.6, 24.10.5, 24.10.4, 24.10.3, 24.10.2, 24.10.1]
-      profile:
-        description: 配置文件
-        required: true
-        type: choice
-        options: [mini-bypass, default-main, full-main]
-      custom_ip:
-        type: string
-        default: ''
-      custom_gateway:
-        type: string
-        default: ''
-      pppoe_username:
-        type: string
-        default: ''
-      pppoe_password:
-        type: string
-        default: ''
-      install_oaf:
-        type: boolean
-        default: true
-      root_password:
-        type: string
-        default: ''
+      version: {description: '版本', required: true, type: choice, options: [25.12.0, 24.10.1, 24.10.2, 24.10.3, 24.10.4, 24.10.5, 24.10.6]}
+      profile: {description: '配置', required: true, type: choice, options: [mini-bypass, default-main, full-main]}
+      custom_ip: {description: '自定义IP', type: string, default: ''}
+      custom_gateway: {description: '网关(旁路由)', type: string, default: ''}
+      pppoe_username: {description: 'PPPoE账号', type: string, default: ''}
+      pppoe_password: {description: 'PPPoE密码', type: string, default: ''}
+      install_oaf: {description: '安装OAF', type: boolean, default: false}
+      root_password: {description: 'root密码', type: string, default: ''}
 permissions:
   contents: write
 
@@ -40,6 +20,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
     steps:
+      - name: 检出代码
       - uses: actions/checkout@v4
 
       - name: 安装依赖
@@ -109,7 +90,7 @@ jobs:
             --root-pass "$ROOTPWD"
 
           export PATH=/usr/lib/ccache:$PATH
-          make oldconfig -q
+          #make oldconfig -q
           make download -j1
           make -j$(nproc)|| make -j1 V=s
 
