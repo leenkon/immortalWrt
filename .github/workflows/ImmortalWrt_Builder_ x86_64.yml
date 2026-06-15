@@ -75,9 +75,6 @@ jobs:
             OAF=package/OpenAppFilter
             rm -rf $OAF
             timeout 120 git clone --depth 1 https://github.com/destan19/OpenAppFilter $OAF
-            WS=$GITHUB_WORKSPACE
-            [[ -f $WS/oaf_files/feature.cfg ]] && cp -f $WS/oaf_files/feature.cfg $OAF/open-app-filter/files/
-            [[ -d $WS/oaf_files/app_icons ]] && cp -rf $WS/oaf_files/app_icons $OAF/luci-app-oaf/htdocs/luci-static/resources/
             echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
           fi
 
