@@ -91,8 +91,8 @@ jobs:
       - name: 上传固件
         uses: softprops/action-gh-release@v2
         with:
-          name: ImmortalWrt ${{ github.event.inputs.version }} (${{ github.event.inputs.profile }})
-          tag_name: ${{ github.event.inputs.version }}-${{ github.event.inputs.profile }}-${{ steps.build.outputs.build_date }}
+          name: ImmortalWrt ${{ github.event.inputs.version }} (${{ github.event.inputs.profile }}-${{ steps.build.outputs.build_date }})
+          tag_name: ${{ github.event.inputs.version }}-${{ github.event.inputs.profile }}
           files: openwrt/bin/targets/x86/64/*combined.img.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
