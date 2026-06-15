@@ -57,7 +57,8 @@ jobs:
           PUSER=${{ github.event.inputs.pppoe_username }}
           PPASS=${{ github.event.inputs.pppoe_password }}
           RAW_ROOT=${{ github.event.inputs.root_password }}
-          USE_OAF=${{ github.event.inputs.install_oaf }}
+          USE_OAF="${{ github.event.inputs.install_oaf }}"
+          [[ "$USE_OAF" != "true" ]] && USE_OAF="false"
 
           ROOTPWD=${RAW_ROOT:-password}
           IFS='-' read -r CFG_PREFIX RUN_TYPE <<< "$PROFILE"
@@ -66,11 +67,12 @@ jobs:
           DIY=$GITHUB_WORKSPACE/scripts/diy.sh
           chmod +x $DIY
 
-          $DIY -v $MAIN_VER -p before -t $RUN_TYPE ${USE_OAF:+--install-oaf}
+          [[ "$USE_OAF" == "true" ]] && OAF_FLAG="--install-oaf" || OAF_FLAG=""
+          $DIY -v $MAIN_VER -p before -t $RUN_TYPE $OAF_FLAG
           ./scripts/feeds install -a
           cp $GITHUB_WORKSPACE/configs/$CFG_FILE .config
-          if [[ $USE_OAF == true && $RUN_TYPE == main ]]; then
-            rm -rf package/feeds/packages/oaf package/feeds/packages/luci-app-oaf package/feeds/packages/open-app-filter 2>/dev/null
+          if [[ "$USE_OAF" == "true" && "$RUN_TYPE" == "main" ]]; then
+            rm -rf feeds/packages/oaf feeds/packages/luci-app-oaf feeds/packages/open-app-filter 2>/dev/null
             sed -i '/CONFIG_PACKAGE.*oaf/d' .config
             OAF=package/OpenAppFilter
             rm -rf $OAF
