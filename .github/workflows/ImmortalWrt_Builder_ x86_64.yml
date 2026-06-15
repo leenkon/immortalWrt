@@ -67,13 +67,10 @@ jobs:
           DIY=$GITHUB_WORKSPACE/scripts/diy.sh
           chmod +x $DIY
 
-          [[ "$USE_OAF" == "true" ]] && OAF_FLAG="--install-oaf" || OAF_FLAG=""
-          $DIY -v $MAIN_VER -p before -t $RUN_TYPE $OAF_FLAG
+          $DIY -v $MAIN_VER -p before -t $RUN_TYPE
           ./scripts/feeds install -a
           cp $GITHUB_WORKSPACE/configs/$CFG_FILE .config
           if [[ "$USE_OAF" == "true" && "$RUN_TYPE" == "main" ]]; then
-            rm -rf feeds/packages/oaf feeds/packages/luci-app-oaf feeds/packages/open-app-filter 2>/dev/null
-            sed -i '/CONFIG_PACKAGE.*oaf/d' .config
             OAF=package/OpenAppFilter
             rm -rf $OAF
             timeout 120 git clone --depth 1 https://github.com/destan19/OpenAppFilter $OAF

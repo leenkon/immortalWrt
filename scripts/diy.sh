@@ -17,7 +17,7 @@ DEF_MAIN_IP="10.10.10.1"
 DEF_BYPASS_IP="10.10.10.10"
 DEF_GATEWAY="10.10.10.1"
 # 变量初始化
-VERSION="" PHASE="" PROFILE_TYPE="" INSTALL_OAF=false
+VERSION="" PHASE="" PROFILE_TYPE=""
 CUSTOM_IP="" CUSTOM_GATEWAY="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
 # 参数解析
 while [[ $# -gt 0 ]]; do
@@ -29,7 +29,6 @@ while [[ $# -gt 0 ]]; do
         --gateway) CUSTOM_GATEWAY="$2"; shift 2 ;;
         --pppoe-user) PPPOE_USERNAME="$2"; shift 2 ;;
         --pppoe-pass) PPPOE_PASSWORD="$2"; shift 2 ;;
-        --install-oaf) INSTALL_OAF=true; shift ;;
         --root-pass) ROOT_PASSWORD="$2"; shift 2 ;;
         *) error_exit "未知选项 $1" ;;
     esac
@@ -44,19 +43,14 @@ PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)
 
 case "$PHASE" in
     before)
-        # 加载版本对应 feeds 配置
         rm -f feeds.conf feeds.conf.default
         [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf || error_exit "feeds 配置文件不存在"
-
         # 仅处理 small 源 + golang（保留原有逻辑，无OAF相关）
         if grep -qs '^[^#].*src-git small' feeds.conf; then
             rm -rf feeds/luci/applications/luci-app-mosdns feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} feeds/packages/utils/v2dat 2>/dev/null
             rm -rf feeds/packages/lang/golang
             timeout 120 git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang feeds/packages/lang/golang 2>/dev/null || true
         fi
-
-        # 注释掉 feeds 中残留的 oaf 源（防干扰）
-        sed -i '/src-git oaf/d' feeds.conf
         ./scripts/feeds update -a
         ;;
 
@@ -112,7 +106,6 @@ for server in ntp.aliyun.com ntp.tencent.com ntp.ntsc.ac.cn cn.pool.ntp.org
 do
     uci add_list system.ntp.server="$server"
 done
-uci commit
 uci commit
 /etc/init.d/network reload
 /etc/init.d/dnsmasq restart
