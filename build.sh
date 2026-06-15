@@ -4,6 +4,18 @@
 
 set -e
 
+# 修复脚本换行符 (CRLF -> LF)
+fix_line_endings() {
+    local file="$1"
+    if [[ -f "$file" ]]; then
+        # 检测并修复 CRLF 换行符
+        if grep -q $'\r' "$file" 2>/dev/null; then
+            sed -i 's/\r$//' "$file"
+            echo -e "${YELLOW}已修复 $file 的换行符 (CRLF -> LF)${NC}"
+        fi
+    fi
+}
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -182,7 +194,13 @@ CONFIG_FILE="$SCRIPT_DIR/configs/${MAIN_VER}-${CFG_PREFIX}.config"
 
 # 1. 安装依赖
 echo ""
-echo -e "${YELLOW}[1/6] 安装编译依赖...${NC}"
+echo -e "${YELLOW}[1/6] 检查并修复脚本换行符...${NC}"
+fix_line_endings "$DIY_SCRIPT"
+fix_line_endings "$SCRIPT_DIR/build.sh"
+success "换行符检查完成"
+
+echo ""
+echo -e "${YELLOW}[2/6] 安装编译依赖...${NC}"
 sudo apt update -y
 sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
     bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib \
