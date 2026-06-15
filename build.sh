@@ -214,7 +214,7 @@ success "依赖安装完成"
 
 # 2. 拉取源码
 echo ""
-echo -e "${YELLOW}[2/6] 拉取 ImmortalWrt 源码...${NC}"
+echo -e "${YELLOW}[3/7] 拉取 ImmortalWrt 源码...${NC}"
 TAG="v$VERSION"
 
 if [[ -d "$OPENWRT_DIR" ]]; then
@@ -238,7 +238,7 @@ success "源码准备完成"
 
 # 3. 准备配置
 echo ""
-echo -e "${YELLOW}[3/6] 准备配置文件...${NC}"
+echo -e "${YELLOW}[4/7] 准备配置文件...${NC}"
 
 cd "$OPENWRT_DIR"
 
@@ -271,7 +271,7 @@ success "配置文件已应用"
 
 # 4. OAF 处理 (仅主路由且选择安装)
 echo ""
-echo -e "${YELLOW}[4/6] 处理 OAF...${NC}"
+echo -e "${YELLOW}[5/7] 处理 OAF...${NC}"
 
 if [[ "$USE_OAF" == "true" && "$RUN_TYPE" == "main" ]]; then
     echo "清理旧版 OAF..."
@@ -298,7 +298,7 @@ fi
 
 # 5. 执行 after 阶段 (网络配置)
 echo ""
-echo -e "${YELLOW}[5/6] 生成网络配置...${NC}"
+echo -e "${YELLOW}[6/7] 生成网络配置...${NC}"
 
 if [[ -x "$DIY_SCRIPT" ]]; then
     echo "执行 diy.sh after 阶段..."
@@ -384,7 +384,7 @@ success "网络配置生成完成"
 
 # 6. 编译
 echo ""
-echo -e "${YELLOW}[6/6] 开始编译固件...${NC}"
+echo -e "${YELLOW}[7/7] 开始编译固件...${NC}"
 echo "首次编译可能需要较长时间，请耐心等待..."
 echo ""
 
