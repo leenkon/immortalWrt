@@ -55,22 +55,20 @@ jobs:
           MAIN_VER=${MAIN_VER%.*}
           DIY=$GITHUB_WORKSPACE/scripts/diy.sh
           chmod +x $DIY
-
-          # before: feeds 配置
+          cp $GITHUB_WORKSPACE/configs/${MAIN_VER}-${CFG_PREFIX}.config .config
+          # ==================== Feeds 配置 ====================
           $DIY -v $MAIN_VER -p before -t $RUN_TYPE
           ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+          # ==================== OAF 安装（仅主路由） ====================
           if [[ "${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main" ]]; then
-            # 强制卸载 feeds 中的旧版 OAF（通过删除符号链接和源码）
             rm -rf package/luci-app-oaf package/open-app-filter package/oaf 2>/dev/null || true
             rm -rf feeds/packages/net/open-app-filter feeds/packages/luci/luci-app-oaf feeds/packages/kernel/oaf 2>/dev/null || true
-            # 克隆新版 OAF
+            rm -rf package/OpenAppFilter 2>/dev/null || true
             timeout 120 git clone --depth 1 https://github.com/destan19/OpenAppFilter package/OpenAppFilter
+            echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
           fi
-          ./scripts/feeds install -a -f
-          cp $GITHUB_WORKSPACE/configs/${MAIN_VER}-${CFG_PREFIX}.config .config
-          [[ "${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main" ]] && echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
-
-          # after: 网络配置
           CIP="${{ github.event.inputs.custom_ip }}"
           CGW="${{ github.event.inputs.custom_gateway }}"
           PUSER="${{ github.event.inputs.pppoe_username }}"
@@ -82,12 +80,10 @@ jobs:
             ${CIP:+--ip "$CIP"} ${CGW:+--gateway "$CGW"} \
             ${PUSER:+--pppoe-user "$PUSER"} ${PPASS:+--pppoe-pass "$PPASS"} \
             --root-pass "$ROOTPWD"
-
-          make oldconfig
-          # 清理旧的编译产物，确保完全重新编译
+          # ==================== 清理并编译 ====================
           rm -rf tmp/staging_dir build_dir target .config.old 2>/dev/null || true
           make clean 2>/dev/null || true
-          make download && make -j$(nproc) || make -j1 V=s
+          make defconfig && make download && make -j$(nproc) || make -j1 V=s
 
       - name: 上传固件
         uses: softprops/action-gh-release@v2
