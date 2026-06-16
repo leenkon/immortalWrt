@@ -86,13 +86,13 @@ jobs:
             --root-pass "$ROOTPWD"
 
           make defconfig && make download && make -j$(nproc) || make -j1 V=s
-          echo "build_date=$(date +%Y%m%d%H%M)" >> "$GITHUB_OUTPUT"
 
       - name: 上传固件
         uses: softprops/action-gh-release@v2
         with:
-          name: ImmortalWrt ${{ github.event.inputs.version }} (${{ github.event.inputs.profile }}-${{ steps.build.outputs.build_date }})
-          tag_name: ${{ steps.build.outputs.build_date }}
+          name: ImmortalWrt ${{ github.event.inputs.version }} (${{ github.event.inputs.profile }})
+          tag_name: ${{ github.event.inputs.version }}-${{ github.event.inputs.profile }}
           files: openwrt/bin/targets/x86/64/*combined.img.gz
+          overwrite: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
