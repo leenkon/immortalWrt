@@ -78,7 +78,7 @@ jobs:
           PUSER="${{ github.event.inputs.pppoe_username }}"
           PPASS="${{ github.event.inputs.pppoe_password }}"
           ROOTPWD="${{ github.event.inputs.root_password }}"
-          ROOTPWD=${ROOTPWD:-password}
+          ROOTPWD="${ROOTPWD:-password}"
 
           $DIY -v $MAIN_VER -p after -t $RUN_TYPE \
             ${CIP:+--ip "$CIP"} ${CGW:+--gateway "$CGW"} \
