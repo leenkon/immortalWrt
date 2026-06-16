@@ -51,39 +51,34 @@ jobs:
           cd openwrt
           PROFILE=${{ github.event.inputs.profile }}
           IFS='-' read -r CFG_PREFIX RUN_TYPE <<< "$PROFILE"
-          MAIN_VER=${{ github.event.inputs.version }}
-          MAIN_VER=${MAIN_VER%.*}
-          DIY=$GITHUB_WORKSPACE/scripts/diy.sh
-          chmod +x $DIY
-          cp $GITHUB_WORKSPACE/configs/${MAIN_VER}-${CFG_PREFIX}.config .config
-          # ==================== Feeds 配置 ====================
-          $DIY -v $MAIN_VER -p before -t $RUN_TYPE
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+          MAIN_VER="${ github.event.inputs.version %.*}"
+          chmod +x $GITHUB_WORKSPACE/scripts/diy.sh
 
-          # ==================== OAF 安装（仅主路由） ====================
+          cp $GITHUB_WORKSPACE/configs/${MAIN_VER}-${CFG_PREFIX}.config .config
+          $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p before -t $RUN_TYPE
+          ./scripts/feeds update -a && ./scripts/feeds install -a
+
           if [[ "${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main" ]]; then
-            rm -rf package/luci-app-oaf package/open-app-filter package/oaf 2>/dev/null || true
-            rm -rf feeds/packages/net/open-app-filter feeds/packages/luci/luci-app-oaf feeds/packages/kernel/oaf 2>/dev/null || true
-            rm -rf package/OpenAppFilter 2>/dev/null || true
+            rm -rf package/{luci-app-oaf,open-app-filter,oaf} feeds/packages/{net/open-app-filter,luci/luci-app-oaf,kernel/oaf}
+            rm -rf package/OpenAppFilter
             timeout 120 git clone --depth 1 https://github.com/destan19/OpenAppFilter package/OpenAppFilter
+            cp -f $GITHUB_WORKSPACE/oaf_files/feature.cfg package/OpenAppFilter/open-app-filter/files/
+            cp -rf $GITHUB_WORKSPACE/oaf_files/app_icons package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
             echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
           fi
+
           CIP="${{ github.event.inputs.custom_ip }}"
           CGW="${{ github.event.inputs.custom_gateway }}"
           PUSER="${{ github.event.inputs.pppoe_username }}"
           PPASS="${{ github.event.inputs.pppoe_password }}"
           ROOTPWD="${{ github.event.inputs.root_password }}"
           ROOTPWD="${ROOTPWD:-password}"
-
-          $DIY -v $MAIN_VER -p after -t $RUN_TYPE \
+          $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p after -t $RUN_TYPE \
             ${CIP:+--ip "$CIP"} ${CGW:+--gateway "$CGW"} \
             ${PUSER:+--pppoe-user "$PUSER"} ${PPASS:+--pppoe-pass "$PPASS"} \
             --root-pass "$ROOTPWD"
-          # ==================== 生成配置并编译 ====================
-          make defconfig && make download
-          make clean 2>/dev/null || true
-          make -j$(nproc) || make -j1 V=s
+
+          make defconfig && make download && make clean && make -j$(nproc) || make -j1 V=s
 
       - name: 上传固件
         uses: softprops/action-gh-release@v2
