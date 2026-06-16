@@ -40,11 +40,11 @@ case "$PHASE" in
         rm -f feeds.conf feeds.conf.default
         [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf || error_exit "feeds 配置文件不存在"
         # small 源 + golang 处理
-        grep -qs '^[^#].*src-git small' feeds.conf && {
+        if grep -qs '^[^#].*src-git small' feeds.conf 2>/dev/null; then
             rm -rf feeds/luci/applications/luci-app-mosdns feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} feeds/packages/utils/v2dat 2>/dev/null
             rm -rf feeds/packages/lang/golang
             timeout 120 git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang feeds/packages/lang/golang 2>/dev/null || true
-        }
+        fi
         ;;
 
     after)
@@ -111,7 +111,7 @@ EOF
                 mkdir -p files/etc
                 SHADOW_FILE="files/etc/shadow"
                 [[ -f "package/base-files/files/etc/shadow" ]] && cp "package/base-files/files/etc/shadow" "$SHADOW_FILE" 2>/dev/null || echo 'root::0:0:99999:7:::' > "$SHADOW_FILE"
-                awk -F: -v h="$ENCRYPTED_PASS" 'BEGIN{OFS=":"} $1=="root"{$2=h}1' "$SHADOW_FILE" > "${SHADOW_FILE}.tmp" && mv -f "${SHADOW_FILE}.tmp" "$SHADOW_FILE"
+                awk -F: -v h="$ENCRYPTED_PASS" 'BEGIN{OFS=":"} $1=="root"{$2=h}1' "$SHADOW_FILE" > "${SHADOW_FILE}.tmp" && mv -f "${SHADOW_FILE}.tmp" "$SHADOW_FILE" || true
             }
         }
         ;;
