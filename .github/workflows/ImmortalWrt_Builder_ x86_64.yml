@@ -61,13 +61,14 @@ jobs:
           ./scripts/feeds update -a
           # OAF 处理 (仅主路由) - 在 feeds install 之前
           if [[ "${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main" ]]; then
-            # 清理 feeds 中的 oaf（防止被 install 链接）
-            rm -rf feeds/packages/openappfilter 2>/dev/null || true
-            # 克隆新版 OAF 到 package 目录
+            # 克隆新版 OAF 到 package 目录（作为核心包，优先级高于 feeds）
             rm -rf package/OpenAppFilter 2>/dev/null || true
             timeout 120 git clone --depth 1 https://github.com/destan19/OpenAppFilter package/OpenAppFilter
+            # 删除 feeds 中的旧版 OAF 相关包（防止冲突警告）
+            rm -rf feeds/packages/net/open-app-filter 2>/dev/null || true
+            rm -rf feeds/packages/luci/luci-app-oaf 2>/dev/null || true
+            rm -rf feeds/packages/kernel/oaf 2>/dev/null || true
           fi
-
           ./scripts/feeds install -a
           cp $GITHUB_WORKSPACE/configs/${MAIN_VER}-${CFG_PREFIX}.config .config
           [[ "${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main" ]] && echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
