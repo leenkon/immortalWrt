@@ -38,61 +38,61 @@ jobs:
       - name: 拉取源码
         run: |
           set -e
-          VER=${{ github.event.inputs.version }}
-          TAG=v$VER
           rm -rf openwrt
           timeout 180 git clone --depth 1 https://github.com/immortalwrt/immortalwrt openwrt
           cd openwrt
-          timeout 60 git fetch origin tag $TAG --depth 1
-          git checkout $TAG
+          timeout 60 git fetch origin tag v${{ github.event.inputs.version }} --depth 1
+          git checkout v${{ github.event.inputs.version }}
 
       - name: 配置与编译
         id: build
         run: |
           set -e
           cd openwrt
-          FULL_VER=${{ github.event.inputs.version }}
           PROFILE=${{ github.event.inputs.profile }}
-          CIP=${{ github.event.inputs.custom_ip }}
-          CGW=${{ github.event.inputs.custom_gateway }}
-          PUSER=${{ github.event.inputs.pppoe_username }}
-          PPASS=${{ github.event.inputs.pppoe_password }}
-          RAW_ROOT=${{ github.event.inputs.root_password }}
-          USE_OAF="${{ github.event.inputs.install_oaf }}"
-          [[ "$USE_OAF" != "true" ]] && USE_OAF="false"
-
-          ROOTPWD=${RAW_ROOT:-password}
           IFS='-' read -r CFG_PREFIX RUN_TYPE <<< "$PROFILE"
-          MAIN_VER=${FULL_VER%.*}
-          CFG_FILE=${MAIN_VER}-${CFG_PREFIX}.config
+          MAIN_VER=${{ github.event.inputs.version }}
+          MAIN_VER=${MAIN_VER%.*}
           DIY=$GITHUB_WORKSPACE/scripts/diy.sh
           chmod +x $DIY
 
+          # before: feeds 配置
           $DIY -v $MAIN_VER -p before -t $RUN_TYPE
-          ./scripts/feeds install -a
-          cp $GITHUB_WORKSPACE/configs/$CFG_FILE .config
-          if [[ "$USE_OAF" == "true" && "$RUN_TYPE" == "main" ]]; then
-            OAF=package/OpenAppFilter
-            rm -rf $OAF
-            timeout 120 git clone --depth 1 https://github.com/destan19/OpenAppFilter $OAF
-            echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
+          ./scripts/feeds update -a
+          # OAF 处理 (仅主路由) - 在 feeds install 之前
+          if [[ "${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main" ]]; then
+            # 清理 feeds 中的 oaf（防止被 install 链接）
+            rm -rf feeds/packages/{oaf,luci-app-oaf,open-app-filter} 2>/dev/null
+            # 克隆新版 OAF 到 package 目录
+            rm -rf package/OpenAppFilter
+            timeout 120 git clone --depth 1 https://github.com/destan19/OpenAppFilter package/OpenAppFilter
           fi
 
-          $DIY \
-            -v $MAIN_VER -p after -t $RUN_TYPE \
+          ./scripts/feeds install -a
+          cp $GITHUB_WORKSPACE/configs/${MAIN_VER}-${CFG_PREFIX}.config .config
+          [[ "${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main" ]] && echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
+
+          # after: 网络配置
+          CIP="${{ github.event.inputs.custom_ip }}"
+          CGW="${{ github.event.inputs.custom_gateway }}"
+          PUSER="${{ github.event.inputs.pppoe_username }}"
+          PPASS="${{ github.event.inputs.pppoe_password }}"
+          ROOTPWD="${{ github.event.inputs.root_password }}"
+          ROOTPWD=${ROOTPWD:-password}
+
+          $DIY -v $MAIN_VER -p after -t $RUN_TYPE \
             ${CIP:+--ip "$CIP"} ${CGW:+--gateway "$CGW"} \
             ${PUSER:+--pppoe-user "$PUSER"} ${PPASS:+--pppoe-pass "$PPASS"} \
             --root-pass "$ROOTPWD"
 
-          make defconfig && make download && make -j$(nproc)|| make -j1 V=s
-
+          make defconfig && make download && make -j$(nproc) || make -j1 V=s
           echo "build_date=$(date +%Y%m%d%H%M)" >> "$GITHUB_OUTPUT"
 
       - name: 上传固件
         uses: softprops/action-gh-release@v2
         with:
           name: ImmortalWrt ${{ github.event.inputs.version }} (${{ github.event.inputs.profile }}-${{ steps.build.outputs.build_date }})
-          tag_name: ${{ github.event.inputs.version }}-${{ github.event.inputs.profile }}
+          tag_name: ${{ steps.build.outputs.build_date }}
           files: openwrt/bin/targets/x86/64/*combined.img.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
