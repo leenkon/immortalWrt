@@ -62,7 +62,7 @@ jobs:
           # OAF 处理 (仅主路由) - 在 feeds install 之前
           if [[ "${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main" ]]; then
             # 清理 feeds 中的 oaf（防止被 install 链接）
-            rm -rf feeds/packages/{oaf,luci-app-oaf,open-app-filter} 2>/dev/null || true
+            rm -rf feeds/packages/openappfilter 2>/dev/null || true
             # 克隆新版 OAF 到 package 目录
             rm -rf package/OpenAppFilter 2>/dev/null || true
             timeout 120 git clone --depth 1 https://github.com/destan19/OpenAppFilter package/OpenAppFilter
