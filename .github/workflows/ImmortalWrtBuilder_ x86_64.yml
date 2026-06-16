@@ -60,9 +60,9 @@ jobs:
           $DIY -v $MAIN_VER -p before -t $RUN_TYPE
           ./scripts/feeds update -a
           if [[ "${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main" ]]; then
-            ./scripts/feeds uninstall luci-app-oaf open-app-filter oaf 2>/dev/null || true
-            rm -rf package/OpenAppFilter 2>/dev/null || true
-            timeout 120 git clone --depth 1 https://github.com/destan19/OpenAppFilter package/OpenAppFilter
+            ./scripts/feeds uninstall luci-app-oaf open-app-filter oaf 2>/dev/null
+            rm -rf package/OpenAppFilter 2>/dev/null
+            git clone --depth 1 https://github.com/destan19/OpenAppFilter package/OpenAppFilter
           fi
           ./scripts/feeds install -a -f
           cp $GITHUB_WORKSPACE/configs/${MAIN_VER}-${CFG_PREFIX}.config .config
