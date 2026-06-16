@@ -60,9 +60,13 @@ jobs:
           $DIY -v $MAIN_VER -p before -t $RUN_TYPE
           ./scripts/feeds update -a
           if [[ "${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main" ]]; then
-            ./scripts/feeds uninstall luci-app-oaf open-app-filter oaf 2>/dev/null
-            rm -rf package/OpenAppFilter 2>/dev/null
-            git clone --depth 1 https://github.com/destan19/OpenAppFilter package/OpenAppFilter
+            # 强制卸载 feeds 中的旧版 OAF（通过删除符号链接）
+            rm -rf package/luci-app-oaf package/open-app-filter package/oaf 2>/dev/null || true
+            rm -rf feeds/packages/net/open-app-filter feeds/packages/luci/luci-app-oaf feeds/packages/kernel/oaf 2>/dev/null || true
+            # 删除索引缓存，强制重新生成
+            rm -f feeds/packages.index feeds/luci.index 2>/dev/null || true
+            # 克隆新版 OAF
+            timeout 120 git clone --depth 1 https://github.com/destan19/OpenAppFilter package/OpenAppFilter
           fi
           ./scripts/feeds install -a -f
           cp $GITHUB_WORKSPACE/configs/${MAIN_VER}-${CFG_PREFIX}.config .config
