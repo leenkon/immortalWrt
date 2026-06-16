@@ -59,9 +59,7 @@ jobs:
           # before: feeds 配置
           $DIY -v $MAIN_VER -p before -t $RUN_TYPE
           ./scripts/feeds update -a
-          # OAF 处理 (仅主路由) - 在 feeds install 之前
           if [[ "${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main" ]]; then
-            # 克隆新版 OAF 到 package 目录（作为核心包，优先级高于 feeds）
             rm -rf package/OpenAppFilter 2>/dev/null || true
             timeout 120 git clone --depth 1 https://github.com/destan19/OpenAppFilter package/OpenAppFilter
           fi
