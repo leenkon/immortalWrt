@@ -53,9 +53,8 @@ jobs:
           MAIN_VER="${{ github.event.inputs.version }}"
           MAIN_VER="${MAIN_VER%.*}"
           chmod +x $GITHUB_WORKSPACE/scripts/diy.sh
-          cp $GITHUB_WORKSPACE/configs/${MAIN_VER}-${CFG_PREFIX}.config .config
           $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p before -t $RUN_TYPE
-          ./scripts/feeds update -a && ./scripts/feeds install -a
+          ./scripts/feeds update -a
 
           if [[ "${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main" ]]; then
             rm -rf package/{luci-app-oaf,open-app-filter,oaf} feeds/packages/{net/open-app-filter,luci/luci-app-oaf,kernel/oaf}
@@ -63,6 +62,12 @@ jobs:
             timeout 120 git clone --depth 1 https://github.com/destan19/OpenAppFilter package/OpenAppFilter
             cp -f $GITHUB_WORKSPACE/oaf_files/feature.cfg package/OpenAppFilter/open-app-filter/files/
             cp -rf $GITHUB_WORKSPACE/oaf_files/app_icons package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
+          fi
+
+          ./scripts/feeds install -a
+          cp $GITHUB_WORKSPACE/configs/${MAIN_VER}-${CFG_PREFIX}.config .config
+
+          if [[ "${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main" ]]; then
             echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
           fi
 
