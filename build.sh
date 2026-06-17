@@ -124,7 +124,8 @@ fi
 
 ./scripts/feeds install -a
 cp "$SCRIPT_DIR/configs/${MAIN_VER}-${CFG_PREFIX}.config" .config || error_exit "配置文件不存在"
-[[ "$USE_OAF" == "true" ]] && echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
+sed -i 's/\r$//' .config
+[[ "$USE_OAF" == "true" ]] && { echo "" >> .config; echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config; }
 success "完成"
 
 # 5. 网络配置
