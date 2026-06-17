@@ -82,6 +82,9 @@ jobs:
             ${PUSER:+--pppoe-user "$PUSER"} ${PPASS:+--pppoe-pass "$PPASS"} \
             --root-pass "$ROOTPWD"
 
+          echo "[DEBUG] .config 内容:"
+          cat .config
+          echo ""
           make defconfig && make download && make clean && make -j$(nproc) || make -j1 V=s
           TIMESTAMP=$(date +%Y%m%d%H%M%S)
           echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
