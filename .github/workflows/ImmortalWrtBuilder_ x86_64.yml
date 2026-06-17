@@ -68,8 +68,7 @@ jobs:
           cp $GITHUB_WORKSPACE/configs/${MAIN_VER}-${CFG_PREFIX}.config .config
 
           if [[ "${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main" ]]; then
-            echo "" >> .config
-            echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
+            echo -e "\nCONFIG_PACKAGE_luci-app-oaf=y" >> .config
           fi
 
           ROOTPWD="${{ github.event.inputs.root_password }}"
