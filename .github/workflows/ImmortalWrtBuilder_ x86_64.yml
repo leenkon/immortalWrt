@@ -68,11 +68,13 @@ jobs:
 
           ROOTPWD="${{ github.event.inputs.root_password }}"
           ROOTPWD="${ROOTPWD:-password}"
+          CIP="${{ github.event.inputs.custom_ip }}"
+          CGW="${{ github.event.inputs.custom_gateway }}"
+          PUSER="${{ github.event.inputs.pppoe_username }}"
+          PPASS="${{ github.event.inputs.pppoe_password }}"
           $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p after -t $RUN_TYPE \
-            ${ github.event.inputs.custom_ip:+--ip "${{ github.event.inputs.custom_ip }}"} \
-            ${ github.event.inputs.custom_gateway:+--gateway "${{ github.event.inputs.custom_gateway }}"} \
-            ${ github.event.inputs.pppoe_username:+--pppoe-user "${{ github.event.inputs.pppoe_username }}"} \
-            ${ github.event.inputs.pppoe_password:+--pppoe-pass "${{ github.event.inputs.pppoe_password }}"} \
+            ${CIP:+--ip "$CIP"} ${CGW:+--gateway "$CGW"} \
+            ${PUSER:+--pppoe-user "$PUSER"} ${PPASS:+--pppoe-pass "$PPASS"} \
             --root-pass "$ROOTPWD"
 
           make defconfig && make download && make clean && make -j$(nproc) || make -j1 V=s
