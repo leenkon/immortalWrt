@@ -138,9 +138,6 @@ success "完成"
 
 # 6. 编译
 echo -e "\n${YELLOW}[6/6] 编译固件...${NC}"
-echo -e "\n${YELLOW}[DEBUG] .config 内容:${NC}"
-cat .config
-echo ""
 make defconfig && make download -j$(nproc) && make -j$(nproc) || make -j1 V=s
 
 echo -e "\n${GREEN}========================================  编译完成!  ========================================${NC}"
