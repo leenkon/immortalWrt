@@ -49,7 +49,7 @@ jobs:
           set -e
           cd openwrt
           IFS='-' read -r CFG_PREFIX RUN_TYPE <<< "${{ github.event.inputs.profile }}"
-          MAIN_VER="${ github.event.inputs.version}"
+          MAIN_VER="${{ github.event.inputs.version }}"
           MAIN_VER="${MAIN_VER%.*}"
           chmod +x $GITHUB_WORKSPACE/scripts/diy.sh
 
