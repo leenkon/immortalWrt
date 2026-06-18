@@ -80,10 +80,12 @@ uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.0.0'
 ${GATEWAY_CONF}
 ${WAN_CONF}
+uci set network.wan.norelease='1'
 uci set network.wan.peerdns='0'
+uci set network.wan.multipath='off'
 uci set network.wan.dns='$DEF_BYPASS_IP 8.8.8.8 223.5.5.5'
 uci -q delete dnsmasq.@dnsmasq[0].server && uci add_list dnsmasq.@dnsmasq[0].server='$DEF_BYPASS_IP' && uci add_list dnsmasq.@dnsmasq[0].server='8.8.8.8' && uci add_list dnsmasq.@dnsmasq[0].server='223.5.5.5'
-uci set dhcp.lan.start='11'
+uci set dhcp.lan.start='8'
 uci set dhcp.lan.limit='150'"
         fi
 
