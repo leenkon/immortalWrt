@@ -59,12 +59,12 @@ case "$PHASE" in
 uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.0.0'
 uci set network.lan.gateway='$GATEWAY_IP'
-uci set network.lan.dns='8.8.8.8 223.5.5.5'
 uci set network.wan.proto='none'
 uci set network.wan6.proto='none'
 uci set network.lan6.proto='none'
 uci set dhcp.lan.ignore='1'
-uci set dhcp.lan6.ignore='1'"
+uci set dhcp.lan6.ignore='1'
+uci commit"
         else
             ROUTER_IP="${CUSTOM_IP:-$DEF_MAIN_IP}"
             [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && \
@@ -80,13 +80,12 @@ uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.0.0'
 ${GATEWAY_CONF}
 ${WAN_CONF}
-uci set network.wan.norelease='1'
 uci set network.wan.peerdns='0'
-uci set network.wan.multipath='off'
-uci set network.wan.dns='$DEF_BYPASS_IP 8.8.8.8 223.5.5.5'
-uci -q delete dnsmasq.@dnsmasq[0].server && uci add_list dnsmasq.@dnsmasq[0].server='$DEF_BYPASS_IP' && uci add_list dnsmasq.@dnsmasq[0].server='8.8.8.8' && uci add_list dnsmasq.@dnsmasq[0].server='223.5.5.5'
+uci set dnsmasq.@dnsmasq[0].noresolv='1'
+for dns in $DEF_BYPASS_IP 8.8.8.8 223.5.5.5; do uci add_list dnsmasq.@dnsmasq[0].server="\$dns"; done
 uci set dhcp.lan.start='8'
-uci set dhcp.lan.limit='150'"
+uci set dhcp.lan.limit='150'
+uci commit"
         fi
 
         cat > "$OUTPUT" <<EOF
@@ -98,7 +97,6 @@ uci set system.@system[0].zonename='Asia/Shanghai'
 uci del_list system.ntp.server
 uci set system.ntp.enable_server='1'
 for server in ntp.aliyun.com ntp.tencent.com ntp.ntsc.ac.cn cn.pool.ntp.org; do uci add_list system.ntp.server="\$server"; done
-uci commit
 /etc/init.d/network reload
 /etc/init.d/dnsmasq restart
 /etc/init.d/sysntpd restart

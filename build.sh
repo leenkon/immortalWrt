@@ -8,11 +8,10 @@ set -e
 RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' NC='\033[0m'
 error_exit() { echo -e "${RED}错误：$1${NC}" >&2; exit 1; }
 success() { echo -e "${GREEN}[OK] $1${NC}"; }
-warn() { echo -e "${YELLOW}[警告] $1${NC}"; }
 
 # 默认配置
 DEF_MAIN_IP="10.10.10.1"
-DEF_BYPASS_IP="10.10.10.10"
+DEF_BYPASS_IP="10.10.10.2"
 DEF_GATEWAY="10.10.10.1"
 ROOT_PASSWORD="password"
 
@@ -70,11 +69,12 @@ ROOT_PWD="${rp:-$ROOT_PASSWORD}"
 success "密码已设置"
 
 # 确认
-echo -e "\n========================================  准备编译  ========================================  版本: $VERSION | 配置: $PROFILE | IP: $ROUTER_IP"
+echo -e "\n========================================  准备编译  ========================================"
+echo "  版本: $VERSION | 配置: $PROFILE | IP: $ROUTER_IP"
 [[ -n "$GATEWAY_IP" ]] && echo "  网关: $GATEWAY_IP"
 [[ -n "$PPPOE_USER" ]] && echo "  PPPoE: $PPPOE_USER"
 [[ "$USE_OAF" == "true" ]] && echo "  OAF: 是"
-echo "========================================"
+echo "==================================================================================="
 read -p "确认开始? [Y/n]: " c; [[ "$c" =~ ^[Nn]$ ]] && exit 0
 
 # ========== 编译 ==========
@@ -83,12 +83,12 @@ OPENWRT_DIR="$SCRIPT_DIR/openwrt"
 DIY="$SCRIPT_DIR/scripts/diy.sh"
 
 # 1. 换行符
-echo -e "\n${YELLOW}[1/6] 检查换行符...${NC}"
+echo -e "\n${YELLOW}[1/7] 检查换行符...${NC}"
 fix_line_endings "$DIY" "$SCRIPT_DIR/build.sh"
 success "完成"
 
 # 2. 依赖
-echo -e "\n${YELLOW}[2/6] 安装依赖...${NC}"
+echo -e "\n${YELLOW}[2/7] 安装依赖...${NC}"
 sudo apt update -y
 sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
 bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib \
@@ -101,23 +101,23 @@ upx-ucl unzip vim wget xmlto xxd zlib1g-dev
 success "完成"
 
 # 3. 源码
-echo -e "\n${YELLOW}[3/6] 拉取源码...${NC}"
+echo -e "\n${YELLOW}[3/7] 拉取源码...${NC}"
 [[ -d "$OPENWRT_DIR" ]] && { read -p "删除现有目录? [y/N]: " r; [[ "$r" =~ ^[Yy]$ ]] && rm -rf "$OPENWRT_DIR" || cd "$OPENWRT_DIR"; }
 [[ ! -d "$OPENWRT_DIR" ]] && { git clone --depth 1 https://github.com/immortalwrt/immortalwrt "$OPENWRT_DIR"; cd "$OPENWRT_DIR"; git fetch origin tag "v$VERSION" --depth 1; git checkout "v$VERSION"; }
 success "完成"
 
 # 4. 配置
-echo -e "\n${YELLOW}[4/6] 准备配置...${NC}"
+echo -e "\n${YELLOW}[4/7] 准备配置...${NC}"
 cd "$OPENWRT_DIR"
 chmod +x "$DIY"
 "$DIY" -v "$MAIN_VER" -p before -t "$RUN_TYPE"
 ./scripts/feeds update -a
 
-# OAF 处理 (仅主路由) - 在 feeds install 之前
+# OAF 处理 (仅主路由) - 与 yml 一致：feeds update 之后，feeds install 之前
 if [[ "$USE_OAF" == "true" ]]; then
-  rm -rf feeds/packages/{oaf,luci-app-oaf,open-app-filter} 2>/dev/null
+  rm -rf package/{luci-app-oaf,open-app-filter,oaf} feeds/packages/{net/open-app-filter,luci/luci-app-oaf,kernel/oaf}
   rm -rf package/OpenAppFilter
-  git clone --depth 1 https://github.com/destan19/OpenAppFilter package/OpenAppFilter
+  timeout 120 git clone --depth 1 https://github.com/destan19/OpenAppFilter package/OpenAppFilter
   [[ -f "$SCRIPT_DIR/oaf_files/feature.cfg" ]] && cp -f "$SCRIPT_DIR/oaf_files/feature.cfg" package/OpenAppFilter/open-app-filter/files/
   [[ -d "$SCRIPT_DIR/oaf_files/app_icons" ]] && cp -rf "$SCRIPT_DIR/oaf_files/app_icons" package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
 fi
@@ -129,16 +129,21 @@ sed -i 's/\r$//' .config
 success "完成"
 
 # 5. 网络配置
-echo -e "\n${YELLOW}[5/6] 生成网络配置...${NC}"
+echo -e "\n${YELLOW}[5/7] 生成网络配置...${NC}"
 "$DIY" -v "$MAIN_VER" -p after -t "$RUN_TYPE" \
   ${ROUTER_IP:+--ip "$ROUTER_IP"} ${GATEWAY_IP:+--gateway "$GATEWAY_IP"} \
   ${PPPOE_USER:+--pppoe-user "$PPPOE_USER"} ${PPPOE_PASS:+--pppoe-pass "$PPPOE_PASS"} \
   --root-pass "$ROOT_PWD"
 success "完成"
 
-# 6. 编译
-echo -e "\n${YELLOW}[6/6] 编译固件...${NC}"
-make defconfig && make download -j$(nproc) && make -j$(nproc) || make -j1 V=s
+# 6. 下载必要文件
+echo -e "\n${YELLOW}[6/7] 下载必要文件...${NC}"
+make defconfig && make download && make clean
+success "完成"
+
+# 7. 编译
+echo -e "\n${YELLOW}[7/7] 编译固件...${NC}"
+make -j$(nproc) || make -j1 V=s
 
 echo -e "\n${GREEN}========================================  编译完成!  ========================================${NC}"
 echo "固件位置: $OPENWRT_DIR/bin/targets/x86/64/"
