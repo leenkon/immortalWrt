@@ -1,5 +1,4 @@
 #!/bin/bash
-# ImmortalWrt 编译辅助脚本
 
 error_exit() { echo "错误：$1" >&2; exit 1; }
 _escape_uci() { printf '%s' "${1//\\/\\\\}"; }
@@ -52,10 +51,11 @@ case "$PHASE" in
         OUTPUT="files/etc/uci-defaults/99-custom-config"
 
         if [[ "$PROFILE_TYPE" == "bypass" ]]; then
+            # 旁路由配置
             ROUTER_IP="${CUSTOM_IP:-$DEF_BYPASS_IP}"
             GATEWAY_IP="${CUSTOM_GATEWAY:-${CUSTOM_IP:+${CUSTOM_IP%.*}.1}}"
             GATEWAY_IP="${GATEWAY_IP:-$DEF_GATEWAY}"
-            NETWORK_CONF="uci set network.lan.proto='static'
+            NETWORK_CMD="uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.0.0'
 uci set network.lan.gateway='$GATEWAY_IP'
@@ -66,55 +66,55 @@ uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'
 uci commit"
         else
+            # 主路由配置
             ROUTER_IP="${CUSTOM_IP:-$DEF_MAIN_IP}"
-            [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]] && \
-                WAN_CONF="uci set network.wan.proto='pppoe'
+            # WAN 配置
+            if [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]]; then
+                WAN_CMD="uci set network.wan.proto='pppoe'
 uci set network.wan.username='$(_escape_uci "$PPPOE_USERNAME")'
 uci set network.wan.password='$(_escape_uci "$PPPOE_PASSWORD")'
-uci set network.wan.ipv6='auto'" || \
-                WAN_CONF="uci set network.wan.proto='dhcp'
+uci set network.wan.ipv6='auto'"
+            else
+                WAN_CMD="uci set network.wan.proto='dhcp'
 uci set network.wan6.proto='dhcpv6'"
-            [[ -n "$CUSTOM_GATEWAY" ]] && GATEWAY_CONF="uci set network.lan.gateway='$CUSTOM_GATEWAY'" || GATEWAY_CONF=""
-            NETWORK_CONF="uci set network.lan.proto='static'
+            fi
+            # 自定义网关（可选）
+            [[ -n "$CUSTOM_GATEWAY" ]] && GATEWAY_CMD="uci set network.lan.gateway='$CUSTOM_GATEWAY'" || GATEWAY_CMD=""
+            NETWORK_CMD="uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.0.0'
-${GATEWAY_CONF}
-${WAN_CONF}
+${GATEWAY_CMD}
+${WAN_CMD}
 uci set network.wan.peerdns='0'
-uci set dnsmasq.@dnsmasq[0].noresolv='1'
-for dns in $DEF_BYPASS_IP 8.8.8.8 223.5.5.5; do uci add_list dnsmasq.@dnsmasq[0].server="\$dns"; done
+uci -q set dhcp.@dnsmasq[0] || uci add dhcp dnsmasq
+uci set dhcp.@dnsmasq[0].noresolv='1'
+uci -q del_list dhcp.@dnsmasq[0].server '127.0.0.1'
+for dns in $DEF_BYPASS_IP 8.8.8.8 223.5.5.5; do uci add_list dhcp.@dnsmasq[0].server "$dns"; done
 uci set dhcp.lan.start='8'
 uci set dhcp.lan.limit='150'
 uci commit"
         fi
-
+        # 生成 uci-defaults 脚本
         cat > "$OUTPUT" <<EOF
 #!/bin/sh
-$NETWORK_CONF
+${NETWORK_CMD}
 uci set system.@system[0].hostname='Router-${PROFILE_TYPE}'
 uci set system.@system[0].timezone='CST-8'
 uci set system.@system[0].zonename='Asia/Shanghai'
 uci del_list system.ntp.server
 uci set system.ntp.enable_server='1'
-for server in ntp.aliyun.com ntp.tencent.com ntp.ntsc.ac.cn cn.pool.ntp.org; do uci add_list system.ntp.server="\$server"; done
-/etc/init.d/network reload
-/etc/init.d/dnsmasq restart
-/etc/init.d/sysntpd restart
-/etc/init.d/system reload
+$(for server in ntp.aliyun.com ntp.tencent.com ntp.ntsc.ac.cn cn.pool.ntp.org; do echo "uci add_list system.ntp.server='$server'"; done)
 exit 0
 EOF
         chmod +x "$OUTPUT"
-
         # Root 密码
-        [[ -n "$ROOT_PASSWORD" ]] && {
-            ENCRYPTED_PASS=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin 2>/dev/null)
-            [[ -n "$ENCRYPTED_PASS" ]] && {
+        if [[ -n "$ROOT_PASSWORD" ]]; then
+            ENCRYPTED_PASS=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin 2>/dev/null) && {
                 mkdir -p files/etc
-                SHADOW_FILE="files/etc/shadow"
-                [[ -f "package/base-files/files/etc/shadow" ]] && cp "package/base-files/files/etc/shadow" "$SHADOW_FILE" 2>/dev/null || echo 'root::0:0:99999:7:::' > "$SHADOW_FILE"
-                awk -F: -v h="$ENCRYPTED_PASS" 'BEGIN{OFS=":"} $1=="root"{$2=h}1' "$SHADOW_FILE" > "${SHADOW_FILE}.tmp" && mv -f "${SHADOW_FILE}.tmp" "$SHADOW_FILE" || true
+                cp package/base-files/files/etc/shadow files/etc/shadow 2>/dev/null || echo 'root::0:0:99999:7:::' > files/etc/shadow
+                sed -i "s|^root:[^:]*:|root:$ENCRYPTED_PASS:|" files/etc/shadow
             }
-        }
+        fi
         ;;
 
     *) error_exit "无效阶段 $PHASE" ;;
