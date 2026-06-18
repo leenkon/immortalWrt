@@ -6,7 +6,7 @@ _escape_uci() { printf '%s' "${1//\\/\\\\}"; }
 
 # 默认配置
 DEF_MAIN_IP="10.10.10.1"
-DEF_BYPASS_IP="10.10.10.10"
+DEF_BYPASS_IP="10.10.10.2"
 DEF_GATEWAY="10.10.10.1"
 
 # 参数解析
@@ -59,7 +59,7 @@ case "$PHASE" in
 uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.0.0'
 uci set network.lan.gateway='$GATEWAY_IP'
-uci set network.lan.dns='$GATEWAY_IP 8.8.8.8 223.5.5.5'
+uci set network.lan.dns='8.8.8.8 223.5.5.5'
 uci set network.wan.proto='none'
 uci set network.wan6.proto='none'
 uci set network.lan6.proto='none'
@@ -80,8 +80,8 @@ uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.0.0'
 ${GATEWAY_CONF}
 ${WAN_CONF}
-uci set network.wan.dns='8.8.8.8 223.5.5.5'
-uci -q delete dnsmasq.@dnsmasq[0].server && uci add_list dnsmasq.@dnsmasq[0].server='8.8.8.8' && uci add_list dnsmasq.@dnsmasq[0].server='223.5.5.5'
+uci set network.wan.dns='$DEF_BYPASS_IP 8.8.8.8 223.5.5.5'
+uci -q delete dnsmasq.@dnsmasq[0].server && uci add_list dnsmasq.@dnsmasq[0].server='8.8.8.8' && uci add_list dnsmasq.@dnsmasq[0].server='223.5.5.5' && uci add_list dnsmasq.@dnsmasq[0].server='$DEF_BYPASS_IP'
 uci set dhcp.lan.start='11'
 uci set dhcp.lan.limit='150'"
         fi
