@@ -159,7 +159,6 @@ uci -q delete network.wan.dns
 uci add_list network.wan.dns='8.8.8.8'
 uci add_list network.wan.dns='223.5.5.5'
 uci -q delete network.lan.dns
-uci add_list network.lan.dns='10.10.10.2'
 uci add_list network.lan.dns='8.8.8.8'
 uci add_list network.lan.dns='223.5.5.5'
 uci -q delete dhcp.@dnsmasq[0].server
