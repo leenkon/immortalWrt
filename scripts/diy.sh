@@ -64,8 +64,9 @@ uci set network.wan6.proto='none'
 uci set network.lan6.proto='none'
 uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'
-uci commit
-/etc/init.d/dnsmasq disable 2>/dev/null || true"
+/etc/init.d/dnsmasq disable 2>/dev/null || true
+uci commit network
+uci commit dhcp"
         else
             # 主路由配置
             ROUTER_IP="${CUSTOM_IP:-$DEF_MAIN_IP}"
@@ -91,11 +92,13 @@ uci -q delete dhcp.@dnsmasq[0].server
 uci add_list dhcp.@dnsmasq[0].server='$DEF_BYPASS_IP'
 uci add_list dhcp.@dnsmasq[0].server='8.8.8.8'
 uci add_list dhcp.@dnsmasq[0].server='223.5.5.5'
+uci set network.wan.dns='$DEF_BYPASS_IP 8.8.8.8 223.5.5.5'
 uci set network.lan.dns='$DEF_BYPASS_IP 8.8.8.8 223.5.5.5'
 uci add_list dhcp.lan.dhcp_option='6,$DEF_BYPASS_IP'
 uci set dhcp.lan.start='8'
 uci set dhcp.lan.limit='150'
-uci commit"
+uci commit network
+uci commit dhcp"
         fi
         # 生成 uci-defaults 脚本
         cat > "$OUTPUT" <<EOF
@@ -106,7 +109,11 @@ uci set system.@system[0].timezone='CST-8'
 uci set system.@system[0].zonename='Asia/Shanghai'
 uci del_list system.ntp.server
 uci set system.ntp.enable_server='1'
-$(for server in ntp.aliyun.com ntp.tencent.com ntp.ntsc.ac.cn cn.pool.ntp.org; do echo "uci add_list system.ntp.server='$server'"; done)
+uci add_list system.ntp.server='ntp.aliyun.com'
+uci add_list system.ntp.server='ntp.tencent.com'
+uci add_list system.ntp.server='ntp.ntsc.ac.cn'
+uci add_list system.ntp.server='cn.pool.ntp.org'
+uci commit system
 exit 0
 EOF
         chmod +x "$OUTPUT"
