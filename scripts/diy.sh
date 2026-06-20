@@ -5,12 +5,16 @@ IFS=$'\n\t'
 # 通用错误输出
 error_exit() { echo "ERR: $1" >&2; exit 1; }
 
-# UCI/Shell完整特殊字符转义
+# UCI/Shell完整特殊字符转义（移除冲突反引号）
 _escape_uci() {
     local s="$1"
-    s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//\'/\\\'}"
-    s="${s//\$/\\\$}"; s="${s//;/\\;}"; s="${s//&/\\&}"
-    s="${s//\`/\\`}"; s="${s//$'\n'/\\n}"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//\'/\\\'}"
+    s="${s//\$/\\\$}"
+    s="${s//;/\\;}"
+    s="${s//&/\\&}"
+    s="${s//$'\n'/\\n}"
     printf '%s' "$s"
 }
 
@@ -18,7 +22,10 @@ _escape_uci() {
 is_valid_ipv4() {
     local ip="$1"
     [[ ! "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] && return 1
-    for o in ${ip//./ }; do (( o < 0 || o > 255 )) && return 1; done
+    local octs=(${ip//./ })
+    for o in "${octs[@]}"; do
+        (( o < 0 || o > 255 )) && return 1
+    done
     return 0
 }
 
@@ -77,7 +84,11 @@ before)
     # small源替换golang 1.26
     if grep -qs '^[^#].*src-git small' feeds.conf; then
         echo "[before] 清理冲突包，替换golang"
-        rm -rf feeds/luci/applications/luci-app-mosdns feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} feeds/packages/utils/v2dat feeds/packages/lang/golang
+        rm -rf \
+            feeds/luci/applications/luci-app-mosdns \
+            feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} \
+            feeds/packages/utils/v2dat \
+            feeds/packages/lang/golang
         git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang feeds/packages/lang/golang
     fi
     ;;
@@ -100,7 +111,6 @@ after)
             lan_gw="$DEF_GATEWAY"
         fi
 
-# EOT 必须顶格，前面不能有空格
 net_block=$(cat <<EOT
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$lan_ip'
@@ -132,7 +142,6 @@ uci set network.wan.ipv6='auto'"
 uci set network.wan6.proto='dhcpv6'"
         fi
 
-# EOT 顶格
 net_block=$(cat <<EOT
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$lan_ip'
@@ -153,7 +162,6 @@ EOT
 )
     fi
 
-# EOF 顶格
 cat > "$out" <<EOF
 #!/bin/sh
 ${net_block}
