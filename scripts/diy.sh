@@ -5,7 +5,7 @@ IFS=$'\n\t'
 # 通用错误输出
 error_exit() { echo "ERR: $1" >&2; exit 1; }
 
-# UCI/Shell完整特殊字符转义（移除冲突反引号）
+# UCI/Shell特殊字符转义（移除冲突反引号）
 _escape_uci() {
     local s="$1"
     s="${s//\\/\\\\}"
@@ -18,13 +18,16 @@ _escape_uci() {
     printf '%s' "$s"
 }
 
-# IPv4 格式合法性校验
+# IPv4 格式合法性校验（修复数组算术报错）
 is_valid_ipv4() {
     local ip="$1"
     [[ ! "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] && return 1
-    local octs=(${ip//./ })
-    for o in "${octs[@]}"; do
-        (( o < 0 || o > 255 )) && return 1
+    # 安全分割四段
+    IFS='.' read -r o1 o2 o3 o4 <<< "$ip"
+    for o in "$o1" "$o2" "$o3" "$o4"; do
+        if ! [[ "$o" =~ ^[0-9]+$ ]] || (( o < 0 || o > 255 )); then
+            return 1
+        fi
     done
     return 0
 }
@@ -79,7 +82,8 @@ case "$PHASE" in
 before)
     echo "[before] 处理 feeds 源"
     rm -f feeds.conf feeds.conf.default
-    local feed_file="$PROJECT_ROOT/feeds/$VERSION.conf"
+    # 修复：case内不能用local，改用普通变量
+    feed_file="$PROJECT_ROOT/feeds/$VERSION.conf"
     [[ -f "$feed_file" ]] || error_exit "缺失 $feed_file"
     cp "$feed_file" feeds.conf
 
@@ -97,13 +101,13 @@ before)
 
 after)
     echo "[after] 生成uci-defaults预置配置"
-    local out="$PROJECT_ROOT/files/etc/uci-defaults/99-custom-config"
+    out="$PROJECT_ROOT/files/etc/uci-defaults/99-custom-config"
     mkdir -p "$(dirname "$out")"
-    local net_block=""
+    net_block=""
 
     if [[ "$PROFILE_TYPE" == "bypass" ]]; then
-        local lan_ip="${CUSTOM_IP:-$DEF_BYPASS_IP}"
-        local lan_gw
+        lan_ip="${CUSTOM_IP:-$DEF_BYPASS_IP}"
+        lan_gw=""
         if [[ -n "$CUSTOM_GATEWAY" ]]; then
             lan_gw="$CUSTOM_GATEWAY"
         elif [[ -n "$CUSTOM_IP" ]]; then
@@ -127,14 +131,14 @@ uci commit network; uci commit dhcp
 EOT
 )
     else
-        local lan_ip="${CUSTOM_IP:-$DEF_MAIN_IP}"
-        local gw_cmd=""
+        lan_ip="${CUSTOM_IP:-$DEF_MAIN_IP}"
+        gw_cmd=""
         [[ -n "$CUSTOM_GATEWAY" ]] && gw_cmd="uci set network.lan.gateway='$CUSTOM_GATEWAY'"
 
-        local wan_block
+        wan_block=""
         if [[ -n "$PPPOE_USERNAME" ]]; then
-            local u="$(_escape_uci "$PPPOE_USERNAME")"
-            local p="$(_escape_uci "$PPPOE_PASSWORD")"
+            u="$(_escape_uci "$PPPOE_USERNAME")"
+            p="$(_escape_uci "$PPPOE_PASSWORD")"
             wan_block="uci set network.wan.proto='pppoe'
 uci set network.wan.username='$u'
 uci set network.wan.password='$p'
@@ -184,10 +188,9 @@ EOF
 
     if [[ -n "$ROOT_PASSWORD" ]]; then
         echo "[after] 设置root加密密码"
-        local crypt
         crypt=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin) || error_exit "openssl加密失败"
         mkdir -p files/etc
-        local shadow="files/etc/shadow"
+        shadow="files/etc/shadow"
         [[ -f package/base-files/files/etc/shadow ]] && cp package/base-files/files/etc/shadow "$shadow" || echo 'root::0:0:99999:7:::' > "$shadow"
         sed -i "s|^root:[^:]*:|root:$crypt:|" "$shadow"
     fi
