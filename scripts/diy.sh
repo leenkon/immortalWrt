@@ -167,6 +167,7 @@ uci add_list dhcp.@dnsmasq[0].server='223.5.5.5'
 uci add_list dhcp.@dnsmasq[0].server='8.8.8.8'
 uci del_list dhcp.lan.dhcp_option='6,*'
 uci add_list dhcp.lan.dhcp_option='6,$DEF_BYPASS_IP,223.5.5.5,8.8.8.8'
+uci set dhcp.lan.sequential_ip='1'
 uci set dhcp.lan.start='8'
 uci set dhcp.lan.limit='150'
 uci commit network dhcp
