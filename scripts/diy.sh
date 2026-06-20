@@ -64,7 +64,8 @@ uci set network.wan6.proto='none'
 uci set network.lan6.proto='none'
 uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'
-uci commit"
+uci commit
+/etc/init.d/dnsmasq disable 2>/dev/null || true"
         else
             # 主路由配置
             ROUTER_IP="${CUSTOM_IP:-$DEF_MAIN_IP}"
@@ -88,8 +89,10 @@ ${WAN_CMD}
 uci set network.wan.peerdns='0'
 uci -q set dhcp.@dnsmasq[0] || uci add dhcp dnsmasq
 uci set dhcp.@dnsmasq[0].noresolv='1'
-uci -q del_list dhcp.@dnsmasq[0].server '127.0.0.1'
-for dns in $DEF_BYPASS_IP 8.8.8.8 223.5.5.5; do uci add_list dhcp.@dnsmasq[0].server "$dns"; done
+for dns in $DEF_BYPASS_IP 8.8.8.8 223.5.5.5; do
+    uci add_list network.wan.dns "$dns"
+    uci add_list dhcp.@dnsmasq[0].server "$dns"
+done
 uci set dhcp.lan.start='8'
 uci set dhcp.lan.limit='150'
 uci commit"
