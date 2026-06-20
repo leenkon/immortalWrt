@@ -47,8 +47,8 @@ case "$PHASE" in
         ;;
 
     after)
-        mkdir -p files/etc/uci-defaults || error_exit "创建配置目录失败"
-        OUTPUT="files/etc/uci-defaults/99-custom-config"
+        OUTPUT="$PROJECT_ROOT/files/etc/uci-defaults/99-custom-config"
+        mkdir -p "$(dirname "$OUTPUT")" || error_exit "创建配置目录失败"
 
         if [[ "$PROFILE_TYPE" == "bypass" ]]; then
             # 旁路由配置
@@ -84,15 +84,17 @@ uci set network.wan6.proto='dhcpv6'"
             NETWORK_CMD="uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ROUTER_IP'
 uci set network.lan.netmask='255.255.0.0'
-${GATEWAY_CMD}
-${WAN_CMD}
-uci set network.wan.peerdns='0'
-uci -q set dhcp.@dnsmasq[0] || uci add dhcp dnsmasq
+\${GATEWAY_CMD}
+\${WAN_CMD}
 uci set dhcp.@dnsmasq[0].noresolv='1'
-for dns in $DEF_BYPASS_IP 8.8.8.8 223.5.5.5; do
-    uci add_list network.wan.dns "$dns"
-    uci add_list dhcp.@dnsmasq[0].server "$dns"
-done
+uci -q del_list dhcp.@dnsmasq[0].server=127.0.0.1
+uci -q del_list dhcp.@dnsmasq[0].server=223.5.5.5
+uci -q del_list dhcp.@dnsmasq[0].server=8.8.8.8
+uci add_list dhcp.@dnsmasq[0].server=$DEF_BYPASS_IP
+uci add_list dhcp.@dnsmasq[0].server=8.8.8.8
+uci add_list dhcp.@dnsmasq[0].server=223.5.5.5
+uci set network.lan.dns='$DEF_BYPASS_IP 8.8.8.8 223.5.5.5'
+uci add_list dhcp.lan.dhcp_option='6,$DEF_BYPASS_IP'
 uci set dhcp.lan.start='8'
 uci set dhcp.lan.limit='150'
 uci commit"

@@ -138,6 +138,8 @@ success "完成"
 
 # 6. 下载必要文件
 echo -e "\n${YELLOW}[6/7] 下载必要文件...${NC}"
+# 复制 files 目录到 OpenWrt 源码（包含 uci-defaults 和其他自定义文件）
+[[ -d "$SCRIPT_DIR/files" ]] && cp -rf "$SCRIPT_DIR/files" "$OPENWRT_DIR/"
 make defconfig && make download && make clean
 success "完成"
 
