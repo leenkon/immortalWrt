@@ -87,12 +87,10 @@ uci set network.lan.netmask='255.255.0.0'
 \${GATEWAY_CMD}
 \${WAN_CMD}
 uci set dhcp.@dnsmasq[0].noresolv='1'
-uci -q del_list dhcp.@dnsmasq[0].server=127.0.0.1
-uci -q del_list dhcp.@dnsmasq[0].server=223.5.5.5
-uci -q del_list dhcp.@dnsmasq[0].server=8.8.8.8
-uci add_list dhcp.@dnsmasq[0].server=$DEF_BYPASS_IP
-uci add_list dhcp.@dnsmasq[0].server=8.8.8.8
-uci add_list dhcp.@dnsmasq[0].server=223.5.5.5
+uci -q delete dhcp.@dnsmasq[0].server
+uci add_list dhcp.@dnsmasq[0].server='$DEF_BYPASS_IP'
+uci add_list dhcp.@dnsmasq[0].server='8.8.8.8'
+uci add_list dhcp.@dnsmasq[0].server='223.5.5.5'
 uci set network.lan.dns='$DEF_BYPASS_IP 8.8.8.8 223.5.5.5'
 uci add_list dhcp.lan.dhcp_option='6,$DEF_BYPASS_IP'
 uci set dhcp.lan.start='8'
