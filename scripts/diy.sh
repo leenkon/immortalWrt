@@ -82,7 +82,6 @@ case "$PHASE" in
 before)
     echo "[before] 处理 feeds 源"
     rm -f feeds.conf feeds.conf.default
-    # 修复：case内不能用local，改用普通变量
     feed_file="$PROJECT_ROOT/feeds/$VERSION.conf"
     [[ -f "$feed_file" ]] || error_exit "缺失 $feed_file"
     cp "$feed_file" feeds.conf
@@ -127,7 +126,7 @@ uci set network.wan6.proto='none'
 uci set network.lan6.proto='none'
 uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'
-uci commit network; uci commit dhcp
+uci commit network dhcp
 EOT
 )
     else
@@ -163,7 +162,7 @@ uci del_list dhcp.lan.dhcp_option='6,*'
 uci add_list dhcp.lan.dhcp_option='6,$DEF_BYPASS_IP,223.5.5.5,8.8.8.8'
 uci set dhcp.lan.start='8'
 uci set dhcp.lan.limit='150'
-uci commit network; uci commit dhcp
+uci commit network dhcp
 EOT
 )
     fi
