@@ -1,112 +1,171 @@
 #!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
 
-error_exit() { echo "错误：$1" >&2; exit 1; }
-_escape_uci() { printf '%s' "${1//\\/\\\\}"; }
+# 通用错误输出
+error_exit() { echo "ERR: $1" >&2; exit 1; }
 
-# 默认配置
+# UCI/Shell完整特殊字符转义
+_escape_uci() {
+    local s="$1"
+    s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//\'/\\\'}"
+    s="${s//\$/\\\$}"; s="${s//;/\\;}"; s="${s//&/\\&}"
+    s="${s//\`/\\`}"; s="${s//$'\n'/\\n}"
+    printf '%s' "$s"
+}
+
+# IPv4 格式合法性校验
+is_valid_ipv4() {
+    local ip="$1"
+    [[ ! "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] && return 1
+    for o in ${ip//./ }; do (( o < 0 || o > 255 )) && return 1; done
+    return 0
+}
+
+# ====================== 默认常量 ======================
 DEF_MAIN_IP="10.10.10.1"
-DEF_BYPASS_IP="10.10.10.2"
+DEF_BYPASS_IP="${OVERRIDE_BYPASS_IP:-10.10.10.2}"
 DEF_GATEWAY="10.10.10.1"
 
-# 参数解析
+# ====================== 参数初始化 ======================
 VERSION="" PHASE="" PROFILE_TYPE=""
 CUSTOM_IP="" CUSTOM_GATEWAY="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
 
+# 参数解析
 while [[ $# -gt 0 ]]; do
-    case $1 in
+    case "$1" in
         -v|--version) VERSION="$2"; shift 2 ;;
-        -p|--phase) PHASE="$2"; shift 2 ;;
-        -t|--type) PROFILE_TYPE="$2"; shift 2 ;;
-        --ip) CUSTOM_IP="$2"; shift 2 ;;
-        --gateway) CUSTOM_GATEWAY="$2"; shift 2 ;;
+        -p|--phase)   PHASE="$2"; shift 2 ;;
+        -t|--type)    PROFILE_TYPE="$2"; shift 2 ;;
+        --ip)         CUSTOM_IP="$2"; shift 2 ;;
+        --gateway)    CUSTOM_GATEWAY="$2"; shift 2 ;;
         --pppoe-user) PPPOE_USERNAME="$2"; shift 2 ;;
         --pppoe-pass) PPPOE_PASSWORD="$2"; shift 2 ;;
-        --root-pass) ROOT_PASSWORD="$2"; shift 2 ;;
-        *) error_exit "未知选项 $1" ;;
+        --root-pass)  ROOT_PASSWORD="$2"; shift 2 ;;
+        *) error_exit "未知参数 $1" ;;
     esac
 done
 
-# 参数验证
-[[ -z "$VERSION" || -z "$PHASE" ]] && error_exit "必须指定版本和阶段"
-[[ "$PHASE" == "after" && -z "$PROFILE_TYPE" ]] && error_exit "after 阶段必须指定路由类型"
-[[ -n "$PROFILE_TYPE" && "$PROFILE_TYPE" != "main" && "$PROFILE_TYPE" != "bypass" ]] && error_exit "路由类型必须是 main 或 bypass"
+# ====================== 参数强校验 ======================
+[[ -z "$VERSION" || -z "$PHASE" ]] && error_exit "必填参数 --version / --phase"
+[[ "$PHASE" == "after" && -z "$PROFILE_TYPE" ]] && error_exit "after 需指定 --type main/bypass"
+[[ -n "$PROFILE_TYPE" && "$PROFILE_TYPE" != "main" && "$PROFILE_TYPE" != "bypass" ]] && error_exit "type 仅支持 main / bypass"
 
-PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)
-[[ -z "$PROJECT_ROOT" || ! -d "$PROJECT_ROOT" ]] && error_exit "无法定位项目根目录"
+# 所有IP统一校验
+for ip in "$CUSTOM_IP" "$CUSTOM_GATEWAY" "$DEF_MAIN_IP" "$DEF_BYPASS_IP" "$DEF_GATEWAY"; do
+    [[ -n "$ip" ]] && is_valid_ipv4 "$ip" || error_exit "非法IP: $ip"
+done
 
+# PPPoE账号密码成对校验
+if [[ -n "$PPPOE_USERNAME" || -n "$PPPOE_PASSWORD" ]]; then
+    [[ -z "$PPPOE_USERNAME" || -z "$PPPOE_PASSWORD" ]] && error_exit "pppoe user/pass 必须成对传入"
+fi
+
+# 项目根目录定位
+PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+[[ ! -d "$PROJECT_ROOT" ]] && error_exit "无法定位项目根目录"
+
+# ====================== 阶段逻辑 ======================
 case "$PHASE" in
-    before)
-        rm -f feeds.conf feeds.conf.default
-        [[ -f "$PROJECT_ROOT/feeds/$VERSION.conf" ]] && cp "$PROJECT_ROOT/feeds/$VERSION.conf" feeds.conf || error_exit "feeds 配置文件不存在"
-        # small 源 + golang 处理
-        if grep -qs '^[^#].*src-git small' feeds.conf 2>/dev/null; then
-            rm -rf feeds/luci/applications/luci-app-mosdns feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} feeds/packages/utils/v2dat 2>/dev/null
-            rm -rf feeds/packages/lang/golang
-            timeout 120 git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang feeds/packages/lang/golang 2>/dev/null || true
+before)
+    echo "[before] 处理 feeds 源"
+    rm -f feeds.conf feeds.conf.default
+    local feed_file="$PROJECT_ROOT/feeds/$VERSION.conf"
+    [[ -f "$feed_file" ]] || error_exit "缺失 $feed_file"
+    cp "$feed_file" feeds.conf
+
+    # small源替换golang 1.26
+    if grep -qs '^[^#].*src-git small' feeds.conf; then
+        echo "[before] 清理冲突包，替换golang"
+        rm -rf feeds/luci/applications/luci-app-mosdns feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} feeds/packages/utils/v2dat feeds/packages/lang/golang
+        git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang feeds/packages/lang/golang
+    fi
+    ;;
+
+after)
+    echo "[after] 生成uci-defaults预置配置"
+    local out="$PROJECT_ROOT/files/etc/uci-defaults/99-custom-config"
+    mkdir -p "$(dirname "$out")"
+    local net_block=""
+
+    if [[ "$PROFILE_TYPE" == "bypass" ]]; then
+        # 旁路由：关闭DHCP、WAN无地址、指定上游网关
+        local lan_ip="${CUSTOM_IP:-$DEF_BYPASS_IP}"
+        local lan_gw
+        if [[ -n "$CUSTOM_GATEWAY" ]]; then
+            lan_gw="$CUSTOM_GATEWAY"
+        elif [[ -n "$CUSTOM_IP" ]]; then
+            lan_gw="${CUSTOM_IP%.*}.1"
+            is_valid_ipv4 "$lan_gw" || error_exit "自动推导网关非法 $lan_gw"
+        else
+            lan_gw="$DEF_GATEWAY"
         fi
-        ;;
 
-    after)
-        OUTPUT="$PROJECT_ROOT/files/etc/uci-defaults/99-custom-config"
-        mkdir -p "$(dirname "$OUTPUT")" || error_exit "创建配置目录失败"
-
-        if [[ "$PROFILE_TYPE" == "bypass" ]]; then
-            # 旁路由配置
-            ROUTER_IP="${CUSTOM_IP:-$DEF_BYPASS_IP}"
-            GATEWAY_IP="${CUSTOM_GATEWAY:-${CUSTOM_IP:+${CUSTOM_IP%.*}.1}}"
-            GATEWAY_IP="${GATEWAY_IP:-$DEF_GATEWAY}"
-            NETWORK_CMD="uci set network.lan.proto='static'
-uci set network.lan.ipaddr='$ROUTER_IP'
+        net_block=$(cat <<EOT
+uci set network.lan.proto='static'
+uci set network.lan.ipaddr='$lan_ip'
 uci set network.lan.netmask='255.255.0.0'
-uci set network.lan.gateway='$GATEWAY_IP'
+uci set network.lan.gateway='$lan_gw'
 uci set network.wan.proto='none'
 uci set network.wan6.proto='none'
 uci set network.lan6.proto='none'
 uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'
-/etc/init.d/dnsmasq disable 2>/dev/null || true
-uci commit network
-uci commit dhcp"
-        else
-            # 主路由配置
-            ROUTER_IP="${CUSTOM_IP:-$DEF_MAIN_IP}"
-            # WAN 配置
-            if [[ -n "$PPPOE_USERNAME" && -n "$PPPOE_PASSWORD" ]]; then
-                WAN_CMD="uci set network.wan.proto='pppoe'
-uci set network.wan.username='$(_escape_uci "$PPPOE_USERNAME")'
-uci set network.wan.password='$(_escape_uci "$PPPOE_PASSWORD")'
+uci commit network; uci commit dhcp
+EOT
+        )
+    else
+        # 主路由：PPPoE/DHCP WAN + 多DNS故障降级下发
+        local lan_ip="${CUSTOM_IP:-$DEF_MAIN_IP}"
+        local gw_cmd=""
+        [[ -n "$CUSTOM_GATEWAY" ]] && gw_cmd="uci set network.lan.gateway='$CUSTOM_GATEWAY'"
+
+        # WAN配置块
+        local wan_block
+        if [[ -n "$PPPOE_USERNAME" ]]; then
+            local u="$(_escape_uci "$PPPOE_USERNAME")"
+            local p="$(_escape_uci "$PPPOE_PASSWORD")"
+            wan_block="uci set network.wan.proto='pppoe'
+uci set network.wan.username='$u'
+uci set network.wan.password='$p'
 uci set network.wan.ipv6='auto'"
-            else
-                WAN_CMD="uci set network.wan.proto='dhcp'
+        else
+            wan_block="uci set network.wan.proto='dhcp'
 uci set network.wan6.proto='dhcpv6'"
-            fi
-            # 自定义网关（可选）
-            [[ -n "$CUSTOM_GATEWAY" ]] && GATEWAY_CMD="uci set network.lan.gateway='$CUSTOM_GATEWAY'" || GATEWAY_CMD=""
-            NETWORK_CMD="uci set network.lan.proto='static'
-uci set network.lan.ipaddr='$ROUTER_IP'
+        fi
+
+        # 完整网络+DNS逻辑
+        net_block=$(cat <<EOT
+uci set network.lan.proto='static'
+uci set network.lan.ipaddr='$lan_ip'
 uci set network.lan.netmask='255.255.0.0'
-\${GATEWAY_CMD}
-\${WAN_CMD}
-uci set dhcp.@dnsmasq[0].noresolv='1'
+$gw_cmd
+$wan_block
+uci set network.wan.peerdns='0'
+# dnsmasq上游多备用
 uci -q delete dhcp.@dnsmasq[0].server
 uci add_list dhcp.@dnsmasq[0].server='$DEF_BYPASS_IP'
-uci add_list dhcp.@dnsmasq[0].server='8.8.8.8'
 uci add_list dhcp.@dnsmasq[0].server='223.5.5.5'
-uci set network.wan.dns='$DEF_BYPASS_IP 8.8.8.8 223.5.5.5'
-uci set network.lan.dns='$DEF_BYPASS_IP 8.8.8.8 223.5.5.5'
-uci add_list dhcp.lan.dhcp_option='6,$DEF_BYPASS_IP'
+uci add_list dhcp.@dnsmasq[0].server='8.8.8.8'
+# 内网下发多DNS，旁路失效自动切公共DNS
+uci del_list dhcp.lan.dhcp_option='6,*'
+uci add_list dhcp.lan.dhcp_option='6,$DEF_BYPASS_IP,223.5.5.5,8.8.8.8'
 uci set dhcp.lan.start='8'
 uci set dhcp.lan.limit='150'
-uci commit network
-uci commit dhcp"
-        fi
-        # 生成 uci-defaults 脚本
-        cat > "$OUTPUT" <<EOF
+uci commit network; uci commit dhcp
+EOT
+        )
+    fi
+
+    # 写入开机预置脚本
+    cat > "$out" <<EOF
 #!/bin/sh
-${NETWORK_CMD}
+${net_block}
+# 系统时区主机名
 uci set system.@system[0].hostname='Router-${PROFILE_TYPE}'
 uci set system.@system[0].timezone='CST-8'
 uci set system.@system[0].zonename='Asia/Shanghai'
+# NTP先清空再追加，避免重复
 uci del_list system.ntp.server
 uci set system.ntp.enable_server='1'
 uci add_list system.ntp.server='ntp.aliyun.com'
@@ -116,16 +175,23 @@ uci add_list system.ntp.server='cn.pool.ntp.org'
 uci commit system
 exit 0
 EOF
-        chmod +x "$OUTPUT"
-        # Root 密码
-        if [[ -n "$ROOT_PASSWORD" ]]; then
-            ENCRYPTED_PASS=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin 2>/dev/null) && {
-                mkdir -p files/etc
-                cp package/base-files/files/etc/shadow files/etc/shadow 2>/dev/null || echo 'root::0:0:99999:7:::' > files/etc/shadow
-                sed -i "s|^root:[^:]*:|root:$ENCRYPTED_PASS:|" files/etc/shadow
-            }
-        fi
-        ;;
+    chmod +x "$out"
+    echo "[after] 预置配置写入完成: $out"
 
-    *) error_exit "无效阶段 $PHASE" ;;
+    # 加密写入root密码
+    if [[ -n "$ROOT_PASSWORD" ]]; then
+        echo "[after] 设置root加密密码"
+        local crypt
+        crypt=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin) || error_exit "openssl加密失败"
+        mkdir -p files/etc
+        local shadow="files/etc/shadow"
+        [[ -f package/base-files/files/etc/shadow ]] && cp package/base-files/files/etc/shadow "$shadow" || echo 'root::0:0:99999:7:::' > "$shadow"
+        sed -i "s|^root:[^:]*:|root:$crypt:|" "$shadow"
+    fi
+    ;;
+
+*) error_exit "仅支持阶段 before / after" ;;
 esac
+
+echo "脚本执行完成"
+exit 0
