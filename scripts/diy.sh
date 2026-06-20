@@ -58,9 +58,11 @@ done
 [[ "$PHASE" == "after" && -z "$PROFILE_TYPE" ]] && error_exit "after 需指定 --type main/bypass"
 [[ -n "$PROFILE_TYPE" && "$PROFILE_TYPE" != "main" && "$PROFILE_TYPE" != "bypass" ]] && error_exit "type 仅支持 main / bypass"
 
-# 所有IP统一校验
+# 所有IP统一校验：跳过空变量
 for ip in "$CUSTOM_IP" "$CUSTOM_GATEWAY" "$DEF_MAIN_IP" "$DEF_BYPASS_IP" "$DEF_GATEWAY"; do
-    [[ -n "$ip" ]] && is_valid_ipv4 "$ip" || error_exit "非法IP: $ip"
+    if [[ -n "$ip" ]]; then
+        is_valid_ipv4 "$ip" || error_exit "非法IP: $ip"
+    fi
 done
 
 # PPPoE账号密码成对校验
