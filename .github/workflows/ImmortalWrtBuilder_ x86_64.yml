@@ -81,10 +81,8 @@ jobs:
             ${CIP:+--ip "$CIP"} ${CGW:+--gateway "$CGW"} \
             ${PUSER:+--pppoe-user "$PUSER"} ${PPASS:+--pppoe-pass "$PPASS"} \
             --root-pass "$ROOTPWD"
-
           # 复制 files 目录到 OpenWrt 源码（包含 uci-defaults 和其他自定义文件）
           [[ -d "$GITHUB_WORKSPACE/files" ]] && cp -rf "$GITHUB_WORKSPACE/files" .
-
           make defconfig && make download && make clean && make -j$(nproc) || make -j1 V=s
           TIMESTAMP=$(date +%Y%m%d%H%M%S)
           echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT

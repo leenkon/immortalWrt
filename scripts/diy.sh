@@ -89,7 +89,6 @@ after)
     local net_block=""
 
     if [[ "$PROFILE_TYPE" == "bypass" ]]; then
-        # 旁路由：关闭DHCP、WAN无地址、指定上游网关
         local lan_ip="${CUSTOM_IP:-$DEF_BYPASS_IP}"
         local lan_gw
         if [[ -n "$CUSTOM_GATEWAY" ]]; then
@@ -101,7 +100,8 @@ after)
             lan_gw="$DEF_GATEWAY"
         fi
 
-        net_block=$(cat <<EOT
+# EOT 必须顶格，前面不能有空格
+net_block=$(cat <<EOT
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$lan_ip'
 uci set network.lan.netmask='255.255.0.0'
@@ -113,14 +113,12 @@ uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'
 uci commit network; uci commit dhcp
 EOT
-        )
+)
     else
-        # 主路由：PPPoE/DHCP WAN + 多DNS故障降级下发
         local lan_ip="${CUSTOM_IP:-$DEF_MAIN_IP}"
         local gw_cmd=""
         [[ -n "$CUSTOM_GATEWAY" ]] && gw_cmd="uci set network.lan.gateway='$CUSTOM_GATEWAY'"
 
-        # WAN配置块
         local wan_block
         if [[ -n "$PPPOE_USERNAME" ]]; then
             local u="$(_escape_uci "$PPPOE_USERNAME")"
@@ -134,38 +132,34 @@ uci set network.wan.ipv6='auto'"
 uci set network.wan6.proto='dhcpv6'"
         fi
 
-        # 完整网络+DNS逻辑
-        net_block=$(cat <<EOT
+# EOT 顶格
+net_block=$(cat <<EOT
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$lan_ip'
 uci set network.lan.netmask='255.255.0.0'
 $gw_cmd
 $wan_block
 uci set network.wan.peerdns='0'
-# dnsmasq上游多备用
 uci -q delete dhcp.@dnsmasq[0].server
 uci add_list dhcp.@dnsmasq[0].server='$DEF_BYPASS_IP'
 uci add_list dhcp.@dnsmasq[0].server='223.5.5.5'
 uci add_list dhcp.@dnsmasq[0].server='8.8.8.8'
-# 内网下发多DNS，旁路失效自动切公共DNS
 uci del_list dhcp.lan.dhcp_option='6,*'
 uci add_list dhcp.lan.dhcp_option='6,$DEF_BYPASS_IP,223.5.5.5,8.8.8.8'
 uci set dhcp.lan.start='8'
 uci set dhcp.lan.limit='150'
 uci commit network; uci commit dhcp
 EOT
-        )
+)
     fi
 
-    # 写入开机预置脚本
-    cat > "$out" <<EOF
+# EOF 顶格
+cat > "$out" <<EOF
 #!/bin/sh
 ${net_block}
-# 系统时区主机名
 uci set system.@system[0].hostname='Router-${PROFILE_TYPE}'
 uci set system.@system[0].timezone='CST-8'
 uci set system.@system[0].zonename='Asia/Shanghai'
-# NTP先清空再追加，避免重复
 uci del_list system.ntp.server
 uci set system.ntp.enable_server='1'
 uci add_list system.ntp.server='ntp.aliyun.com'
@@ -178,7 +172,6 @@ EOF
     chmod +x "$out"
     echo "[after] 预置配置写入完成: $out"
 
-    # 加密写入root密码
     if [[ -n "$ROOT_PASSWORD" ]]; then
         echo "[after] 设置root加密密码"
         local crypt
