@@ -2,7 +2,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# 通用错误输出
+# 错误输出
 error_exit() { echo "ERR: $1" >&2; exit 1; }
 
 # UCI/Shell特殊字符转义（移除冲突反引号）
@@ -18,7 +18,7 @@ _escape_uci() {
     printf '%s' "$s"
 }
 
-# IPv4 格式合法性校验（修复数组算术报错）
+# IPv4 格式合法性校验
 is_valid_ipv4() {
     local ip="$1"
     [[ ! "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] && return 1
@@ -77,7 +77,6 @@ fi
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 [[ ! -d "$PROJECT_ROOT" ]] && error_exit "无法定位项目根目录"
 
-# ====================== 阶段逻辑 ======================
 case "$PHASE" in
 before)
     echo "[before] 处理 feeds 源"
@@ -104,6 +103,9 @@ after)
     mkdir -p "$(dirname "$out")"
     net_block=""
 
+    echo "[after] 固化opkg软件源为清华镜像"
+    sed -i 's|https://mirrors.vsean.net/openwrt|https://mirrors.tuna.tsinghua.edu.cn/openwrt|g' package/base-files/files/etc/opkg/distfeeds.conf
+
     if [[ "$PROFILE_TYPE" == "bypass" ]]; then
         lan_ip="${CUSTOM_IP:-$DEF_BYPASS_IP}"
         lan_gw=""
@@ -129,6 +131,16 @@ uci set dhcp.lan6.ignore='1'
 uci commit network dhcp
 EOT
 )
+        echo "[after] 执行旁路由专属网络固化优化"
+        # 默认开启WAN区域IP动态伪装（对应界面勾选IP伪装）
+        sed -i '/config zone/,/wan/{s/option name '\''wan'\''/&\n\toption masq '\''1'\''/}' package/base-files/files/etc/config/firewall
+        # 关闭流量硬件/软件卸载，杜绝长连接HTTPS断流
+        sed -i 's/option flow_offloading '\''1'\''/option flow_offloading '\''0'\''/' package/base-files/files/etc/config/firewall
+        sed -i 's/option flow_offloading_hw '\''1'\''/option flow_offloading_hw '\''0'\''/' package/base-files/files/etc/config/firewall
+        # 防火墙默认本机出站全部放行，解决wget Operation not permitted
+        sed -i 's/option output '\''REJECT'\''/option output '\''ACCEPT'\''/' package/base-files/files/etc/config/firewall
+        # 永久开启IPv4内核转发，旁路由必备
+        echo "net.ipv4.ip_forward=1" >> package/base-files/files/etc/sysctl.conf
     else
         lan_ip="${CUSTOM_IP:-$DEF_MAIN_IP}"
         gw_cmd=""
