@@ -58,7 +58,9 @@ done
 [[ -n "$PROFILE_TYPE" && "$PROFILE_TYPE" != "main" && "$PROFILE_TYPE" != "bypass" ]] && error_exit "type仅支持 main / bypass"
 
 for ip in "$CUSTOM_IP" "$CUSTOM_GATEWAY" "$DEF_MAIN_IP" "$DEF_BYPASS_IP" "$DEF_GATEWAY"; do
-    [[ -n "$ip" ]] && is_valid_ipv4 "$ip" || error_exit "非法IP: $ip"
+    if [[ -n "$ip" ]]; then
+        is_valid_ipv4 "$ip" || error_exit "非法IP: $ip"
+    fi
 done
 
 if [[ -n "$PPPOE_USERNAME" || -n "$PPPOE_PASSWORD" ]]; then
