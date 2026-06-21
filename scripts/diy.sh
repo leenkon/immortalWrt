@@ -21,9 +21,7 @@ is_valid_ipv4() {
     [[ ! "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] && return 1
     IFS='.' read -r o1 o2 o3 o4 <<< "$ip"
     for o in "$o1" "$o2" "$o3" "$o4"; do
-        if ! [[ "$o" =~ ^[0-9]+$ ]] || (( o < 0 || o > 255 )); then
-            return 1
-        fi
+        [[ ! "$o" =~ ^[0-9]+$ || $o -lt 0 || $o -gt 255 ]] && return 1
     done
     return 0
 }
@@ -33,7 +31,7 @@ DEF_MAIN_IP="10.10.10.1"
 DEF_BYPASS_IP="${OVERRIDE_BYPASS_IP:-10.10.10.2}"
 DEF_GATEWAY="10.10.10.1"
 
-# 参数变量
+# 参数容器
 VERSION="" PHASE="" PROFILE_TYPE=""
 CUSTOM_IP="" CUSTOM_GATEWAY="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
 
@@ -52,27 +50,28 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# 参数校验
-[[ -z "$VERSION" || -z "$PHASE" ]] && error_exit "必填参数 --version / --phase"
-[[ "$PHASE" == "after" && -z "$PROFILE_TYPE" ]] && error_exit "after阶段需指定 --type main/bypass"
+# 基础参数校验
+[[ -z "$VERSION" || -z "$PHASE" ]] && error_exit "必填 --version / --phase"
+[[ "$PHASE" == "after" && -z "$PROFILE_TYPE" ]] && error_exit "after需指定 --type main/bypass"
 [[ -n "$PROFILE_TYPE" && "$PROFILE_TYPE" != "main" && "$PROFILE_TYPE" != "bypass" ]] && error_exit "type仅支持 main / bypass"
 
+# IP校验：跳过空变量
 for ip in "$CUSTOM_IP" "$CUSTOM_GATEWAY" "$DEF_MAIN_IP" "$DEF_BYPASS_IP" "$DEF_GATEWAY"; do
-    if [[ -n "$ip" ]]; then
-        is_valid_ipv4 "$ip" || error_exit "非法IP: $ip"
-    fi
+    [[ -n "$ip" ]] && is_valid_ipv4 "$ip" || error_exit "非法IP: $ip"
 done
 
+# PPPoE成对校验
 if [[ -n "$PPPOE_USERNAME" || -n "$PPPOE_PASSWORD" ]]; then
-    [[ -z "$PPPOE_USERNAME" || -z "$PPPOE_PASSWORD" ]] && error_exit "pppoe user/pass必须成对传入"
+    [[ -z "$PPPOE_USERNAME" || -z "$PPPOE_PASSWORD" ]] && error_exit "pppoe user/pass成对传入"
 fi
 
+# 项目根目录
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 [[ ! -d "$PROJECT_ROOT" ]] && error_exit "无法定位项目根目录"
 
 case "$PHASE" in
 before)
-    echo "[before] 初始化feeds源"
+    echo "[before] 初始化feeds"
     rm -f feeds.conf feeds.conf.default
     feed_file="$PROJECT_ROOT/feeds/$VERSION.conf"
     [[ -f "$feed_file" ]] || error_exit "缺失 $feed_file"
@@ -94,11 +93,11 @@ after)
     out="$PROJECT_ROOT/files/etc/uci-defaults/99-custom-config"
     mkdir -p "$(dirname "$out")"
     net_block=""
-    echo "[after] 固化清华软件源"
+
+    # 全局固化清华opkg源
+    echo "[after] 替换清华软件源"
     OPKG_CONF="$PROJECT_ROOT/package/base-files/files/etc/opkg/distfeeds.conf"
-    if [[ -f "$OPKG_CONF" ]]; then
-        sed -i 's|https://mirrors.vsean.net/openwrt|https://mirrors.tuna.tsinghua.edu.cn/openwrt|g' "$OPKG_CONF"
-    fi
+    [[ -f "$OPKG_CONF" ]] && sed -i 's|https://mirrors.vsean.net/openwrt|https://mirrors.tuna.tsinghua.edu.cn/openwrt|g' "$OPKG_CONF"
 
     if [[ "$PROFILE_TYPE" == "bypass" ]]; then
         lan_ip="${CUSTOM_IP:-$DEF_BYPASS_IP}"
@@ -124,7 +123,8 @@ uci set dhcp.lan6.ignore='1'
 uci commit network dhcp
 EOT
 )
-        echo "[after] 旁路由防火墙/转发固化"
+        # 旁路由防火墙/转发优化
+        echo "[after] 旁路由网络固化"
         FIREWALL_CONF="$PROJECT_ROOT/package/base-files/files/etc/config/firewall"
         SYSCTL_CONF="$PROJECT_ROOT/package/base-files/files/etc/sysctl.conf"
         if [[ -f "$FIREWALL_CONF" ]]; then
@@ -132,9 +132,16 @@ EOT
             sed -i 's/option flow_offloading '\''1'\''/option flow_offloading '\''0'\''/' "$FIREWALL_CONF"
             sed -i 's/option flow_offloading_hw '\''1'\''/option flow_offloading_hw '\''0'\''/' "$FIREWALL_CONF"
             sed -i 's/option output '\''REJECT'\''/option output '\''ACCEPT'\''/' "$FIREWALL_CONF"
+        else
+            echo "[WARN] 防火墙模板缺失，跳过修改"
         fi
-        mkdir -p "$(dirname "$SYSCTL_CONF")" && touch "$SYSCTL_CONF" && echo "net.ipv4.ip_forward=1" >> "$SYSCTL_CONF"
+        # 内核转发，去重写入
+        mkdir -p "$(dirname "$SYSCTL_CONF")"
+        touch "$SYSCTL_CONF"
+        sed -i '/^net.ipv4.ip_forward=/d' "$SYSCTL_CONF"
+        echo "net.ipv4.ip_forward=1" >> "$SYSCTL_CONF"
     else
+        # 主路由网络配置
         lan_ip="${CUSTOM_IP:-$DEF_MAIN_IP}"
         gw_cmd=""
         [[ -n "$CUSTOM_GATEWAY" ]] && gw_cmd="uci set network.lan.gateway='$CUSTOM_GATEWAY'"
@@ -178,7 +185,9 @@ uci commit network dhcp
 EOT
 )
     fi
-cat > "$out" <<EOF
+
+    # 写入uci默认配置
+    cat > "$out" <<EOF
 #!/bin/sh
 ${net_block}
 uci set system.@system[0].hostname='Router-${PROFILE_TYPE}'
@@ -196,17 +205,19 @@ EOF
     chmod +x "$out"
     echo "[after] 预置配置写入完成"
 
-    # 设置root密码
+    # 写入root加密密码（修复$符号转义导致.config报错）
     if [[ -n "$ROOT_PASSWORD" ]]; then
         echo "[after] 写入root密码"
         crypt=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin) || error_exit "openssl加密失败"
-        mkdir -p files/etc
-        shadow="files/etc/shadow"
-        [[ -f package/base-files/files/etc/shadow ]] && cp package/base-files/files/etc/shadow "$shadow" || echo 'root::0:0:99999:7:::' > "$shadow"
-        sed -i "s|^root:[^:]*:|root:$crypt:|" "$shadow"
+        mkdir -p "$PROJECT_ROOT/files/etc"
+        shadow="$PROJECT_ROOT/files/etc/shadow"
+        [[ -f "$PROJECT_ROOT/package/base-files/files/etc/shadow" ]] && cp "$PROJECT_ROOT/package/base-files/files/etc/shadow" "$shadow" || echo 'root::0:0:99999:7:::' > "$shadow"
+        sed -i 's#^root:[^:]*:#root:'"$crypt":'#' "$shadow"
     fi
     ;;
-*) error_exit "仅支持 before / after 阶段" ;;
+
+*) error_exit "仅支持 before / after" ;;
 esac
+
 echo "脚本执行完成"
 exit 0
