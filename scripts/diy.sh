@@ -150,7 +150,7 @@ uci set network.wan6.proto='dhcpv6'"
 net_block=$(cat <<EOT
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$lan_ip'
-uci set network.lan.netmask='255.255.0.0'
+uci set network.lan.netmask='255.255.255.0'
 $gw_cmd
 $wan_block
 uci set network.wan.norelease='1'
