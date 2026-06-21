@@ -131,9 +131,7 @@ EOT
         sed -i 's/option flow_offloading '\''1'\''/option flow_offloading '\''0'\''/' "$FIREWALL_CONF"
         sed -i 's/option flow_offloading_hw '\''1'\''/option flow_offloading_hw '\''0'\''/' "$FIREWALL_CONF"
         sed -i 's/option output '\''REJECT'\''/option output '\''ACCEPT'\''/' "$FIREWALL_CONF"
-        mkdir -p "$(dirname "$SYSCTL_CONF")"
-        touch "$SYSCTL_CONF"
-        echo "net.ipv4.ip_forward=1" >> "$SYSCTL_CONF"
+        mkdir -p "$(dirname "$SYSCTL_CONF")" && touch "$SYSCTL_CONF" && echo "net.ipv4.ip_forward=1" >> "$SYSCTL_CONF"
     else
         lan_ip="${CUSTOM_IP:-$DEF_MAIN_IP}"
         gw_cmd=""
