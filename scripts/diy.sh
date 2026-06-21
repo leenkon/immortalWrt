@@ -55,14 +55,18 @@ done
 [[ "$PHASE" == "after" && -z "$PROFILE_TYPE" ]] && error_exit "after需指定 --type main/bypass"
 [[ -n "$PROFILE_TYPE" && "$PROFILE_TYPE" != "main" && "$PROFILE_TYPE" != "bypass" ]] && error_exit "type仅支持 main / bypass"
 
-# ========== 修复后的IP校验循环 ==========
-ALL_IPS=("$CUSTOM_IP" "$CUSTOM_GATEWAY" "$DEF_MAIN_IP" "$DEF_BYPASS_IP" "$DEF_GATEWAY")
-for ip in "${ALL_IPS[@]}"; do
-    if [[ -n "$ip" ]]; then
-        if ! is_valid_ipv4 "$ip"; then
-            error_exit "非法IP: $ip"
-        fi
-    fi
+# ===================== 简化IP逻辑：空值填充默认后统一校验 =====================
+# 填充IP默认值
+if [[ "$PROFILE_TYPE" == "bypass" ]]; then
+    [[ -z "$CUSTOM_IP" ]] && CUSTOM_IP="$DEF_BYPASS_IP"
+else
+    [[ -z "$CUSTOM_IP" ]] && CUSTOM_IP="$DEF_MAIN_IP"
+fi
+[[ -z "$CUSTOM_GATEWAY" ]] && CUSTOM_GATEWAY="$DEF_GATEWAY"
+
+# 仅校验最终使用的两个IP，无空变量
+for ip in "$CUSTOM_IP" "$CUSTOM_GATEWAY"; do
+    is_valid_ipv4 "$ip" || error_exit "非法IP: $ip"
 done
 
 # PPPoE成对校验
@@ -99,19 +103,18 @@ after)
     mkdir -p "$(dirname "$out")"
     net_block=""
 
+    # 全局固化清华opkg源
     echo "[after] 替换清华软件源"
     OPKG_CONF="$PROJECT_ROOT/package/base-files/files/etc/opkg/distfeeds.conf"
     [[ -f "$OPKG_CONF" ]] && sed -i 's|https://mirrors.vsean.net/openwrt|https://mirrors.tuna.tsinghua.edu.cn/openwrt|g' "$OPKG_CONF"
 
     if [[ "$PROFILE_TYPE" == "bypass" ]]; then
-        lan_ip="${CUSTOM_IP:-$DEF_BYPASS_IP}"
+        lan_ip="$CUSTOM_IP"
         if [[ -n "$CUSTOM_GATEWAY" ]]; then
             lan_gw="$CUSTOM_GATEWAY"
-        elif [[ -n "$CUSTOM_IP" ]]; then
+        else
             lan_gw="${CUSTOM_IP%.*}.1"
             is_valid_ipv4 "$lan_gw" || error_exit "自动推导网关非法 $lan_gw"
-        else
-            lan_gw="$DEF_GATEWAY"
         fi
 
 net_block=$(cat <<EOT
@@ -127,6 +130,7 @@ uci set dhcp.lan6.ignore='1'
 uci commit network dhcp
 EOT
 )
+        # 旁路由防火墙/转发优化
         echo "[after] 旁路由网络固化"
         FIREWALL_CONF="$PROJECT_ROOT/package/base-files/files/etc/config/firewall"
         SYSCTL_CONF="$PROJECT_ROOT/package/base-files/files/etc/sysctl.conf"
@@ -138,12 +142,14 @@ EOT
         else
             echo "[WARN] 防火墙模板缺失，跳过修改"
         fi
+        # 内核转发，去重写入
         mkdir -p "$(dirname "$SYSCTL_CONF")"
         touch "$SYSCTL_CONF"
         sed -i '/^net.ipv4.ip_forward=/d' "$SYSCTL_CONF"
         echo "net.ipv4.ip_forward=1" >> "$SYSCTL_CONF"
     else
-        lan_ip="${CUSTOM_IP:-$DEF_MAIN_IP}"
+        # 主路由网络配置
+        lan_ip="$CUSTOM_IP"
         gw_cmd=""
         [[ -n "$CUSTOM_GATEWAY" ]] && gw_cmd="uci set network.lan.gateway='$CUSTOM_GATEWAY'"
 
@@ -186,6 +192,8 @@ uci commit network dhcp
 EOT
 )
     fi
+
+    # 写入uci默认配置
     cat > "$out" <<EOF
 #!/bin/sh
 ${net_block}
