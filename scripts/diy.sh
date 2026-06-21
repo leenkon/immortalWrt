@@ -65,11 +65,9 @@ if [[ -n "$PPPOE_USERNAME" || -n "$PPPOE_PASSWORD" ]]; then
     [[ -z "$PPPOE_USERNAME" || -z "$PPPOE_PASSWORD" ]] && error_exit "pppoe user/pass必须成对传入"
 fi
 
-# 项目根目录
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 [[ ! -d "$PROJECT_ROOT" ]] && error_exit "无法定位项目根目录"
 
-# 阶段逻辑
 case "$PHASE" in
 before)
     echo "[before] 初始化feeds源"
@@ -99,6 +97,7 @@ after)
     if [[ -f "$OPKG_CONF" ]]; then
         sed -i 's|https://mirrors.vsean.net/openwrt|https://mirrors.tuna.tsinghua.edu.cn/openwrt|g' "$OPKG_CONF"
     fi
+
     if [[ "$PROFILE_TYPE" == "bypass" ]]; then
         lan_ip="${CUSTOM_IP:-$DEF_BYPASS_IP}"
         if [[ -n "$CUSTOM_GATEWAY" ]]; then
@@ -109,6 +108,7 @@ after)
         else
             lan_gw="$DEF_GATEWAY"
         fi
+
 net_block=$(cat <<EOT
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$lan_ip'
@@ -176,7 +176,6 @@ uci commit network dhcp
 EOT
 )
     fi
-# 写入uci默认配置
 cat > "$out" <<EOF
 #!/bin/sh
 ${net_block}
@@ -194,6 +193,7 @@ exit 0
 EOF
     chmod +x "$out"
     echo "[after] 预置配置写入完成"
+
     # 设置root密码
     if [[ -n "$ROOT_PASSWORD" ]]; then
         echo "[after] 写入root密码"
@@ -204,7 +204,6 @@ EOF
         sed -i "s|^root:[^:]*:|root:$crypt:|" "$shadow"
     fi
     ;;
-
 *) error_exit "仅支持 before / after 阶段" ;;
 esac
 echo "脚本执行完成"
