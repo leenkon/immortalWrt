@@ -132,15 +132,19 @@ uci commit network dhcp
 EOT
 )
         echo "[after] 执行旁路由专属网络固化优化"
+        FIREWALL_CONF="$PROJECT_ROOT/package/base-files/files/etc/config/firewall"
+        SYSCTL_CONF="$PROJECT_ROOT/package/base-files/files/etc/sysctl.conf"
         # 默认开启WAN区域IP动态伪装（对应界面勾选IP伪装）
-        sed -i '/config zone/,/wan/{s/option name '\''wan'\''/&\n\toption masq '\''1'\''/}' package/base-files/files/etc/config/firewall
-        # 关闭流量硬件/软件卸载，杜绝长连接HTTPS断流
-        sed -i 's/option flow_offloading '\''1'\''/option flow_offloading '\''0'\''/' package/base-files/files/etc/config/firewall
-        sed -i 's/option flow_offloading_hw '\''1'\''/option flow_offloading_hw '\''0'\''/' package/base-files/files/etc/config/firewall
-        # 防火墙默认本机出站全部放行，解决wget Operation not permitted
-        sed -i 's/option output '\''REJECT'\''/option output '\''ACCEPT'\''/' package/base-files/files/etc/config/firewall
+        if [[ -f "$FIREWALL_CONF" ]]; then
+            sed -i '/config zone/,/wan/{s/option name '\''wan'\''/&\n\toption masq '\''1'\''/}' "$FIREWALL_CONF"
+            # 关闭流量硬件/软件卸载，杜绝长连接HTTPS断流
+            sed -i 's/option flow_offloading '\''1'\''/option flow_offloading '\''0'\''/' "$FIREWALL_CONF"
+            sed -i 's/option flow_offloading_hw '\''1'\''/option flow_offloading_hw '\''0'\''/' "$FIREWALL_CONF"
+            # 防火墙默认本机出站全部放行，解决wget Operation not permitted
+            sed -i 's/option output '\''REJECT'\''/option output '\''ACCEPT'\''/' "$FIREWALL_CONF"
+        fi
         # 永久开启IPv4内核转发，旁路由必备
-        echo "net.ipv4.ip_forward=1" >> package/base-files/files/etc/sysctl.conf
+        echo "net.ipv4.ip_forward=1" >> "$SYSCTL_CONF"
     else
         lan_ip="${CUSTOM_IP:-$DEF_MAIN_IP}"
         gw_cmd=""
