@@ -126,12 +126,13 @@ EOT
 )
         echo "[after] 旁路由防火墙/转发固化"
         FIREWALL_CONF="$PROJECT_ROOT/package/base-files/files/etc/config/firewall"
-        touch "$FIREWALL_CONF" && echo "#旁路由防火墙/转发固化" >> "$FIREWALL_CONF"
         SYSCTL_CONF="$PROJECT_ROOT/package/base-files/files/etc/sysctl.conf"
-        sed -i '/config zone/,/wan/{s/option name '\''wan'\''/&\n\toption masq '\''1'\''/}' "$FIREWALL_CONF"
-        sed -i 's/option flow_offloading '\''1'\''/option flow_offloading '\''0'\''/' "$FIREWALL_CONF"
-        sed -i 's/option flow_offloading_hw '\''1'\''/option flow_offloading_hw '\''0'\''/' "$FIREWALL_CONF"
-        sed -i 's/option output '\''REJECT'\''/option output '\''ACCEPT'\''/' "$FIREWALL_CONF"
+        if [[ -f "$FIREWALL_CONF" ]]; then
+            sed -i '/config zone/,/wan/{s/option name '\''wan'\''/&\n\toption masq '\''1'\''/}' "$FIREWALL_CONF"
+            sed -i 's/option flow_offloading '\''1'\''/option flow_offloading '\''0'\''/' "$FIREWALL_CONF"
+            sed -i 's/option flow_offloading_hw '\''1'\''/option flow_offloading_hw '\''0'\''/' "$FIREWALL_CONF"
+            sed -i 's/option output '\''REJECT'\''/option output '\''ACCEPT'\''/' "$FIREWALL_CONF"
+        fi
         mkdir -p "$(dirname "$SYSCTL_CONF")" && touch "$SYSCTL_CONF" && echo "net.ipv4.ip_forward=1" >> "$SYSCTL_CONF"
     else
         lan_ip="${CUSTOM_IP:-$DEF_MAIN_IP}"
