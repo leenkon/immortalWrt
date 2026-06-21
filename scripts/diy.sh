@@ -55,8 +55,7 @@ done
 [[ "$PHASE" == "after" && -z "$PROFILE_TYPE" ]] && error_exit "after需指定 --type main/bypass"
 [[ -n "$PROFILE_TYPE" && "$PROFILE_TYPE" != "main" && "$PROFILE_TYPE" != "bypass" ]] && error_exit "type仅支持 main / bypass"
 
-# ===================== 简化IP逻辑：空值填充默认后统一校验 =====================
-# 填充IP默认值
+# IP简化逻辑：空值填充默认后统一校验
 if [[ "$PROFILE_TYPE" == "bypass" ]]; then
     [[ -z "$CUSTOM_IP" ]] && CUSTOM_IP="$DEF_BYPASS_IP"
 else
@@ -64,7 +63,7 @@ else
 fi
 [[ -z "$CUSTOM_GATEWAY" ]] && CUSTOM_GATEWAY="$DEF_GATEWAY"
 
-# 仅校验最终使用的两个IP，无空变量
+# 仅校验填充完成后的非空IP
 for ip in "$CUSTOM_IP" "$CUSTOM_GATEWAY"; do
     is_valid_ipv4 "$ip" || error_exit "非法IP: $ip"
 done
@@ -98,15 +97,20 @@ before)
     ;;
 
 after)
-    echo "[after] 生成预置配置"
+    echo "[after] 生成开机预置配置文件"
     out="$PROJECT_ROOT/files/etc/uci-defaults/99-custom-config"
     mkdir -p "$(dirname "$out")"
     net_block=""
+    extra_block=""
 
-    # 全局固化清华opkg源
-    echo "[after] 替换清华软件源"
-    OPKG_CONF="$PROJECT_ROOT/package/base-files/files/etc/opkg/distfeeds.conf"
-    [[ -f "$OPKG_CONF" ]] && sed -i 's|https://mirrors.vsean.net/openwrt|https://mirrors.tuna.tsinghua.edu.cn/openwrt|g' "$OPKG_CONF"
+    # ====================== 全局通用逻辑：所有机型开机替换清华opkg源（无模板依赖） ======================
+    extra_block+=$(cat <<GLOBAL
+# 替换软件源为清华镜像
+sed -i 's|https://mirrors.vsean.net/openwrt|https://mirrors.tuna.tsinghua.edu.cn/openwrt|g' /etc/opkg/distfeeds.conf
+# 追加wget弱网下载优化参数
+echo "option wget '--dns-servers=114.114.114.114 --retry-connrefused --timeout=120 --tries=10 -c'" >> /etc/opkg.conf
+GLOBAL
+)
 
     if [[ "$PROFILE_TYPE" == "bypass" ]]; then
         lan_ip="$CUSTOM_IP"
@@ -130,23 +134,21 @@ uci set dhcp.lan6.ignore='1'
 uci commit network dhcp
 EOT
 )
-        # 旁路由防火墙/转发优化
-        echo "[after] 旁路由网络固化"
-        FIREWALL_CONF="$PROJECT_ROOT/package/base-files/files/etc/config/firewall"
-        SYSCTL_CONF="$PROJECT_ROOT/package/base-files/files/etc/sysctl.conf"
-        if [[ -f "$FIREWALL_CONF" ]]; then
-            sed -i '/config zone/,/wan/{s/option name '\''wan'\''/&\n\toption masq '\''1'\''/}' "$FIREWALL_CONF"
-            sed -i 's/option flow_offloading '\''1'\''/option flow_offloading '\''0'\''/' "$FIREWALL_CONF"
-            sed -i 's/option flow_offloading_hw '\''1'\''/option flow_offloading_hw '\''0'\''/' "$FIREWALL_CONF"
-            sed -i 's/option output '\''REJECT'\''/option output '\''ACCEPT'\''/' "$FIREWALL_CONF"
-        else
-            echo "[WARN] 防火墙模板缺失，跳过修改"
-        fi
-        # 内核转发，去重写入
-        mkdir -p "$(dirname "$SYSCTL_CONF")"
-        touch "$SYSCTL_CONF"
-        sed -i '/^net.ipv4.ip_forward=/d' "$SYSCTL_CONF"
-        echo "net.ipv4.ip_forward=1" >> "$SYSCTL_CONF"
+        # ====================== 旁路由专属：全部用uci动态配置，放弃sed改静态模板 ======================
+extra_block+=$(cat <<BYPASS
+# 开启WAN IP动态伪装
+uci set firewall.@zone[1].masq='1'
+# 关闭软硬流量卸载，防止长连接断流
+uci set firewall.@defaults[0].flow_offloading='0'
+uci set firewall.@defaults[0].flow_offloading_hw='0'
+# 放行本机所有出站流量，解决wget Operation not permitted
+uci set firewall.@defaults[0].output='ACCEPT'
+uci commit firewall
+# 开启内核IPv4转发
+sed -i '/^net.ipv4.ip_forward=/d' /etc/sysctl.conf
+echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf && sysctl -p /etc/sysctl.conf
+BYPASS
+)
     else
         # 主路由网络配置
         lan_ip="$CUSTOM_IP"
@@ -193,10 +195,14 @@ EOT
 )
     fi
 
-    # 写入uci默认配置
+    # 完整写入开机自动执行脚本
     cat > "$out" <<EOF
 #!/bin/sh
+# 网络基础IP/拨号配置
 ${net_block}
+# 全局+机型专属优化
+${extra_block}
+# 系统时区主机名NTP
 uci set system.@system[0].hostname='Router-${PROFILE_TYPE}'
 uci set system.@system[0].timezone='CST-8'
 uci set system.@system[0].zonename='Asia/Shanghai'
@@ -210,16 +216,15 @@ uci commit system
 exit 0
 EOF
     chmod +x "$out"
-    echo "[after] 预置配置写入完成"
+    echo "[after] uci-defaults 预置脚本生成完成，开机自动执行所有优化"
 
-    # 写入root加密密码（修复$符号转义.config报错）
+    # root密码写入：files目录覆盖，规避sed源码模板+密文$转义报错
     if [[ -n "$ROOT_PASSWORD" ]]; then
-        echo "[after] 写入root密码"
+        echo "[after] 预置root加密密码文件"
         crypt=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin) || error_exit "openssl加密失败"
         mkdir -p "$PROJECT_ROOT/files/etc"
         shadow="$PROJECT_ROOT/files/etc/shadow"
-        [[ -f "$PROJECT_ROOT/package/base-files/files/etc/shadow" ]] && cp "$PROJECT_ROOT/package/base-files/files/etc/shadow" "$shadow" || echo 'root::0:0:99999:7:::' > "$shadow"
-        sed -i 's#^root:[^:]*:#root:'"$crypt":'#' "$shadow"
+        echo "root:$crypt:0:0:99999:7:::" > "$shadow"
     fi
     ;;
 
