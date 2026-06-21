@@ -2,10 +2,8 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# 错误输出
 error_exit() { echo "ERR: $1" >&2; exit 1; }
 
-# UCI/Shell特殊字符转义（移除冲突反引号）
 _escape_uci() {
     local s="$1"
     s="${s//\\/\\\\}"
@@ -18,11 +16,9 @@ _escape_uci() {
     printf '%s' "$s"
 }
 
-# IPv4 格式合法性校验
 is_valid_ipv4() {
     local ip="$1"
     [[ ! "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] && return 1
-    # 安全分割四段
     IFS='.' read -r o1 o2 o3 o4 <<< "$ip"
     for o in "$o1" "$o2" "$o3" "$o4"; do
         if ! [[ "$o" =~ ^[0-9]+$ ]] || (( o < 0 || o > 255 )); then
@@ -32,16 +28,16 @@ is_valid_ipv4() {
     return 0
 }
 
-# ====================== 默认常量 ======================
+# 默认常量
 DEF_MAIN_IP="10.10.10.1"
 DEF_BYPASS_IP="${OVERRIDE_BYPASS_IP:-10.10.10.2}"
 DEF_GATEWAY="10.10.10.1"
 
-# ====================== 参数初始化 ======================
+# 参数变量
 VERSION="" PHASE="" PROFILE_TYPE=""
 CUSTOM_IP="" CUSTOM_GATEWAY="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
 
-# 参数解析
+# 解析入参
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -v|--version) VERSION="$2"; shift 2 ;;
@@ -56,38 +52,34 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# ====================== 参数强校验 ======================
+# 参数校验
 [[ -z "$VERSION" || -z "$PHASE" ]] && error_exit "必填参数 --version / --phase"
-[[ "$PHASE" == "after" && -z "$PROFILE_TYPE" ]] && error_exit "after 需指定 --type main/bypass"
-[[ -n "$PROFILE_TYPE" && "$PROFILE_TYPE" != "main" && "$PROFILE_TYPE" != "bypass" ]] && error_exit "type 仅支持 main / bypass"
+[[ "$PHASE" == "after" && -z "$PROFILE_TYPE" ]] && error_exit "after阶段需指定 --type main/bypass"
+[[ -n "$PROFILE_TYPE" && "$PROFILE_TYPE" != "main" && "$PROFILE_TYPE" != "bypass" ]] && error_exit "type仅支持 main / bypass"
 
-# 所有IP统一校验：跳过空变量
 for ip in "$CUSTOM_IP" "$CUSTOM_GATEWAY" "$DEF_MAIN_IP" "$DEF_BYPASS_IP" "$DEF_GATEWAY"; do
-    if [[ -n "$ip" ]]; then
-        is_valid_ipv4 "$ip" || error_exit "非法IP: $ip"
-    fi
+    [[ -n "$ip" ]] && is_valid_ipv4 "$ip" || error_exit "非法IP: $ip"
 done
 
-# PPPoE账号密码成对校验
 if [[ -n "$PPPOE_USERNAME" || -n "$PPPOE_PASSWORD" ]]; then
-    [[ -z "$PPPOE_USERNAME" || -z "$PPPOE_PASSWORD" ]] && error_exit "pppoe user/pass 必须成对传入"
+    [[ -z "$PPPOE_USERNAME" || -z "$PPPOE_PASSWORD" ]] && error_exit "pppoe user/pass必须成对传入"
 fi
 
-# 项目根目录定位
+# 项目根目录
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 [[ ! -d "$PROJECT_ROOT" ]] && error_exit "无法定位项目根目录"
 
+# 阶段逻辑
 case "$PHASE" in
 before)
-    echo "[before] 处理 feeds 源"
+    echo "[before] 初始化feeds源"
     rm -f feeds.conf feeds.conf.default
     feed_file="$PROJECT_ROOT/feeds/$VERSION.conf"
     [[ -f "$feed_file" ]] || error_exit "缺失 $feed_file"
     cp "$feed_file" feeds.conf
 
-    # small源替换golang 1.26
     if grep -qs '^[^#].*src-git small' feeds.conf; then
-        echo "[before] 清理冲突包，替换golang"
+        echo "[before] 替换golang1.26"
         rm -rf \
             feeds/luci/applications/luci-app-mosdns \
             feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} \
@@ -98,17 +90,17 @@ before)
     ;;
 
 after)
-    echo "[after] 生成uci-defaults预置配置"
+    echo "[after] 生成预置配置"
     out="$PROJECT_ROOT/files/etc/uci-defaults/99-custom-config"
     mkdir -p "$(dirname "$out")"
     net_block=""
-
-    echo "[after] 固化opkg软件源为清华镜像"
-    sed -i 's|https://mirrors.vsean.net/openwrt|https://mirrors.tuna.tsinghua.edu.cn/openwrt|g' package/base-files/files/etc/opkg/distfeeds.conf
-
+    echo "[after] 固化清华软件源"
+    OPKG_CONF="$PROJECT_ROOT/package/base-files/files/etc/opkg/distfeeds.conf"
+    if [[ -f "$OPKG_CONF" ]]; then
+        sed -i 's|https://mirrors.vsean.net/openwrt|https://mirrors.tuna.tsinghua.edu.cn/openwrt|g' "$OPKG_CONF"
+    fi
     if [[ "$PROFILE_TYPE" == "bypass" ]]; then
         lan_ip="${CUSTOM_IP:-$DEF_BYPASS_IP}"
-        lan_gw=""
         if [[ -n "$CUSTOM_GATEWAY" ]]; then
             lan_gw="$CUSTOM_GATEWAY"
         elif [[ -n "$CUSTOM_IP" ]]; then
@@ -117,7 +109,6 @@ after)
         else
             lan_gw="$DEF_GATEWAY"
         fi
-
 net_block=$(cat <<EOT
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$lan_ip'
@@ -131,19 +122,15 @@ uci set dhcp.lan6.ignore='1'
 uci commit network dhcp
 EOT
 )
-        echo "[after] 执行旁路由专属网络固化优化"
+        echo "[after] 旁路由防火墙/转发固化"
         FIREWALL_CONF="$PROJECT_ROOT/package/base-files/files/etc/config/firewall"
         SYSCTL_CONF="$PROJECT_ROOT/package/base-files/files/etc/sysctl.conf"
-        # 默认开启WAN区域IP动态伪装（对应界面勾选IP伪装）
         if [[ -f "$FIREWALL_CONF" ]]; then
             sed -i '/config zone/,/wan/{s/option name '\''wan'\''/&\n\toption masq '\''1'\''/}' "$FIREWALL_CONF"
-            # 关闭流量硬件/软件卸载，杜绝长连接HTTPS断流
             sed -i 's/option flow_offloading '\''1'\''/option flow_offloading '\''0'\''/' "$FIREWALL_CONF"
             sed -i 's/option flow_offloading_hw '\''1'\''/option flow_offloading_hw '\''0'\''/' "$FIREWALL_CONF"
-            # 防火墙默认本机出站全部放行，解决wget Operation not permitted
             sed -i 's/option output '\''REJECT'\''/option output '\''ACCEPT'\''/' "$FIREWALL_CONF"
         fi
-        # 永久开启IPv4内核转发，旁路由必备
         echo "net.ipv4.ip_forward=1" >> "$SYSCTL_CONF"
     else
         lan_ip="${CUSTOM_IP:-$DEF_MAIN_IP}"
@@ -162,7 +149,6 @@ uci set network.wan.ipv6='auto'"
             wan_block="uci set network.wan.proto='dhcp'
 uci set network.wan6.proto='dhcpv6'"
         fi
-
 net_block=$(cat <<EOT
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$lan_ip'
@@ -190,7 +176,7 @@ uci commit network dhcp
 EOT
 )
     fi
-
+# 写入uci默认配置
 cat > "$out" <<EOF
 #!/bin/sh
 ${net_block}
@@ -207,10 +193,10 @@ uci commit system
 exit 0
 EOF
     chmod +x "$out"
-    echo "[after] 预置配置写入完成: $out"
-
+    echo "[after] 预置配置写入完成"
+    # 设置root密码
     if [[ -n "$ROOT_PASSWORD" ]]; then
-        echo "[after] 设置root加密密码"
+        echo "[after] 写入root密码"
         crypt=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin) || error_exit "openssl加密失败"
         mkdir -p files/etc
         shadow="files/etc/shadow"
@@ -219,8 +205,7 @@ EOF
     fi
     ;;
 
-*) error_exit "仅支持阶段 before / after" ;;
+*) error_exit "仅支持 before / after 阶段" ;;
 esac
-
 echo "脚本执行完成"
 exit 0
