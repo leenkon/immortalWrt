@@ -63,7 +63,7 @@ if [[ "$PROFILE_TYPE" == "bypass" ]]; then
 else
     [[ -z "$CUSTOM_IP" ]] && CUSTOM_IP="$DEF_MAIN_IP"
     is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法IP: $CUSTOM_IP"
-    [[ -n "$CUSTOM_GATEWAY" ]] && is_valid_ipv4 "$CUSTOM_GATEWAY" || true
+    [[ -n "$CUSTOM_GATEWAY" ]] && is_valid_ipv4 "$CUSTOM_GATEWAY" || error_exit "非法IP: $CUSTOM_GATEWAY"
 fi
 
 # PPPoE成对校验
@@ -100,12 +100,6 @@ after)
     mkdir -p "$(dirname "$out")"
     net_block=""
     extra_block=""
-    extra_block+=$(cat <<GLOBAL
-# 替换软件源为清华镜像
-sed -i 's|https://mirrors.vsean.net/openwrt|https://mirrors.tuna.tsinghua.edu.cn/openwrt|g' /etc/opkg/distfeeds.conf
-GLOBAL
-)
-
     if [[ "$PROFILE_TYPE" == "bypass" ]]; then
         lan_ip="$CUSTOM_IP"
         lan_gw="${CUSTOM_GATEWAY:-$DEF_MAIN_IP}"
@@ -124,7 +118,6 @@ uci add_list network.lan.dns='223.5.5.5'
 uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'
 uci -q set dhcp.@dnsmasq[0].port='0'
-uci -q set dhcp.@dnsmasq[0].cachelocal='0'
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
 uci commit network dhcp
 EOT
@@ -134,6 +127,7 @@ extra_block+=$(cat <<BYPASS
 uci set firewall.lan.masq='1'
 # 允许LAN口转发流量
 uci set firewall.lan.forward='1'
+uci commit firewall
 # 开启内核IPv4转发
 sed -i '/^net.ipv4.ip_forward=/d' /etc/sysctl.conf
 echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf && sysctl -p /etc/sysctl.conf
