@@ -29,7 +29,6 @@ is_valid_ipv4() {
 # 默认常量
 DEF_MAIN_IP="10.10.10.1"
 DEF_BYPASS_IP="${OVERRIDE_BYPASS_IP:-10.10.10.2}"
-DEF_GATEWAY="10.10.10.1"
 
 # 参数容器
 VERSION="" PHASE="" PROFILE_TYPE=""
@@ -58,15 +57,14 @@ done
 # IP简化逻辑：空值填充默认后统一校验
 if [[ "$PROFILE_TYPE" == "bypass" ]]; then
     [[ -z "$CUSTOM_IP" ]] && CUSTOM_IP="$DEF_BYPASS_IP"
+    [[ -z "$CUSTOM_GATEWAY" ]] && CUSTOM_GATEWAY="$DEF_MAIN_IP"
+    is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法IP: $CUSTOM_IP"
+    is_valid_ipv4 "$CUSTOM_GATEWAY" || error_exit "非法IP: $CUSTOM_GATEWAY"
 else
     [[ -z "$CUSTOM_IP" ]] && CUSTOM_IP="$DEF_MAIN_IP"
+    is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法IP: $CUSTOM_IP"
+    [[ -n "$CUSTOM_GATEWAY" ]] && is_valid_ipv4 "$CUSTOM_GATEWAY" || true
 fi
-[[ -z "$CUSTOM_GATEWAY" ]] && CUSTOM_GATEWAY="$DEF_GATEWAY"
-
-# 仅校验填充完成后的非空IP
-for ip in "$CUSTOM_IP" "$CUSTOM_GATEWAY"; do
-    is_valid_ipv4 "$ip" || error_exit "非法IP: $ip"
-done
 
 # PPPoE成对校验
 if [[ -n "$PPPOE_USERNAME" || -n "$PPPOE_PASSWORD" ]]; then
@@ -102,68 +100,47 @@ after)
     mkdir -p "$(dirname "$out")"
     net_block=""
     extra_block=""
-
-    # ====================== 全局通用逻辑：所有机型开机替换清华opkg源（无模板依赖） ======================
     extra_block+=$(cat <<GLOBAL
 # 替换软件源为清华镜像
 sed -i 's|https://mirrors.vsean.net/openwrt|https://mirrors.tuna.tsinghua.edu.cn/openwrt|g' /etc/opkg/distfeeds.conf
-# 追加wget弱网下载优化参数
-echo "option wget '--dns-servers=114.114.114.114 --retry-connrefused --timeout=120 --tries=10 -c'" >> /etc/opkg.conf
 GLOBAL
 )
 
     if [[ "$PROFILE_TYPE" == "bypass" ]]; then
         lan_ip="$CUSTOM_IP"
-        if [[ -n "$CUSTOM_GATEWAY" ]]; then
-            lan_gw="$CUSTOM_GATEWAY"
-        else
-            lan_gw="${CUSTOM_IP%.*}.1"
-            is_valid_ipv4 "$lan_gw" || error_exit "自动推导网关非法 $lan_gw"
-        fi
+        lan_gw="${CUSTOM_GATEWAY:-$DEF_MAIN_IP}"
 
 net_block=$(cat <<EOT
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$lan_ip'
-uci set network.lan.netmask='255.255.0.0'
+uci set network.lan.netmask='255.255.255.0'
 uci set network.lan.gateway='$lan_gw'
 uci set network.wan.proto='none'
 uci set network.wan6.proto='none'
 uci set network.lan6.proto='none'
-# 关闭DHCP分配，主路由全权负责
+uci -q delete network.lan.dns
+uci add_list network.lan.dns='8.8.8.8'
+uci add_list network.lan.dns='223.5.5.5'
 uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'
-# 释放53端口，AdGuardHome独占
-uci set dhcp.@dnsmasq[0].port='0'
-# 关闭本地DNS缓存
-uci set dhcp.@dnsmasq[0].cachelocal='0'
-# 关闭域名反弹保护（旁路无上游转发冲突）
-uci set dhcp.@dnsmasq[0].rebind_protection='0'
+uci -q set dhcp.@dnsmasq[0].port='0'
+uci -q set dhcp.@dnsmasq[0].cachelocal='0'
+uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
 uci commit network dhcp
 EOT
 )
-        # ====================== 旁路由专属：全部用uci动态配置，放弃sed改静态模板 ======================
 extra_block+=$(cat <<BYPASS
-# 开启WAN IP动态伪装SNAT
-uci set firewall.@zone[1].masq='1'
-
-# 不全局放开output，新增规则放行本机出站（替代危险的output=ACCEPT）
-uci add firewall rule
-uci set firewall.@rule[-1].name='Local-All-Output-Accept'
-uci set firewall.@rule[-1].direction='output'
-uci set firewall.@rule[-1].src='*'
-uci set firewall.@rule[-1].target='ACCEPT'
-uci commit firewall
+# 旁路由SNAT：LAN口出站伪装
+uci set firewall.lan.masq='1'
+# 允许LAN口转发流量
+uci set firewall.lan.forward='1'
 # 开启内核IPv4转发
 sed -i '/^net.ipv4.ip_forward=/d' /etc/sysctl.conf
 echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf && sysctl -p /etc/sysctl.conf
 BYPASS
 )
     else
-        # 主路由网络配置
         lan_ip="$CUSTOM_IP"
-        gw_cmd=""
-        [[ -n "$CUSTOM_GATEWAY" ]] && gw_cmd="uci set network.lan.gateway='$CUSTOM_GATEWAY'"
-
         wan_block=""
         if [[ -n "$PPPOE_USERNAME" ]]; then
             u="$(_escape_uci "$PPPOE_USERNAME")"
@@ -180,7 +157,6 @@ net_block=$(cat <<EOT
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$lan_ip'
 uci set network.lan.netmask='255.255.255.0'
-$gw_cmd
 $wan_block
 uci set network.wan.norelease='1'
 uci set network.wan.peerdns='0'
@@ -188,9 +164,12 @@ uci -q delete network.wan.dns
 uci add_list network.wan.dns='8.8.8.8'
 uci add_list network.wan.dns='223.5.5.5'
 uci -q delete network.lan.dns
+uci add_list network.lan.dns='$DEF_BYPASS_IP'
 uci add_list network.lan.dns='8.8.8.8'
 uci add_list network.lan.dns='223.5.5.5'
 uci -q delete dhcp.@dnsmasq[0].server
+uci set dhcp.@dnsmasq[0].noresolv='1'
+uci set dhcp.@dnsmasq[0].rebind_protection='0'
 uci add_list dhcp.@dnsmasq[0].server='$DEF_BYPASS_IP'
 uci add_list dhcp.@dnsmasq[0].server='223.5.5.5'
 uci add_list dhcp.@dnsmasq[0].server='8.8.8.8'
@@ -232,8 +211,9 @@ EOF
         echo "[after] 预置root加密密码文件"
         crypt=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin) || error_exit "openssl加密失败"
         mkdir -p "$PROJECT_ROOT/files/etc"
-        shadow="$PROJECT_ROOT/files/etc/shadow"
-        echo "root:$crypt:0:0:99999:7:::" > "$shadow"
+        echo "root:$crypt:0:0:99999:7:::" > "$PROJECT_ROOT/files/etc/shadow"
+    else
+        rm -f "$PROJECT_ROOT/files/etc/shadow"
     fi
     ;;
 
