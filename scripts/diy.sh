@@ -112,25 +112,29 @@ uci set network.lan.gateway='$lan_gw'
 uci set network.wan.proto='none'
 uci set network.wan6.proto='none'
 uci set network.lan6.proto='none'
-uci -q delete network.lan.dns
+uci -q delete network.lan.dns || true
 uci add_list network.lan.dns='8.8.8.8'
 uci add_list network.lan.dns='223.5.5.5'
 uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'
-uci -q set dhcp.@dnsmasq[0].port='0'
-uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
+uci -q set dhcp.@dnsmasq[0].port='5453' || true
+uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci commit network dhcp
 EOT
 )
 extra_block+=$(cat <<BYPASS
-# 旁路由SNAT：LAN口出站伪装
-uci set firewall.lan.masq='1'
-# 允许LAN口转发流量
-uci set firewall.lan.forward='1'
+# 旁路由核心：LAN→WAN开启IP动态伪装SNAT
+uci set firewall.@forwarding[0].masq='1'
+# 允许内网设备访问路由器本机后台/AGH/SSH
+uci set firewall.lan.input='ACCEPT'
+# 内网设备之间互相访问放行
+uci set firewall.lan.forward='ACCEPT'
+# 全局默认转发拒绝，最小权限安全基线
+uci set firewall.@defaults[0].forward='REJECT'
 uci commit firewall
-# 开启内核IPv4转发
+# 永久开启内核IPv4转发
 sed -i '/^net.ipv4.ip_forward=/d' /etc/sysctl.conf
-echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf && sysctl -p /etc/sysctl.conf
+echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
 BYPASS
 )
     else
@@ -154,13 +158,13 @@ uci set network.lan.netmask='255.255.255.0'
 $wan_block
 uci set network.wan.norelease='1'
 uci set network.wan.peerdns='0'
-uci -q delete network.wan.dns
+uci -q delete network.wan.dns || true
 uci add_list network.wan.dns='8.8.8.8'
 uci add_list network.wan.dns='223.5.5.5'
-uci -q delete network.lan.dns
+uci -q delete network.lan.dns || true
 uci add_list network.lan.dns='8.8.8.8'
 uci add_list network.lan.dns='223.5.5.5'
-uci -q delete dhcp.@dnsmasq[0].server
+uci -q delete dhcp.@dnsmasq[0].server || true   
 uci set dhcp.@dnsmasq[0].noresolv='1'
 uci set dhcp.@dnsmasq[0].rebind_protection='0'
 uci add_list dhcp.@dnsmasq[0].server='$DEF_BYPASS_IP'
