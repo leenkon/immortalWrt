@@ -63,13 +63,12 @@ if [[ "$PROFILE_TYPE" == "bypass" ]]; then
 else
     [[ -z "$CUSTOM_IP" ]] && CUSTOM_IP="$DEF_MAIN_IP"
     is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法IP: $CUSTOM_IP"
-    [[ -n "$CUSTOM_GATEWAY" ]] && is_valid_ipv4 "$CUSTOM_GATEWAY" || error_exit "非法IP: $CUSTOM_GATEWAY"
+    if [[ -n "$CUSTOM_GATEWAY" ]]; then
+        is_valid_ipv4 "$CUSTOM_GATEWAY" || error_exit "非法IP: $CUSTOM_GATEWAY"
+    fi
 fi
 
-# PPPoE成对校验
-if [[ -n "$PPPOE_USERNAME" || -n "$PPPOE_PASSWORD" ]]; then
-    [[ -z "$PPPOE_USERNAME" || -z "$PPPOE_PASSWORD" ]] && error_exit "pppoe user/pass成对传入"
-fi
+[[ -n "$PPPOE_USERNAME" ]] != [[ -n "$PPPOE_PASSWORD" ]] && error_exit "pppoe user/pass 必须成对传入"
 
 # 项目根目录
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -209,6 +208,7 @@ EOF
         crypt=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin) || error_exit "openssl加密失败"
         mkdir -p "$PROJECT_ROOT/files/etc"
         echo "root:$crypt:0:0:99999:7:::" > "$PROJECT_ROOT/files/etc/shadow"
+        chmod 600 "$PROJECT_ROOT/files/etc/shadow" || error_exit "chmod失败"
     else
         rm -f "$PROJECT_ROOT/files/etc/shadow"
     fi
