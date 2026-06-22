@@ -118,7 +118,7 @@ uci add_list network.lan.dns='1.1.1.1'
 uci add_list network.lan.dns='223.5.5.5'
 uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'
-uci -q set dhcp.@dnsmasq[0].port='0' || true
+uci -q set dhcp.@dnsmasq[0].port='5453' || true
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci commit network dhcp
 EOT
