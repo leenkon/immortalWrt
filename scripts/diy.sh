@@ -68,7 +68,9 @@ else
     fi
 fi
 
-[[ -n "$PPPOE_USERNAME" ]] != [[ -n "$PPPOE_PASSWORD" ]] && error_exit "pppoe user/pass 必须成对传入"
+if [[ -n "$PPPOE_USERNAME" || -n "$PPPOE_PASSWORD" ]]; then
+    [[ -z "$PPPOE_USERNAME" || -z "$PPPOE_PASSWORD" ]] && error_exit "pppoe user/pass 必须成对传入"
+fi
 
 # 项目根目录
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
