@@ -129,20 +129,29 @@ uci set network.lan.gateway='$lan_gw'
 uci set network.wan.proto='none'
 uci set network.wan6.proto='none'
 uci set network.lan6.proto='none'
+# 关闭DHCP分配，主路由全权负责
 uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'
+# 释放53端口，AdGuardHome独占
+uci set dhcp.@dnsmasq[0].port='0'
+# 关闭本地DNS缓存
+uci set dhcp.@dnsmasq[0].cachelocal='0'
+# 关闭域名反弹保护（旁路无上游转发冲突）
+uci set dhcp.@dnsmasq[0].rebind_protection='0'
 uci commit network dhcp
 EOT
 )
         # ====================== 旁路由专属：全部用uci动态配置，放弃sed改静态模板 ======================
 extra_block+=$(cat <<BYPASS
-# 开启WAN IP动态伪装
+# 开启WAN IP动态伪装SNAT
 uci set firewall.@zone[1].masq='1'
-# 关闭软硬流量卸载，防止长连接断流
-uci set firewall.@defaults[0].flow_offloading='0'
-uci set firewall.@defaults[0].flow_offloading_hw='0'
-# 放行本机所有出站流量，解决wget Operation not permitted
-uci set firewall.@defaults[0].output='ACCEPT'
+
+# 不全局放开output，新增规则放行本机出站（替代危险的output=ACCEPT）
+uci add firewall rule
+uci set firewall.@rule[-1].name='Local-All-Output-Accept'
+uci set firewall.@rule[-1].direction='output'
+uci set firewall.@rule[-1].src='*'
+uci set firewall.@rule[-1].target='ACCEPT'
 uci commit firewall
 # 开启内核IPv4转发
 sed -i '/^net.ipv4.ip_forward=/d' /etc/sysctl.conf
