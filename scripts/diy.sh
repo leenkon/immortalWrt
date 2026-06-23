@@ -150,6 +150,7 @@ uci set network.lan.netmask='$SUBNET_MASK'
 uci set network.lan.gateway='$lan_gw_esc'
 uci set network.wan.proto='none'
 uci set network.wan6.proto='none'
+uci -q delete network.lan6 || true
 uci set network.lan6.proto='none'
 uci -q delete network.lan.dns || true
 uci add_list network.lan.dns='$lan_gw_esc'
@@ -161,12 +162,12 @@ uci commit network dhcp
 EOT
 )
         firewall_block=$(cat <<-FW
-uci set firewall.@zone[0].input='ACCEPT'
-uci set firewall.@zone[0].output='ACCEPT'
-uci set firewall.@zone[0].forward='ACCEPT'
-uci set firewall.@zone[0].masq='1'
-uci set firewall.@zone[0].mtu_fix='1'
-uci set firewall.@zone[1].network=''
+uci set firewall.@zone[lan].input='ACCEPT'
+uci set firewall.@zone[lan].output='ACCEPT'
+uci set firewall.@zone[lan].forward='ACCEPT'
+uci set firewall.@zone[lan].masq='1'
+uci set firewall.@zone[lan].mtu_fix='1'
+uci set firewall.@zone[wan].network=''
 uci -q delete firewall.@forwarding[0]
 uci -q delete firewall.@forwarding[1]
 uci commit firewall
@@ -182,10 +183,16 @@ FW
             wan_block="uci set network.wan.proto='pppoe'
 uci set network.wan.username='$u'
 uci set network.wan.password='$p'
-uci set network.wan.ipv6='auto'"
+uci set network.wan.ipv6='auto'
+uci -q delete network.wan6 || true
+uci -q delete network.lan6 || true
+uci set network.lan6.proto='static'"
         else
             wan_block="uci set network.wan.proto='dhcp'
-uci set network.wan6.proto='dhcpv6'"
+uci -q delete network.wan6 || true
+uci set network.wan6.proto='dhcpv6'
+uci -q delete network.lan6 || true
+uci set network.lan6.proto='static'"
         fi
         bypass_dns_esc=$(_escape_sh "$DEF_BYPASS_IP")
         net_block=$(cat <<-EOT
@@ -209,8 +216,8 @@ uci commit network dhcp
 EOT
 )
         firewall_block=$(cat <<-FW
-uci set firewall.@zone[0].forward='ACCEPT'
-uci set firewall.@zone[1].forward='ACCEPT'
+uci set firewall.@zone[lan].forward='ACCEPT'
+uci set firewall.@zone[wan].forward='ACCEPT'
 uci commit firewall
 FW
 )

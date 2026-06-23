@@ -68,6 +68,8 @@ jobs:
 
           ./scripts/feeds install -a
           cp $GITHUB_WORKSPACE/configs/${MAIN_VER}-${CFG_PREFIX}.config .config
+          # 启用 files/ 目录打包（必须，否则 uci-defaults 不会进入固件）
+          echo 'CONFIG_FILES=$(TOPDIR)/files' >> .config
 
           if [[ "${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main" ]]; then
             echo -e "\nCONFIG_PACKAGE_luci-app-oaf=y" >> .config
