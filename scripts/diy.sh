@@ -45,7 +45,6 @@ check_build_deps() {
 }
 
 # ===================== 常量定义，调整优先级 =====================
-# 环境变量仅作为兜底，入参--ip优先覆盖
 DEF_MAIN_IP="10.10.10.1"
 DEF_BYPASS_IP="10.10.10.2"
 OVERRIDE_BYPASS_IP="${OVERRIDE_BYPASS_IP:-$DEF_BYPASS_IP}"
@@ -114,8 +113,6 @@ before)
     FEED_CONF_SRC="$PROJECT_ROOT/feeds/$VERSION.conf"
     [[ -f "$FEED_CONF_SRC" ]] || error_exit "缺失feed配置文件: $FEED_CONF_SRC"
 
-    # 备份原始feeds.conf，不直接删除default
-    [[ -f feeds.conf ]] && cp feeds.conf feeds.conf.bak
     rm -f feeds.conf
     cp "$FEED_CONF_SRC" feeds.conf
     echo "[BUILD BEFORE] 已加载版本对应feeds配置"
@@ -238,8 +235,6 @@ uci commit network dhcp
 EOT
 )
     fi
-
-    # 组装最终开机脚本，增加错误捕获set -e
     cat > "$UCI_DEFAULT_OUT" <<-EOF
 #!/bin/sh
 set -e
