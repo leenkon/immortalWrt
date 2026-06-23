@@ -83,8 +83,9 @@ OPENWRT_DIR="$SCRIPT_DIR/openwrt"
 DIY="$SCRIPT_DIR/scripts/diy.sh"
 
 # 1. 换行符
-echo -e "\n${YELLOW}[1/7] 检查换行符...${NC}"
+echo -e "\n${YELLOW}[1/7] 检查换行符和权限...${NC}"
 fix_line_endings "$DIY" "$SCRIPT_DIR/build.sh"
+chmod +x "$DIY" "$SCRIPT_DIR/build.sh"
 success "完成"
 
 # 2. 依赖
@@ -102,14 +103,19 @@ success "完成"
 
 # 3. 源码
 echo -e "\n${YELLOW}[3/7] 拉取源码...${NC}"
-[[ -d "$OPENWRT_DIR" ]] && { read -p "删除现有目录? [y/N]: " r; [[ "$r" =~ ^[Yy]$ ]] && rm -rf "$OPENWRT_DIR" || cd "$OPENWRT_DIR"; }
-[[ ! -d "$OPENWRT_DIR" ]] && { git clone --depth 1 https://github.com/immortalwrt/immortalwrt "$OPENWRT_DIR"; cd "$OPENWRT_DIR"; git fetch origin tag "v$VERSION" --depth 1; git checkout "v$VERSION"; }
+if [[ -d "$OPENWRT_DIR" ]]; then
+    read -p "删除现有目录? [y/N]: " r
+    [[ "$r" =~ ^[Yy]$ ]] && rm -rf "$OPENWRT_DIR" || { error_exit "请先删除 $OPENWRT_DIR"; }
+fi
+if [[ ! -d "$OPENWRT_DIR" ]]; then
+    git clone --depth 1 https://github.com/immortalwrt/immortalwrt "$OPENWRT_DIR" || error_exit "源码克隆失败"
+    (cd "$OPENWRT_DIR" && git fetch origin tag "v$VERSION" --depth 1 && git checkout "v$VERSION") || error_exit "版本切换失败"
+fi
 success "完成"
 
 # 4. 配置
 echo -e "\n${YELLOW}[4/7] 准备配置...${NC}"
 cd "$OPENWRT_DIR"
-chmod +x "$DIY"
 "$DIY" -v "$MAIN_VER" -p before -t "$RUN_TYPE"
 ./scripts/feeds update -a
 
@@ -139,6 +145,8 @@ success "完成"
 # 6. 下载必要文件
 echo -e "\n${YELLOW}[6/7] 下载必要文件...${NC}"
 [[ -d "$SCRIPT_DIR/files" ]] && cp -rf "$SCRIPT_DIR/files/" "$OPENWRT_DIR/"
+# 确保 ddns 脚本可执行（OpenWrt ddns 守护进程需要）
+find "$OPENWRT_DIR/files" -name "*.sh" -exec chmod +x {} + 2>/dev/null || true
 make defconfig && make download && make clean
 success "完成"
 

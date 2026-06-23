@@ -13,21 +13,25 @@ _escape_sh() {
 
 is_valid_ipv4() {
     local ip="$1"
-    if echo "$ip" | grep -qE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'; then
-        local o1 o2 o3 o4
-        IFS='.' read -r o1 o2 o3 o4 <<EOF
+    if ! echo "$ip" | grep -qE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'; then
+        return 1
+    fi
+    local o1 o2 o3 o4
+    IFS='.' read -r o1 o2 o3 o4 <<EOF
 $ip
 EOF
-        for o in "$o1" "$o2" "$o3" "$o4"; do
-            if ! echo "$o" | grep -qE '^[0-9]+$' || [ "$o" -lt 0 ] || [ "$o" -gt 255 ]; then
-                return 1
-            fi
-        done
-        [ "$o1" -eq 0 ] || [ "$o1" -eq 127 ] || ([ "$o1" -eq 169 ] && [ "$o2" -eq 254 ]) && return 1
-        [ "$o4" -eq 0 ] || [ "$o4" -eq 255 ] && return 1
-        return 0
-    fi
-    return 1
+    for o in "$o1" "$o2" "$o3" "$o4"; do
+        if ! echo "$o" | grep -qE '^[0-9]+$' || [ "$o" -lt 0 ] || [ "$o" -gt 255 ]; then
+            return 1
+        fi
+    done
+    # 拒绝保留/特殊段
+    case "$o1" in
+        0|127) return 1 ;;
+        169) [ "$o2" -eq 254 ] && return 1 ;;
+    esac
+    [ "$o4" -eq 0 ] || [ "$o4" -eq 255 ] && return 1
+    return 0
 }
 
 check_build_deps() {
@@ -222,7 +226,7 @@ ${firewall_block}
 uci set system.@system[0].hostname='Router-${PROFILE_TYPE}'
 uci set system.@system[0].timezone='CST-8'
 uci set system.@system[0].zonename='Asia/Shanghai'
-uci del_list system.ntp.server
+uci -q delete system.ntp.server
 uci set system.ntp.enable_server='1'
 uci add_list system.ntp.server='ntp.aliyun.com'
 uci add_list system.ntp.server='ntp.tencent.com'
@@ -237,7 +241,6 @@ EOF
     if [ -n "$ROOT_PASSWORD" ]; then
         crypt=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin) || error_exit "openssl密码加密失败"
         SHADOW_FILE="$PROJECT_ROOT/files/etc/shadow"
-        mkdir -p "$(dirname "$SHADOW_FILE")"
         echo "root:$crypt:0:0:99999:7:::" > "$SHADOW_FILE"
         chmod 600 "$SHADOW_FILE"
     fi
