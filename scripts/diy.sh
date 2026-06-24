@@ -110,8 +110,6 @@ after)
 
     cat > "$OUT" <<'HEADER'
 #!/bin/sh
-set -e
-trap 'logger -t uci-defaults "ERROR: line $LINENO, exit $?"' ERR
 HEADER
     echo "logger -t uci-defaults \"开始应用${PROFILE_TYPE}配置\"" >> "$OUT"
 

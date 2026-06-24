@@ -1,36 +1,33 @@
 #!/bin/sh
-set -e
-trap 'logger -t uci-defaults "ERROR: line $LINENO, exit $?"' ERR
-logger -t uci-defaults "开始应用main配置"
-uci set network.wan.proto='dhcp'
-uci -q delete network.wan6 || true
-uci set network.wan6.proto='dhcpv6'
-uci -q delete network.lan6 || true
-uci set network.lan6.proto='static'
-uci set network.lan.ip6assign='64'
+# uci-defaults脚本：首次启动执行后由 init 脚本自动删除
+# 不使用 set -e（避免单条命令失败导致中断）
+# 不使用 trap ERR（bash扩展，ash不支持）
+logger -t uci-defaults "开始应用bypass配置"
+echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf
 uci set network.lan.proto='static'
-uci set network.lan.ipaddr='10.10.10.1'
+uci set network.lan.ipaddr='10.10.10.2'
 uci set network.lan.netmask='255.255.255.0'
-uci set network.wan.peerdns='0'
-uci -q delete network.wan.dns || true
-uci add_list network.wan.dns='1.1.1.1'
-uci add_list network.wan.dns='223.5.5.5'
-uci -q delete dhcp.lan.dhcp_option || true
-uci add_list dhcp.lan.dhcp_option='6,10.10.10.1'
-uci set dhcp.lan.sequential_ip='1'
-uci set dhcp.lan.start='8'
-uci set dhcp.lan.limit='150'
+uci set network.lan.gateway='10.10.10.1'
+uci set network.wan.proto='none'
+uci set network.wan6.proto='none'
+uci -q delete network.lan6 || true
+uci set network.lan6.proto='none'
+uci -q delete network.lan.dns || true
+uci add_list network.lan.dns='10.10.10.1'
+uci set dhcp.lan.ignore='1'
+uci set dhcp.lan6.ignore='1'
+uci -q set dhcp.@dnsmasq[0].port='5453' || true
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
-uci -q del_list dhcp.@dnsmasq[0].server='10.10.10.2' || true
-uci add_list dhcp.@dnsmasq[0].server='10.10.10.2'
-uci set dhcp.@dnsmasq[0].strictorder='1'
-uci set dhcp.@dnsmasq[0].querytimeout='2000'
-uci set dhcp.@dnsmasq[0].retries='1'
 uci commit network dhcp
+uci set firewall.@zone[lan].input='ACCEPT'
+uci set firewall.@zone[lan].output='ACCEPT'
 uci set firewall.@zone[lan].forward='ACCEPT'
-uci set firewall.@zone[wan].forward='ACCEPT'
+uci set firewall.@zone[lan].masq='1'
+uci set firewall.@zone[lan].mtu_fix='1'
+uci set firewall.@zone[wan].network=''
+while uci -q delete firewall.@forwarding[0]; do :; done
 uci commit firewall
-uci set system.@system[0].hostname='Router-main'
+uci set system.@system[0].hostname='Router-bypass'
 uci set system.@system[0].timezone='CST-8'
 uci set system.@system[0].zonename='Asia/Shanghai'
 uci -q delete system.ntp.server
