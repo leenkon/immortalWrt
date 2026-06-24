@@ -225,6 +225,8 @@ FW
     cat > "$UCI_DEFAULT_OUT" <<-EOF
 #!/bin/sh
 set -e
+trap 'logger -t uci-defaults "ERROR: 配置应用失败，行号 \$LINENO，退出码 \$?"' ERR
+logger -t uci-defaults "开始应用自定义配置 (${PROFILE_TYPE})"
 # 网络IP、拨号、DHCP基础配置
 ${net_block}
 # 防火墙转发规则
@@ -240,6 +242,7 @@ uci add_list system.ntp.server='ntp.tencent.com'
 uci add_list system.ntp.server='ntsc.ac.cn'
 uci add_list system.ntp.server='cn.pool.ntp.org'
 uci commit system
+logger -t uci-defaults "自定义配置应用完成"
 exit 0
 EOF
     chmod 755 "$UCI_DEFAULT_OUT"
