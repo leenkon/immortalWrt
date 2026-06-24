@@ -143,7 +143,7 @@ after)
         lan_ip_esc=$(_escape_sh "$CUSTOM_IP")
         lan_gw_esc=$(_escape_sh "$CUSTOM_GATEWAY")
         sysctl_block="net.ipv4.ip_forward=1"
-        net_block=$(cat <<-EOT
+        net_block=$(cat <<EOT
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$lan_ip_esc'
 uci set network.lan.netmask='$SUBNET_MASK'
@@ -161,7 +161,7 @@ uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci commit network dhcp
 EOT
 )
-        firewall_block=$(cat <<-FW
+        firewall_block=$(cat <<FW
 uci set firewall.@zone[lan].input='ACCEPT'
 uci set firewall.@zone[lan].output='ACCEPT'
 uci set firewall.@zone[lan].forward='ACCEPT'
@@ -195,7 +195,7 @@ uci -q delete network.lan6 || true
 uci set network.lan6.proto='static'"
         fi
         bypass_dns_esc=$(_escape_sh "$DEF_BYPASS_IP")
-        net_block=$(cat <<-EOT
+        net_block=$(cat <<EOT
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$lan_ip_esc'
 uci set network.lan.netmask='$SUBNET_MASK'
@@ -215,17 +215,17 @@ uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci commit network dhcp
 EOT
 )
-        firewall_block=$(cat <<-FW
+        firewall_block=$(cat <<FW
 uci set firewall.@zone[lan].forward='ACCEPT'
 uci set firewall.@zone[wan].forward='ACCEPT'
 uci commit firewall
 FW
 )
     fi
-    cat > "$UCI_DEFAULT_OUT" <<-EOF
+    cat > "$UCI_DEFAULT_OUT" <<EOF
 #!/bin/sh
 set -e
-trap 'logger -t uci-defaults "ERROR: 配置应用失败，行号 \$LINENO，退出码 \$?"' ERR
+trap 'logger -t uci-defaults "ERROR: line \$LINENO, exit \$?"' ERR
 logger -t uci-defaults "开始应用自定义配置 (${PROFILE_TYPE})"
 # 网络IP、拨号、DHCP基础配置
 ${net_block}
