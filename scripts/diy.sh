@@ -182,6 +182,8 @@ uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci -q del_list dhcp.@dnsmasq[0].server='$DEF_BYPASS_IP' || true
 uci add_list dhcp.@dnsmasq[0].server='$DEF_BYPASS_IP'
 uci set dhcp.@dnsmasq[0].strictorder='1'
+uci set dhcp.@dnsmasq[0].querytimeout='2000'
+uci set dhcp.@dnsmasq[0].retries='1'
 uci commit network dhcp
 uci set firewall.@zone[lan].forward='ACCEPT'
 uci set firewall.@zone[wan].forward='ACCEPT'
