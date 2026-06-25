@@ -46,4 +46,3 @@ uci add_list system.ntp.server='ntsc.ac.cn'
 uci add_list system.ntp.server='cn.pool.ntp.org'
 uci commit system
 logger -t uci-defaults "配置应用完成"
-exit 0

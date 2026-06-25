@@ -104,9 +104,7 @@ after)
 
     ip_esc=$(_escape_uci "$CUSTOM_IP")
 
-    cat > "$OUT" <<'HEADER'
-#!/bin/sh
-HEADER
+    echo '#!/bin/sh' > "$OUT"
     echo "logger -t uci-defaults \"开始应用${PROFILE_TYPE}配置\"" >> "$OUT"
 
     if [ "$PROFILE_TYPE" = "bypass" ]; then
@@ -213,7 +211,6 @@ uci add_list system.ntp.server='ntsc.ac.cn'
 uci add_list system.ntp.server='cn.pool.ntp.org'
 uci commit system
 logger -t uci-defaults "配置应用完成"
-exit 0
 EOT
     chmod 755 "$OUT"
     echo "[AFTER] uci-defaults已生成: $OUT"
