@@ -6,7 +6,7 @@ error_exit() { echo "ERR: $1" >&2; exit 1; }
 _escape_uci() { printf '%s' "$1" | sed "s/'/'\\\\''/g"; }
 
 is_valid_ipv4() {
-    local IFS='.' o1 o2 o3 o4
+    local o1 o2 o3 o4
     IFS='.' read -r o1 o2 o3 o4 <<< "$1"
     for o in "$o1" "$o2" "$o3" "$o4"; do
         case "$o" in ''|*[!0-9]*) return 1 ;; esac
@@ -59,18 +59,14 @@ if [ "$PROFILE_TYPE" = "bypass" ]; then
     [ -z "$CUSTOM_GATEWAY" ] && CUSTOM_GATEWAY="$DEF_MAIN_IP"
     is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法旁路由IP: $CUSTOM_IP"
     is_valid_ipv4 "$CUSTOM_GATEWAY" || error_exit "非法旁路由网关: $CUSTOM_GATEWAY"
-    if [ -n "$PPPOE_USERNAME" ] || [ -n "$PPPOE_PASSWORD" ]; then
-        error_exit "旁路由不支持PPPoE，请使用 --type main"
-    fi
+    [ -n "$PPPOE_USERNAME" ] || [ -n "$PPPOE_PASSWORD" ] && error_exit "旁路由不支持PPPoE，请使用 --type main"
 else
     [ -z "$CUSTOM_IP" ] && CUSTOM_IP="$DEF_MAIN_IP"
     is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法主路由IP: $CUSTOM_IP"
 fi
 
 if [ -n "$PPPOE_USERNAME" ] || [ -n "$PPPOE_PASSWORD" ]; then
-    if [ -z "$PPPOE_USERNAME" ] || [ -z "$PPPOE_PASSWORD" ]; then
-        error_exit "PPPoE账号密码必须成对传入"
-    fi
+    [ -z "$PPPOE_USERNAME" ] || [ -z "$PPPOE_PASSWORD" ] && error_exit "PPPoE账号密码必须成对传入"
 fi
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd -P)
@@ -116,28 +112,39 @@ HEADER
     if [ "$PROFILE_TYPE" = "bypass" ]; then
         gw_esc=$(_escape_uci "$CUSTOM_GATEWAY")
         cat >> "$OUT" <<EOT
-echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf
+grep -q 'net.ipv4.ip_forward=1' /etc/sysctl.conf || echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ip_esc'
 uci set network.lan.netmask='$SUBNET_MASK'
 uci set network.lan.gateway='$gw_esc'
+uci -q delete network.lan.dns || true
+uci add_list network.lan.dns='$DNS_MAIN'
+uci add_list network.lan.dns='$DNS_BACKUP'
 uci set network.wan.proto='none'
 uci set network.wan6.proto='none'
 uci -q delete network.lan6 || true
-uci set network.lan6.proto='none'
-uci -q delete network.lan.dns || true
-uci add_list network.lan.dns='$gw_esc'
+uci commit network
+
 uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'
+# dnsmasq 让出 :53 给 AdGuardHome
 uci -q set dhcp.@dnsmasq[0].port='$DNSMASQ_CUSTOM_PORT' || true
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
-uci commit network dhcp
-uci set firewall.@zone[lan].input='ACCEPT'
-uci set firewall.@zone[lan].output='ACCEPT'
-uci set firewall.@zone[lan].forward='ACCEPT'
-uci set firewall.@zone[lan].masq='1'
-uci set firewall.@zone[lan].mtu_fix='1'
-uci set firewall.@zone[wan].network=''
+uci commit dhcp
+
+LAN_FW=\$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
+WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
+[ -n "\$LAN_FW" ] && {
+    uci set \${LAN_FW}.input='ACCEPT'
+    uci set \${LAN_FW}.output='ACCEPT'
+    uci set \${LAN_FW}.forward='ACCEPT'
+    uci set \${LAN_FW}.masq='1'
+    uci set \${LAN_FW}.mtu_fix='1'
+}
+[ -n "\$WAN_FW" ] && {
+    uci set \${WAN_FW}.network=''
+    uci set \${WAN_FW}.masq='0'
+}
 while uci -q delete firewall.@forwarding[0]; do :; done
 uci commit firewall
 EOT
@@ -171,6 +178,8 @@ uci set network.wan.peerdns='0'
 uci -q delete network.wan.dns || true
 uci add_list network.wan.dns='$DNS_MAIN'
 uci add_list network.wan.dns='$DNS_BACKUP'
+uci commit network
+
 uci -q delete dhcp.lan.dhcp_option || true
 uci add_list dhcp.lan.dhcp_option='6,$CUSTOM_IP'
 uci set dhcp.lan.sequential_ip='1'
@@ -180,11 +189,14 @@ uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci -q del_list dhcp.@dnsmasq[0].server='$DEF_BYPASS_IP' || true
 uci add_list dhcp.@dnsmasq[0].server='$DEF_BYPASS_IP'
 uci set dhcp.@dnsmasq[0].strictorder='1'
-uci set dhcp.@dnsmasq[0].querytimeout='2000'
+uci set dhcp.@dnsmasq[0].querytimeout='2'
 uci set dhcp.@dnsmasq[0].retries='1'
-uci commit network dhcp
-uci set firewall.@zone[lan].forward='ACCEPT'
-uci set firewall.@zone[wan].forward='ACCEPT'
+uci commit dhcp
+
+LAN_FW=\$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
+WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
+[ -n "\$LAN_FW" ] && uci set \${LAN_FW}.forward='ACCEPT'
+[ -n "\$WAN_FW" ] && uci set \${WAN_FW}.forward='ACCEPT'
 uci commit firewall
 EOT
     fi
