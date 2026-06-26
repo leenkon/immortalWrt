@@ -131,6 +131,7 @@ fi
 ./scripts/feeds install -a
 cp "$SCRIPT_DIR/configs/${MAIN_VER}-${CFG_PREFIX}.config" .config || error_exit "配置文件不存在"
 sed -i 's/\r$//' .config
+echo 'CONFIG_FILES=$(TOPDIR)/files' >> .config
 [[ "$USE_OAF" == "true" ]] && echo -e "\nCONFIG_PACKAGE_luci-app-oaf=y" >> .config
 success "完成"
 

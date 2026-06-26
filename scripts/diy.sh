@@ -78,15 +78,13 @@ before)
     echo "[BEFORE] 初始化 feeds 配置: $VERSION"
     FEED_CONF_SRC="$PROJECT_ROOT/feeds/$VERSION.conf"
     [ -f "$FEED_CONF_SRC" ] || error_exit "缺失feed配置: $FEED_CONF_SRC"
-
     rm -f feeds.conf
     cp "$FEED_CONF_SRC" feeds.conf
-
     if grep -qs '^[^#].*src-git small' feeds.conf; then
         GOLANG_DIR="feeds/packages/lang/golang"
         if [ ! -d "$GOLANG_DIR/.git" ]; then
             echo "[BEFORE] 替换golang1.26"
-            rm -rf feeds/luci/applications/luci-app-mosdns \
+            rm -rf feeds/luci/applications/luci-app-osdns \
                 feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} \
                 feeds/packages/utils/v2dat \
                 "$GOLANG_DIR"
@@ -100,7 +98,7 @@ after)
     OUT="$PROJECT_ROOT/files/etc/uci-defaults/99-custom.sh"
     SHADOW="$PROJECT_ROOT/files/etc/shadow"
     mkdir -p "$(dirname "$OUT")"
-    rm -f "$OUT" "$SHADOW" "$PROJECT_ROOT/files/etc/sysctl.d/99-ipforward.conf"
+    rm -f "$OUT" "$SHADOW"
 
     ip_esc=$(_escape_uci "$CUSTOM_IP")
 
@@ -116,8 +114,7 @@ uci set network.lan.ipaddr='$ip_esc'
 uci set network.lan.netmask='$SUBNET_MASK'
 uci set network.lan.gateway='$gw_esc'
 uci -q delete network.lan.dns || true
-uci add_list network.lan.dns='$DNS_MAIN'
-uci add_list network.lan.dns='$DNS_BACKUP'
+uci add_list network.lan.dns='127.0.0.1'
 uci set network.wan.proto='none'
 uci set network.wan6.proto='none'
 uci -q delete network.lan6 || true
@@ -125,7 +122,6 @@ uci commit network
 
 uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'
-# dnsmasq 让出 :53 给 AdGuardHome
 uci -q set dhcp.@dnsmasq[0].port='$DNSMASQ_CUSTOM_PORT' || true
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci commit dhcp
@@ -136,8 +132,6 @@ WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
     uci set \${LAN_FW}.input='ACCEPT'
     uci set \${LAN_FW}.output='ACCEPT'
     uci set \${LAN_FW}.forward='ACCEPT'
-    uci set \${LAN_FW}.masq='1'
-    uci set \${LAN_FW}.mtu_fix='1'
 }
 [ -n "\$WAN_FW" ] && {
     uci set \${WAN_FW}.network=''
@@ -167,7 +161,6 @@ EOT
 
         cat >> "$OUT" <<EOT
 uci -q delete network.lan6 || true
-uci set network.lan6.proto='static'
 uci set network.lan.ip6assign='64'
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ip_esc'
@@ -179,13 +172,15 @@ uci add_list network.wan.dns='$DNS_BACKUP'
 uci commit network
 
 uci -q delete dhcp.lan.dhcp_option || true
-uci add_list dhcp.lan.dhcp_option='6,$CUSTOM_IP'
+uci add_list dhcp.lan.dhcp_option='6,$DEF_BYPASS_IP,$DNS_MAIN,$DNS_BACKUP'
 uci set dhcp.lan.sequential_ip='1'
 uci set dhcp.lan.start='$DHCP_START'
 uci set dhcp.lan.limit='$DHCP_LIMIT'
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci -q del_list dhcp.@dnsmasq[0].server='$DEF_BYPASS_IP' || true
 uci add_list dhcp.@dnsmasq[0].server='$DEF_BYPASS_IP'
+uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
+uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
 uci set dhcp.@dnsmasq[0].strictorder='1'
 uci set dhcp.@dnsmasq[0].querytimeout='2'
 uci set dhcp.@dnsmasq[0].retries='1'
@@ -195,6 +190,27 @@ LAN_FW=\$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
 WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
 [ -n "\$LAN_FW" ] && uci set \${LAN_FW}.forward='ACCEPT'
 [ -n "\$WAN_FW" ] && uci set \${WAN_FW}.forward='ACCEPT'
+uci commit firewall
+
+# DNS 劫持：LAN 客户端端口 53 流量强制到主路由 dnsmasq
+# - 排除旁路由：避免 AdGuardHome 的上游查询被劫持造成死循环
+# - 排除目标为旁路由的流量：客户端直连 10.10.10.2 的查询直接走旁路由，不绕路 dnsmasq
+cat > /etc/dns-hijack.sh << 'HIJACK'
+#!/bin/sh
+iptables -t nat -S PREROUTING 2>/dev/null | grep "dport 53 .* REDIRECT" | while read -r line; do
+    rule=$(echo "$line" | sed 's/^-A //')
+    iptables -t nat -D $rule 2>/dev/null
+done
+HIJACK
+cat >> /etc/dns-hijack.sh << HIEOF
+iptables -t nat -A PREROUTING ! -s $DEF_BYPASS_IP ! -d $DEF_BYPASS_IP -p udp --dport 53 -j REDIRECT --to-ports 53
+iptables -t nat -A PREROUTING ! -s $DEF_BYPASS_IP ! -d $DEF_BYPASS_IP -p tcp --dport 53 -j REDIRECT --to-ports 53
+HIEOF
+chmod 755 /etc/dns-hijack.sh
+/etc/dns-hijack.sh
+uci add firewall include
+uci set firewall.@include[-1].path='/etc/dns-hijack.sh'
+uci set firewall.@include[-1].reload='1'
 uci commit firewall
 EOT
     fi
