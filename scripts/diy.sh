@@ -27,9 +27,6 @@ DEF_BYPASS_IP="10.10.10.2"
 SUBNET_MASK="255.255.255.0"
 DNS_MAIN="1.1.1.1"
 DNS_BACKUP="223.5.5.5"
-DNSMASQ_CUSTOM_PORT="5453"
-DHCP_START="8"
-DHCP_LIMIT="150"
 
 VERSION="" PHASE="" PROFILE_TYPE=""
 CUSTOM_IP="" CUSTOM_GATEWAY="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
@@ -122,7 +119,7 @@ uci commit network
 
 uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'
-uci -q set dhcp.@dnsmasq[0].port='$DNSMASQ_CUSTOM_PORT' || true
+uci -q set dhcp.@dnsmasq[0].port='5453' || true
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci commit dhcp
 
@@ -174,8 +171,8 @@ uci commit network
 uci -q delete dhcp.lan.dhcp_option || true
 uci add_list dhcp.lan.dhcp_option='6,$DEF_BYPASS_IP,$DNS_MAIN,$DNS_BACKUP'
 uci set dhcp.lan.sequential_ip='1'
-uci set dhcp.lan.start='$DHCP_START'
-uci set dhcp.lan.limit='$DHCP_LIMIT'
+uci set dhcp.lan.start='8'
+uci set dhcp.lan.limit='150'
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci -q del_list dhcp.@dnsmasq[0].server='$DEF_BYPASS_IP' || true
 uci add_list dhcp.@dnsmasq[0].server='$DEF_BYPASS_IP'
@@ -192,13 +189,10 @@ WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
 [ -n "\$WAN_FW" ] && uci set \${WAN_FW}.forward='ACCEPT'
 uci commit firewall
 
-# DNS 劫持：LAN 客户端端口 53 流量强制到主路由 dnsmasq
-# - 排除旁路由：避免 AdGuardHome 的上游查询被劫持造成死循环
-# - 排除目标为旁路由的流量：客户端直连 10.10.10.2 的查询直接走旁路由，不绕路 dnsmasq
+# DNS 劫持：53 端口流量重定向到 dnsmasq（排除旁路由避免死循环）
 cat > /etc/dns-hijack.sh << 'HIJACK'
 #!/bin/sh
-iptables -t nat -S PREROUTING 2>/dev/null | grep "dport 53 .* REDIRECT" | while read -r line; do
-    rule=$(echo "$line" | sed 's/^-A //')
+iptables -t nat -S PREROUTING 2>/dev/null | grep "dport 53 .* REDIRECT" | sed 's/^-A //' | while read -r rule; do
     iptables -t nat -D $rule 2>/dev/null
 done
 HIJACK
