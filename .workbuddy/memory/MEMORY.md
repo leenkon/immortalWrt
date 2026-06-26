@@ -12,8 +12,8 @@
 
 ## 关键技术决策（已实现）
 - dnsmasq server= 列表 + strictorder=1 + querytimeout=2 + retries=1（旁路宕机 fallback）
-- DNS 劫持：iptables REDIRECT --to-ports 53 + `! -s 旁路IP ! -d 旁路IP`（防止 AdGuardHome 上游查询死循环 + 客户端直连旁路优化）
-- 旁路由 lan.dns 设为 127.0.0.1（走本机 AdGuardHome，避免 DNS 环路）
+- DNS 劫持：iptables REDIRECT --to-ports 53 + `! -s 旁路IP`（仅排除旁路由自身出站，防止 AdGuardHome 上游被劫持回环）
+- 旁路由 lan.dns 设为主路由 IP（10.10.10.1），由其 dnsmasq 中转至 AdGuardHome。127.0.0.1 在 AdGuardHome 未启动时空端口导致旁路由自身无 DNS。
 - dnsmasq 在旁路由让出 :53，监听 5453（AdGuardHome 占用 53）
 - 删除 exit 0（uci-defaults 是 source 执行，exit 会杀死父 shell）
 - 删除 trap ERR（ash 不支持 bash 扩展）
@@ -34,7 +34,7 @@
 | querytimeout='2000'（单位秒）| 改为 '2' |
 | @zone[lan]/@zone[wan] 硬编码索引 | 动态查找 zone name |
 | DNAT --to-destination 127.0.0.1:53 | 改为 REDIRECT --to-ports 53 |
-| 旁路由 lan.dns 设主路由 IP → DNS 环路 | 改为 127.0.0.1 |
+| 旁路由 lan.dns=127.0.0.1 → AdGuardHome 未启动时空端口 | 改为 10.10.10.1（主路由 dnsmasq 转发至 AdGuardHome，排除规则已防止环路）|
 | SYSCTL 独立文件残留 | 合并进99-custom.sh |
 | noresolv=1 阻断 fallback | 删除 |
 | DNS 劫持无旁路由白名单 → 死循环 | 添加 `! -s IP ! -d IP` exclusion |

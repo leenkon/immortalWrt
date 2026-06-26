@@ -111,7 +111,7 @@ uci set network.lan.ipaddr='$ip_esc'
 uci set network.lan.netmask='$SUBNET_MASK'
 uci set network.lan.gateway='$gw_esc'
 uci -q delete network.lan.dns || true
-uci add_list network.lan.dns='127.0.0.1'
+uci add_list network.lan.dns='$DEF_MAIN_IP'
 uci set network.wan.proto='none'
 uci set network.wan6.proto='none'
 uci -q delete network.lan6 || true
@@ -189,7 +189,7 @@ WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
 [ -n "\$WAN_FW" ] && uci set \${WAN_FW}.forward='ACCEPT'
 uci commit firewall
 
-# DNS 劫持：53 端口流量重定向到 dnsmasq（排除旁路由避免死循环）
+# DNS 劫持：53 端口重定向到 dnsmasq（排除旁路由自身避免死循环）
 cat > /etc/dns-hijack.sh << 'HIJACK'
 #!/bin/sh
 iptables -t nat -S PREROUTING 2>/dev/null | grep "dport 53 .* REDIRECT" | sed 's/^-A //' | while read -r rule; do
@@ -197,8 +197,8 @@ iptables -t nat -S PREROUTING 2>/dev/null | grep "dport 53 .* REDIRECT" | sed 's
 done
 HIJACK
 cat >> /etc/dns-hijack.sh << HIEOF
-iptables -t nat -A PREROUTING ! -s $DEF_BYPASS_IP ! -d $DEF_BYPASS_IP -p udp --dport 53 -j REDIRECT --to-ports 53
-iptables -t nat -A PREROUTING ! -s $DEF_BYPASS_IP ! -d $DEF_BYPASS_IP -p tcp --dport 53 -j REDIRECT --to-ports 53
+iptables -t nat -A PREROUTING ! -s $DEF_BYPASS_IP -p udp --dport 53 -j REDIRECT --to-ports 53
+iptables -t nat -A PREROUTING ! -s $DEF_BYPASS_IP -p tcp --dport 53 -j REDIRECT --to-ports 53
 HIEOF
 chmod 755 /etc/dns-hijack.sh
 /etc/dns-hijack.sh
