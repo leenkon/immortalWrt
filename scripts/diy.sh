@@ -193,7 +193,7 @@ uci commit firewall
 cat > /etc/dns-hijack.sh << 'HIJACK'
 #!/bin/sh
 iptables -t nat -S PREROUTING 2>/dev/null | grep "dport 53 .* REDIRECT" | sed 's/^-A //' | while read -r rule; do
-    iptables -t nat -D $rule 2>/dev/null
+    iptables -t nat -D \$rule 2>/dev/null
 done
 HIJACK
 cat >> /etc/dns-hijack.sh << HIEOF
