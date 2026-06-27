@@ -1,5 +1,5 @@
 #!/bin/bash
-set -eu
+set -e
 
 error_exit() { echo "ERR: $1" >&2; exit 1; }
 
@@ -142,6 +142,9 @@ WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
 }
 while uci -q delete firewall.@forwarding[0]; do :; done
 uci commit firewall
+
+# 启用 AdGuardHome（系统后续启动流程会自动拉起）
+/etc/init.d/AdGuardHome enable
 EOT
     else
         if [ -n "$PPPOE_USERNAME" ]; then
@@ -200,26 +203,28 @@ uci set firewall.@forwarding[-1].dest='wan'
 uci commit firewall
 
 # DNS 劫持：53 端口重定向到 dnsmasq（排除旁路由自身避免死循环）
+# OpenWrt 22.03+ 使用 fw4/nftables
 cat > /etc/dns-hijack.sh << 'HIJACK'
 #!/bin/sh
-iptables -t nat -S PREROUTING 2>/dev/null | grep "dport 53.*REDIRECT --to-ports 53" | sed 's/^-A //' | while read -r rule; do
-    iptables -t nat -D \$rule 2>/dev/null
-done
+nft delete table inet dns_hijack 2>/dev/null
+if command -v nft >/dev/null 2>&1; then
+    nft add table inet dns_hijack
+    nft add chain inet dns_hijack prerouting { type nat hook prerouting priority -100; }
+    nft add rule inet dns_hijack prerouting ip saddr != $DEF_BYPASS_IP udp dport 53 counter redirect to :53
+    nft add rule inet dns_hijack prerouting ip saddr != $DEF_BYPASS_IP tcp dport 53 counter redirect to :53
+    logger -t dns-hijack "nftables DNS hijack applied"
+else
+    logger -t dns-hijack "ERROR: nft not found"
+fi
 HIJACK
-cat >> /etc/dns-hijack.sh << HIEOF
-iptables -t nat -A PREROUTING ! -s $DEF_BYPASS_IP -p udp --dport 53 -j REDIRECT --to-ports 53
-iptables -t nat -A PREROUTING ! -s $DEF_BYPASS_IP -p tcp --dport 53 -j REDIRECT --to-ports 53
-HIEOF
 chmod 755 /etc/dns-hijack.sh
 /etc/dns-hijack.sh
-# 清理已存在的 dns-hijack include，防止累加
-uci show firewall 2>/dev/null | grep "\.path='/etc/dns-hijack\.sh'" | cut -d= -f1 | cut -d. -f1-2 | while read -r sec; do
-    uci delete "\$sec" 2>/dev/null
-done
-uci add firewall include
-uci set firewall.@include[-1].path='/etc/dns-hijack.sh'
-uci set firewall.@include[-1].reload='1'
+# 用命名 section 避免重复添加 firewall include
+uci set firewall.dns_hijack_include=include
+uci set firewall.dns_hijack_include.path='/etc/dns-hijack.sh'
+uci set firewall.dns_hijack_include.reload='1'
 uci commit firewall
+
 EOT
     fi
 
