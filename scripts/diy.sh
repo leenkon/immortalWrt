@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 set -e
 
 error_exit() { echo "ERR: $1" >&2; exit 1; }
@@ -143,8 +143,11 @@ WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
 while uci -q delete firewall.@forwarding[0]; do :; done
 uci commit firewall
 
-# 启用 AdGuardHome（系统后续启动流程会自动拉起）
-/etc/init.d/AdGuardHome enable
+# 启用 AdGuardHome（uci 方式，适配 OpenWrt 官方包）
+uci set adguardhome.config.enabled='1'
+uci commit adguardhome
+/etc/init.d/adguardhome enable
+/etc/init.d/adguardhome start
 EOT
     else
         if [ -n "$PPPOE_USERNAME" ]; then
@@ -202,8 +205,7 @@ uci set firewall.@forwarding[-1].src='lan'
 uci set firewall.@forwarding[-1].dest='wan'
 uci commit firewall
 
-# DNS 劫持：53 端口重定向到 dnsmasq（排除旁路由自身避免死循环）
-# OpenWrt 22.03+ 使用 fw4/nftables
+# DNS 劫持：53 端口重定向到 dnsmasq（使用 fw4/nftables,排除旁路由自身避免死循环）
 cat > /etc/dns-hijack.sh << 'HIJACK'
 #!/bin/sh
 nft delete table inet dns_hijack 2>/dev/null
