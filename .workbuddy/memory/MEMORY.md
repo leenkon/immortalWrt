@@ -41,3 +41,4 @@
 | network.lan6 空 interface 残留 | 删掉 `set lan6.proto=static`，只保留 delete |
 | build.sh 缺少 CONFIG_FILES 配置 | 添加 `echo 'CONFIG_FILES=$(TOPDIR)/files'` 到 .config |
 | files/etc/uci-defaults/99-custom.sh 陈旧输出 | 删除（diy.sh 每次构建重新生成）|
+| heredoc 嵌套变量展开：`$rule` 被 `set -eu` 报 unbound | `$rule` → `\$rule`（外层 <<EOT 展开时会误吞内层 `'HIJACK'` heredoc 中的 `$`）|
