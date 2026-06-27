@@ -111,18 +111,24 @@ uci set network.lan.ipaddr='$ip_esc'
 uci set network.lan.netmask='$SUBNET_MASK'
 uci set network.lan.gateway='$gw_esc'
 uci -q delete network.lan.dns || true
-uci add_list network.lan.dns='$DEF_MAIN_IP'
-uci set network.wan.proto='none'
-uci set network.wan6.proto='none'
+uci add_list network.lan.dns='$DNS_MAIN'
+uci add_list network.lan.dns='$DNS_BACKUP'
 uci -q delete network.lan6 || true
+uci -q delete network.default_route || true
+uci set network.default_route=route
+uci set network.default_route.interface='lan'
+uci set network.default_route.target='0.0.0.0'
+uci set network.default_route.netmask='0.0.0.0'
+uci set network.default_route.gateway='$gw_esc'
 uci commit network
 
 uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'
 uci -q set dhcp.@dnsmasq[0].port='5453' || true
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
+uci -q delete dhcp.@dnsmasq[0].listen_address || true
+uci add_list dhcp.@dnsmasq[0].listen_address='127.0.0.1'
 uci commit dhcp
-
 LAN_FW=\$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
 WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
 [ -n "\$LAN_FW" ] && {
@@ -170,10 +176,10 @@ uci commit network
 
 uci -q delete dhcp.lan.dhcp_option || true
 uci add_list dhcp.lan.dhcp_option='6,$DEF_BYPASS_IP,$DNS_MAIN,$DNS_BACKUP'
-uci set dhcp.lan.sequential_ip='1'
-uci set dhcp.lan.start='8'
+uci set dhcp.lan.start='6'
 uci set dhcp.lan.limit='150'
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
+uci set dhcp.@dnsmasq[0].sequential_ip='1'
 uci -q del_list dhcp.@dnsmasq[0].server='$DEF_BYPASS_IP' || true
 uci add_list dhcp.@dnsmasq[0].server='$DEF_BYPASS_IP'
 uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
@@ -187,12 +193,16 @@ LAN_FW=\$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
 WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
 [ -n "\$LAN_FW" ] && uci set \${LAN_FW}.forward='ACCEPT'
 [ -n "\$WAN_FW" ] && uci set \${WAN_FW}.forward='ACCEPT'
+while uci -q delete firewall.@forwarding[0]; do :; done
+uci add firewall forwarding
+uci set firewall.@forwarding[-1].src='lan'
+uci set firewall.@forwarding[-1].dest='wan'
 uci commit firewall
 
 # DNS 劫持：53 端口重定向到 dnsmasq（排除旁路由自身避免死循环）
 cat > /etc/dns-hijack.sh << 'HIJACK'
 #!/bin/sh
-iptables -t nat -S PREROUTING 2>/dev/null | grep "dport 53 .* REDIRECT" | sed 's/^-A //' | while read -r rule; do
+iptables -t nat -S PREROUTING 2>/dev/null | grep "dport 53.*REDIRECT --to-ports 53" | sed 's/^-A //' | while read -r rule; do
     iptables -t nat -D \$rule 2>/dev/null
 done
 HIJACK
@@ -202,6 +212,10 @@ iptables -t nat -A PREROUTING ! -s $DEF_BYPASS_IP -p tcp --dport 53 -j REDIRECT 
 HIEOF
 chmod 755 /etc/dns-hijack.sh
 /etc/dns-hijack.sh
+# 清理已存在的 dns-hijack include，防止累加
+uci show firewall 2>/dev/null | grep "\.path='/etc/dns-hijack\.sh'" | cut -d= -f1 | cut -d. -f1-2 | while read -r sec; do
+    uci delete "\$sec" 2>/dev/null
+done
 uci add firewall include
 uci set firewall.@include[-1].path='/etc/dns-hijack.sh'
 uci set firewall.@include[-1].reload='1'
@@ -214,10 +228,7 @@ uci set system.@system[0].hostname='Router-${PROFILE_TYPE}'
 uci set system.@system[0].timezone='CST-8'
 uci set system.@system[0].zonename='Asia/Shanghai'
 uci -q delete system.ntp.server
-uci set system.ntp.enable_server='1'
 uci add_list system.ntp.server='ntp.aliyun.com'
-uci add_list system.ntp.server='ntp.tencent.com'
-uci add_list system.ntp.server='ntsc.ac.cn'
 uci add_list system.ntp.server='cn.pool.ntp.org'
 uci commit system
 logger -t uci-defaults "配置应用完成"

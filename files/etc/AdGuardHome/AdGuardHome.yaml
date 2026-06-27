@@ -1,0 +1,22 @@
+http:
+  address: 0.0.0.0:8030
+dns:
+  port: 53
+  upstream_dns:
+    - 1.1.1.1
+    - 223.5.5.5
+  bootstrap_dns:
+    - 1.1.1.1:53
+  all_servers: true
+  fastest_route: true
+  protection_enabled: true
+  filtering_enabled: true
+  cache_size: 4194304
+  filter_lists:
+    - enabled: true
+      url: "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt"
+      name: "AdGuard DNS filter"
+      id: 1
+  dhcp:
+    enabled: false
+users: []
