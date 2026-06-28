@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 set -e
 
 error_exit() { echo "ERR: $1" >&2; exit 1; }
@@ -103,14 +103,8 @@ after)
     mkdir -p "$(dirname "$OUT")"
     rm -f "$OUT" "$SHADOW"
 
-    ADGH_TEMPLATE="$PROJECT_ROOT/configs/adguardhome.yaml"
-    ADGH_OVERLAY="$PROJECT_ROOT/files/etc/AdGuardHome"
-    if [ "$PROFILE_TYPE" = "bypass" ]; then
-        mkdir -p "$ADGH_OVERLAY"
-        cp "$ADGH_TEMPLATE" "$ADGH_OVERLAY/AdGuardHome.yaml"
-    else
-        rm -rf "$ADGH_OVERLAY"
-    fi
+    # 主路由固件不含 AdGuardHome，删除即可
+    [ "$PROFILE_TYPE" != "bypass" ] && rm -rf "$PROJECT_ROOT/files/etc/AdGuardHome"
 
     ip_esc=$(_escape_uci "$CUSTOM_IP")
 
@@ -161,7 +155,6 @@ WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
 }
 while uci -q delete firewall.@forwarding[0]; do :; done
 uci commit firewall
-
 uci set adguardhome.config.enabled='1'
 uci commit adguardhome
 
