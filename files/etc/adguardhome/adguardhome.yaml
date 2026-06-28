@@ -1,0 +1,63 @@
+schema_version: 34
+http:
+  address: "0.0.0.0:8030"
+  session_ttl: 720h
+  pprof:
+    enabled: false
+    port: 6060
+dns:
+  port: 53
+  bind_hosts:
+    - 0.0.0.0
+  upstream_dns:
+    - "tls://1.1.1.1"
+    - "tls://223.5.5.5"
+  bootstraps:
+    - 1.1.1.1
+    - 223.5.5.5
+  protection_enabled: true
+  filtering_enabled: true
+  blocked_services:
+    ids: []
+  parental_enabled: false
+  safebrowsing_enabled: false
+  cache_enabled: true
+  cache_size: 4194304
+  cache_optimistic_ttl: 30s
+  cache_optimistic_max_age: 12h
+  enable_dnssec: false
+filtering:
+  filtering_enabled: true
+  filters:
+    - id: 1
+      name: "AdGuard DNS filter"
+      url: "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt"
+      enabled: true
+    - id: 2
+      name: "Anti-AD"
+      url: "https://anti-ad.net/easylist.txt"
+      enabled: true
+    - id: 3
+      name: "EasyList China"
+      url: "https://easylist-downloads.adblockplus.org/easylistchina+easylist.txt"
+      enabled: true
+    - id: 4
+      name: "xinggsf Adblock Rule"
+      url: "https://gitee.com/xinggsf/Adblock-Rule/raw/master/rule.txt"
+      enabled: true
+  whitelist_filters: []
+  user_rules: []
+dhcp:
+  enabled: false
+querylog:
+  enabled: true
+  file_enabled: true
+  interval: 2160h
+  size_memory: 1000
+statistics:
+  enabled: true
+  interval: 24h
+  results: 1000
+users:
+  - name: admin
+    password: "$2b$10$ZEL7fGN0sordgM10nFnFfOh4lfdPXLLJhYeuNfymetjErfPNM9yxe"
