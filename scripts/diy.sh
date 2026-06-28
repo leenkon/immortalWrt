@@ -29,7 +29,7 @@ DNS_MAIN="1.1.1.1"
 DNS_BACKUP="223.5.5.5"
 
 VERSION="" PHASE="" PROFILE_TYPE=""
-CUSTOM_IP="" CUSTOM_GATEWAY="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
+CUSTOM_IP="" CUSTOM_GATEWAY="" BYPASS_IP="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -41,6 +41,7 @@ while [ $# -gt 0 ]; do
         --pppoe-user) PPPOE_USERNAME="$2"; shift 2 ;;
         --pppoe-pass) PPPOE_PASSWORD="$2"; shift 2 ;;
         --root-pass)  ROOT_PASSWORD="$2"; shift 2 ;;
+        --bypass-ip) BYPASS_IP="$2"; shift 2 ;;
         *) error_exit "未知参数 $1" ;;
     esac
 done
@@ -57,9 +58,14 @@ if [ "$PROFILE_TYPE" = "bypass" ]; then
     is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法旁路由IP: $CUSTOM_IP"
     is_valid_ipv4 "$CUSTOM_GATEWAY" || error_exit "非法旁路由网关: $CUSTOM_GATEWAY"
     [ -n "$PPPOE_USERNAME" ] || [ -n "$PPPOE_PASSWORD" ] && error_exit "旁路由不支持PPPoE，请使用 --type main"
+    # BYPASS_IP 默认与 CUSTOM_IP 一致（旁路由场景）
+    [ -z "$BYPASS_IP" ] && BYPASS_IP="$CUSTOM_IP"
 else
     [ -z "$CUSTOM_IP" ] && CUSTOM_IP="$DEF_MAIN_IP"
     is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法主路由IP: $CUSTOM_IP"
+    # 主路由场景：BYPASS_IP 必须有值（用传入值或默认值）
+    [ -z "$BYPASS_IP" ] && BYPASS_IP="$DEF_BYPASS_IP"
+    is_valid_ipv4 "$BYPASS_IP" || error_exit "非法旁路路由IP: $BYPASS_IP"
 fi
 
 if [ -n "$PPPOE_USERNAME" ] || [ -n "$PPPOE_PASSWORD" ]; then
@@ -129,6 +135,9 @@ uci set network.default_route.interface='lan'
 uci set network.default_route.target='0.0.0.0'
 uci set network.default_route.netmask='0.0.0.0'
 uci set network.default_route.gateway='$gw_esc'
+# 旁路场景：删除所有 WAN 接口（旁路由只有 LAN）
+uci -q delete network.wan || true
+uci -q delete network.wan6 || true
 uci commit network
 
 uci set dhcp.lan.ignore='1'
@@ -137,6 +146,7 @@ uci -q set dhcp.@dnsmasq[0].port='5453' || true
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci -q delete dhcp.@dnsmasq[0].listen_address || true
 uci add_list dhcp.@dnsmasq[0].listen_address='127.0.0.1'
+uci set dhcp.@dnsmasq[0].dns_redirect='0'
 uci commit dhcp
 LAN_FW=\$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
 WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
@@ -154,6 +164,13 @@ uci commit firewall
 
 uci set adguardhome.config.enabled='1'
 uci commit adguardhome
+
+# OpenClash: 停用 DNS 劫持，避免与 AdGuardHome 冲突（旁路由场景）
+# Fake-IP 模式依赖 DNS 劫持，改用 redir-host 兼容模式
+uci set openclash.config.enable_redirect_dns='0'
+uci set openclash.config.en_mode='redir-host'
+uci set openclash.config.operation_mode='redir-host'
+uci commit openclash
 EOT
     else
         if [ -n "$PPPOE_USERNAME" ]; then
@@ -187,18 +204,17 @@ uci add_list network.wan.dns='$DNS_BACKUP'
 uci commit network
 
 uci -q delete dhcp.lan.dhcp_option || true
-uci add_list dhcp.lan.dhcp_option='6,$DEF_BYPASS_IP,$DNS_MAIN,$DNS_BACKUP'
+uci add_list dhcp.lan.dhcp_option='6,$BYPASS_IP,$DNS_MAIN,$DNS_BACKUP'
 uci set dhcp.lan.start='6'
 uci set dhcp.lan.limit='150'
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci set dhcp.@dnsmasq[0].sequential_ip='1'
-uci -q del_list dhcp.@dnsmasq[0].server='$DEF_BYPASS_IP' || true
-uci add_list dhcp.@dnsmasq[0].server='$DEF_BYPASS_IP'
+uci -q del_list dhcp.@dnsmasq[0].server='$BYPASS_IP' || true
+uci add_list dhcp.@dnsmasq[0].server='$BYPASS_IP'
 uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
 uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
 uci set dhcp.@dnsmasq[0].strictorder='1'
-uci set dhcp.@dnsmasq[0].querytimeout='2'
-uci set dhcp.@dnsmasq[0].retries='1'
+uci set dhcp.@dnsmasq[0].dns_redirect='0'
 uci commit dhcp
 
 LAN_FW=\$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
@@ -209,16 +225,16 @@ uci set firewall.@forwarding[-1].src='lan'
 uci set firewall.@forwarding[-1].dest='wan'
 
 # DNS 劫持（IPv4 排除旁路由防死循环，IPv6 不排除因 AdGuardHome 走 DoT:853）
-cat > /etc/dns-hijack.sh << 'HIJACK'
+cat > /etc/dns-hijack.sh << HIJACK
 #!/bin/sh
 nft delete table inet dns_hijack 2>/dev/null
 if command -v nft >/dev/null 2>&1; then
     nft add table inet dns_hijack
     nft add chain inet dns_hijack prerouting '{ type nat hook prerouting priority -100; }'
-    nft add rule inet dns_hijack prerouting ip saddr != $DEF_BYPASS_IP udp dport 53 redirect to :53
-    nft add rule inet dns_hijack prerouting ip saddr != $DEF_BYPASS_IP tcp dport 53 redirect to :53
-    nft add rule inet dns_hijack prerouting ip6 nexthdr udp dport 53 redirect to :53
-    nft add rule inet dns_hijack prerouting ip6 nexthdr tcp dport 53 redirect to :53
+    nft add rule inet dns_hijack prerouting ip saddr != $BYPASS_IP meta l4proto udp dport 53 redirect to :53
+    nft add rule inet dns_hijack prerouting ip saddr != $BYPASS_IP meta l4proto tcp dport 53 redirect to :53
+    nft add rule inet dns_hijack prerouting ip6 daddr '::/0' meta l4proto udp dport 53 redirect to :53
+    nft add rule inet dns_hijack prerouting ip6 daddr '::/0' meta l4proto tcp dport 53 redirect to :53
     logger -t dns-hijack "nftables DNS hijack applied (IPv4+IPv6)"
 else
     logger -t dns-hijack "ERROR: nft not found"

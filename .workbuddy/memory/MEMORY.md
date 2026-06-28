@@ -70,3 +70,4 @@
 | DNS 劫持仅覆盖 IPv4，IPv6 DNS 可绕过 AdGuardHome | 新增 `ip6 nexthdr udp/tcp dport 53 redirect to :53`（IPv6 不排除旁路由，因 AdGuardHome 走 DoT:853） |
 | 主路由 WAN_FW.forward='ACCEPT' 不必要且有安全风险 | 删除（WAN forward 默认 DROP 是正确姿态，DDNS 走 output 不受影响） |
 | firewall include 缺 enabled='1' | 补上 `uci set firewall.dns_hijack_include.enabled='1'` |
+| `option dns_redirect '1'` 导致 dnsmasq init 注入 nft 规则 UDP 53→5453，旁路由 AdGuardHome 收不到外部 DNS 查询 | diy.sh 主路由+旁路由分支均加 `uci set dhcp.@dnsmasq[0].dns_redirect='0'` |

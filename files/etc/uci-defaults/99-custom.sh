@@ -15,6 +15,9 @@ uci set network.default_route.interface='lan'
 uci set network.default_route.target='0.0.0.0'
 uci set network.default_route.netmask='0.0.0.0'
 uci set network.default_route.gateway='10.10.10.1'
+# 旁路场景：删除所有 WAN 接口（旁路由只有 LAN）
+uci -q delete network.wan || true
+uci -q delete network.wan6 || true
 uci commit network
 
 uci set dhcp.lan.ignore='1'
@@ -23,6 +26,7 @@ uci -q set dhcp.@dnsmasq[0].port='5453' || true
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci -q delete dhcp.@dnsmasq[0].listen_address || true
 uci add_list dhcp.@dnsmasq[0].listen_address='127.0.0.1'
+uci set dhcp.@dnsmasq[0].dns_redirect='0'
 uci commit dhcp
 LAN_FW=$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
 WAN_FW=$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
@@ -37,6 +41,16 @@ WAN_FW=$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
 }
 while uci -q delete firewall.@forwarding[0]; do :; done
 uci commit firewall
+
+uci set adguardhome.config.enabled='1'
+uci commit adguardhome
+
+# OpenClash: 停用 DNS 劫持，避免与 AdGuardHome 冲突（旁路由场景）
+# Fake-IP 模式依赖 DNS 劫持，改用 redir-host 兼容模式
+uci set openclash.config.enable_redirect_dns='0'
+uci set openclash.config.en_mode='redir-host'
+uci set openclash.config.operation_mode='redir-host'
+uci commit openclash
 uci set system.@system[0].hostname='Router-bypass'
 uci set system.@system[0].timezone='CST-8'
 uci set system.@system[0].zonename='Asia/Shanghai'

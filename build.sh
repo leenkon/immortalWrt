@@ -16,7 +16,7 @@ DEF_GATEWAY="10.10.10.1"
 ROOT_PASSWORD="password"
 
 # 修复换行符
-fix_line_endings() { [[ -f "$1" ]] && grep -q $'\r' "$1" 2>/dev/null && sed -i 's/\r$//' "$1"; }
+fix_line_endings() { for f in "$@"; do [[ -f "$f" ]] && grep -q $'\r' "$f" 2>/dev/null && sed -i 's/\r$//' "$f"; done; }
 
 # 交互式输入
 echo "========================================"
@@ -63,6 +63,14 @@ PPPOE_USER="" PPPOE_PASS=""
 USE_OAF="false"
 [[ "$RUN_TYPE" == "main" ]] && { read -p "安装OAF? [y/N]: " oaf; [[ "$oaf" =~ ^[Yy]$ ]] && USE_OAF="true" && success "将安装OAF"; }
 
+# 旁路 IP (仅主路由，用于 DNS 劫持排除规则和 DHCP DNS 选项)
+BYPASS_IP=""
+if [[ "$RUN_TYPE" == "main" ]]; then
+    read -p "旁路路由IP [默认: $DEF_BYPASS_IP，回车跳过]: " bip
+    BYPASS_IP="${bip:-$DEF_BYPASS_IP}"
+    success "旁路IP: $BYPASS_IP"
+fi
+
 # Root密码
 read -p "Root密码 [默认: password]: " rp
 ROOT_PWD="${rp:-$ROOT_PASSWORD}"
@@ -74,6 +82,7 @@ echo "  版本: $VERSION | 配置: $PROFILE | IP: $ROUTER_IP"
 [[ -n "$GATEWAY_IP" ]] && echo "  网关: $GATEWAY_IP"
 [[ -n "$PPPOE_USER" ]] && echo "  PPPoE: $PPPOE_USER"
 [[ "$USE_OAF" == "true" ]] && echo "  OAF: 是"
+[[ -n "$BYPASS_IP" ]] && echo "  旁路IP: $BYPASS_IP"
 echo "==================================================================================="
 read -p "确认开始? [Y/n]: " c; [[ "$c" =~ ^[Nn]$ ]] && exit 0
 
@@ -131,21 +140,23 @@ fi
 ./scripts/feeds install -a
 cp "$SCRIPT_DIR/configs/${MAIN_VER}-${CFG_PREFIX}.config" .config || error_exit "配置文件不存在"
 sed -i 's/\r$//' .config
-echo 'CONFIG_FILES=$(TOPDIR)/files' >> .config
+# files/ 目录放在源码根目录下会被构建系统自动打包进固件，无需特殊配置
 [[ "$USE_OAF" == "true" ]] && echo -e "\nCONFIG_PACKAGE_luci-app-oaf=y" >> .config
 success "完成"
 
 # 5. 网络配置
 echo -e "\n${YELLOW}[5/7] 生成网络配置...${NC}"
 "$DIY" -v "$MAIN_VER" -p after -t "$RUN_TYPE" \
-  ${ROUTER_IP:+--ip "$ROUTER_IP"} ${GATEWAY_IP:+--gateway "$GATEWAY_IP"} \
+  ${ROUTER_IP:+--ip "$ROUTER_IP"} \
+  ${GATEWAY_IP:+--gateway "$GATEWAY_IP"} \
+  ${BYPASS_IP:+--bypass-ip "$BYPASS_IP"} \
   ${PPPOE_USER:+--pppoe-user "$PPPOE_USER"} ${PPPOE_PASS:+--pppoe-pass "$PPPOE_PASS"} \
   --root-pass "$ROOT_PWD"
 success "完成"
 
 # 6. 下载必要文件
 echo -e "\n${YELLOW}[6/7] 下载必要文件...${NC}"
-[[ -d "$SCRIPT_DIR/files" ]] && cp -rf "$SCRIPT_DIR/files/" "$OPENWRT_DIR/"
+[[ -d "$SCRIPT_DIR/files" ]] && { rm -rf "$OPENWRT_DIR/files" && cp -rf "$SCRIPT_DIR/files" "$OPENWRT_DIR/"; }
 # 确保 ddns 脚本可执行（OpenWrt ddns 守护进程需要）
 find "$OPENWRT_DIR/files" -name "*.sh" -exec chmod +x {} + 2>/dev/null || true
 make defconfig && make download && make clean
