@@ -194,16 +194,14 @@ uci set dhcp.@dnsmasq[0].retries='1'
 uci commit dhcp
 
 LAN_FW=\$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
-WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
 [ -n "\$LAN_FW" ] && uci set \${LAN_FW}.forward='ACCEPT'
-[ -n "\$WAN_FW" ] && uci set \${WAN_FW}.forward='ACCEPT'
 while uci -q delete firewall.@forwarding[0]; do :; done
 uci add firewall forwarding
 uci set firewall.@forwarding[-1].src='lan'
 uci set firewall.@forwarding[-1].dest='wan'
 uci commit firewall
 
-# DNS 劫持：53 端口重定向到 dnsmasq（使用 fw4/nftables,排除旁路由自身避免死循环）
+# DNS 劫持：53 端口重定向到 dnsmasq（fw4/nftables, IPv4 排除旁路由避免死循环, IPv6 不排除因 AdGuardHome 走 DoT:853）
 cat > /etc/dns-hijack.sh << 'HIJACK'
 #!/bin/sh
 nft delete table inet dns_hijack 2>/dev/null
@@ -212,7 +210,9 @@ if command -v nft >/dev/null 2>&1; then
     nft add chain inet dns_hijack prerouting '{ type nat hook prerouting priority -100; }'
     nft add rule inet dns_hijack prerouting ip saddr != $DEF_BYPASS_IP udp dport 53 redirect to :53
     nft add rule inet dns_hijack prerouting ip saddr != $DEF_BYPASS_IP tcp dport 53 redirect to :53
-    logger -t dns-hijack "nftables DNS hijack applied"
+    nft add rule inet dns_hijack prerouting ip6 nexthdr udp dport 53 redirect to :53
+    nft add rule inet dns_hijack prerouting ip6 nexthdr tcp dport 53 redirect to :53
+    logger -t dns-hijack "nftables DNS hijack applied (IPv4+IPv6)"
 else
     logger -t dns-hijack "ERROR: nft not found"
 fi
@@ -222,6 +222,7 @@ chmod 755 /etc/dns-hijack.sh
 # 用命名 section 避免重复添加 firewall include
 uci set firewall.dns_hijack_include=include
 uci set firewall.dns_hijack_include.path='/etc/dns-hijack.sh'
+uci set firewall.dns_hijack_include.enabled='1'
 uci commit firewall
 
 EOT

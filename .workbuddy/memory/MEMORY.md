@@ -66,3 +66,6 @@
 | firewall include reload='1' → fw4 不支持 | 删除 reload 选项 |
 | nft 规则 `counter` 位置导致加载失败 | 删除 counter |
 | AdGuardHome 上游 UDP 53 被 OpenClash 劫持 → i/o timeout | upstream_dns 改用 DoT `tls://1.1.1.1` / `tls://223.5.5.5`（端口 853 绕过劫持） |
+| DNS 劫持仅覆盖 IPv4，IPv6 DNS 可绕过 AdGuardHome | 新增 `ip6 nexthdr udp/tcp dport 53 redirect to :53`（IPv6 不排除旁路由，因 AdGuardHome 走 DoT:853） |
+| 主路由 WAN_FW.forward='ACCEPT' 不必要且有安全风险 | 删除（WAN forward 默认 DROP 是正确姿态，DDNS 走 output 不受影响） |
+| firewall include 缺 enabled='1' | 补上 `uci set firewall.dns_hijack_include.enabled='1'` |
