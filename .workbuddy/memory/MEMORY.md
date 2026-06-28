@@ -12,7 +12,7 @@
 
 ## 关键技术决策（已实现）
 - dnsmasq server= 列表 + strictorder=1 + querytimeout=2 + retries=1（旁路宕机 fallback）
-- DNS 劫持：iptables REDIRECT --to-ports 53 + `! -s 旁路IP`（仅排除旁路由自身出站，防止 AdGuardHome 上游被劫持回环）
+- DNS 劫持：nftables redirect :53（fw4/nftables 后端，iptables-nft 不支持 REDIRECT/DNAT）+ `ip saddr != 旁路IP`（排除旁路由自身出站，防止 AdGuardHome 上游被劫持回环）
 - 旁路由 lan.dns 设为外部 DNS（1.1.1.1, 223.5.5.5），不指向主路由（避免环路）；127.0.0.1 在 AdGuardHome 未启动时空端口导致旁路由自身无 DNS。
 - dnsmasq 在旁路由让出 :53，监听 5453（AdGuardHome 占用 53）
 - 删除 exit 0（uci-defaults 是 source 执行，exit 会杀死父 shell）
@@ -28,7 +28,8 @@
   1. 删除 `uci set network.wan.proto='none'` 和 `wan6.proto='none'`
   2. 添加静态默认路由：`uci set network.default_route=route`，interface='lan'，gateway='10.10.10.1'
   3. 旁路由自身 DNS（network.lan.dns）改为 1.1.1.1 / 223.5.5.5，不指向主路由（避免环路）
-- AdGuardHome 初始配置已通过 `files/etc/AdGuardHome/AdGuardHome.yaml` 预置（upstream_dns: 1.1.1.1, 223.5.5.5），无需手动配置
+- AdGuardHome 初始配置已通过 `files/etc/adguardhome/adguardhome.yaml` 预置（schema_version: 34，DoT 上游 tls://1.1.1.1 / tls://223.5.5.5），无需手动配置
+- AdGuardHome 上游必须用 DoT（端口 853），不能用 plain DNS（端口 53），因为 OpenClash 会劫持旁路由出站 UDP 53 导致上游超时
 
 ## 已知潜在问题（待确认）
 - set -eu 在 diy.sh（编译机）正常，99-custom.sh 无 set -eu（正确，ash source 执行）
@@ -59,3 +60,9 @@
 | DNS 劫持清理 grep 不精确 | 改为 `grep "dport 53.*REDIRECT --to-ports 53"` |
 | 主路由缺 LAN→WAN forwarding 规则 | 添加 firewall forwarding section |
 | 旁路由 dnsmasq 禁用会影响 OpenClash 增强模式 | 改为监听 127.0.0.1:5453（保留给 OpenClash，不对外服务） |
+| AdGuardHome YAML 多次 schema 错误 | 查源码确认 v0.107.76 正确 schema：schema_version: 34、bootstraps（非 bootstrap_dns）、blocked_services.ids、duration 带单位 |
+| AdGuardHome 配置文件路径大小写错误 | files/etc/AdGuardHome/ → files/etc/adguardhome/（匹配 uci config_file 默认值） |
+| nft add chain `{}` 未引号 → shell 语法错误 | 加单引号 `'{ type nat hook prerouting priority -100; }'` |
+| firewall include reload='1' → fw4 不支持 | 删除 reload 选项 |
+| nft 规则 `counter` 位置导致加载失败 | 删除 counter |
+| AdGuardHome 上游 UDP 53 被 OpenClash 劫持 → i/o timeout | upstream_dns 改用 DoT `tls://1.1.1.1` / `tls://223.5.5.5`（端口 853 绕过劫持） |

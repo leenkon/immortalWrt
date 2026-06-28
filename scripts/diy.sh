@@ -146,8 +146,6 @@ uci commit firewall
 # 启用 AdGuardHome（uci 方式，适配 OpenWrt 官方包）
 uci set adguardhome.config.enabled='1'
 uci commit adguardhome
-/etc/init.d/adguardhome enable
-/etc/init.d/adguardhome start
 EOT
     else
         if [ -n "$PPPOE_USERNAME" ]; then
@@ -211,9 +209,9 @@ cat > /etc/dns-hijack.sh << 'HIJACK'
 nft delete table inet dns_hijack 2>/dev/null
 if command -v nft >/dev/null 2>&1; then
     nft add table inet dns_hijack
-    nft add chain inet dns_hijack prerouting { type nat hook prerouting priority -100; }
-    nft add rule inet dns_hijack prerouting ip saddr != $DEF_BYPASS_IP udp dport 53 counter redirect to :53
-    nft add rule inet dns_hijack prerouting ip saddr != $DEF_BYPASS_IP tcp dport 53 counter redirect to :53
+    nft add chain inet dns_hijack prerouting '{ type nat hook prerouting priority -100; }'
+    nft add rule inet dns_hijack prerouting ip saddr != $DEF_BYPASS_IP udp dport 53 redirect to :53
+    nft add rule inet dns_hijack prerouting ip saddr != $DEF_BYPASS_IP tcp dport 53 redirect to :53
     logger -t dns-hijack "nftables DNS hijack applied"
 else
     logger -t dns-hijack "ERROR: nft not found"
@@ -224,7 +222,6 @@ chmod 755 /etc/dns-hijack.sh
 # 用命名 section 避免重复添加 firewall include
 uci set firewall.dns_hijack_include=include
 uci set firewall.dns_hijack_include.path='/etc/dns-hijack.sh'
-uci set firewall.dns_hijack_include.reload='1'
 uci commit firewall
 
 EOT
