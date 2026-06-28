@@ -156,7 +156,7 @@ success "完成"
 
 # 6. 下载必要文件
 echo -e "\n${YELLOW}[6/7] 下载必要文件...${NC}"
-[[ -d "$SCRIPT_DIR/files" ]] && { rm -rf "$OPENWRT_DIR/files" && cp -rf "$SCRIPT_DIR/files" "$OPENWRT_DIR/"; }
+[[ -d "$SCRIPT_DIR/files" ]] && { rm -rf "$OPENWRT_DIR/files"; cp -rf "$SCRIPT_DIR/files" "$OPENWRT_DIR/"; }
 # 确保 ddns 脚本可执行（OpenWrt ddns 守护进程需要）
 find "$OPENWRT_DIR/files" -name "*.sh" -exec chmod +x {} + 2>/dev/null || true
 make defconfig && make download && make clean
