@@ -61,7 +61,8 @@
 | 主路由缺 LAN→WAN forwarding 规则 | 添加 firewall forwarding section |
 | 旁路由 dnsmasq 禁用会影响 OpenClash 增强模式 | 改为监听 127.0.0.1:5453（保留给 OpenClash，不对外服务） |
 | AdGuardHome YAML 多次 schema 错误 | 查源码确认 v0.107.76 正确 schema：schema_version: 34、bootstraps（非 bootstrap_dns）、blocked_services.ids、duration 带单位 |
-| AdGuardHome 配置文件路径大小写错误 | files/etc/AdGuardHome/ → files/etc/adguardhome/（匹配 uci config_file 默认值） |
+| AdGuardHome 配置文件路径大小写错误 | overlay 改为大写 `files/etc/AdGuardHome/AdGuardHome.yaml` 匹配 UCI 默认值；YAML 模板从 files 共享 overlay 移到 configs/（旁路由专属）；bind_hosts 加 `"::"` 支持双栈 |
+| AdGuardHome overlay 不应出现在主路由固件 | 模板移到 `configs/adguardhome.yaml`，diy.sh bypass 分支复制到 overlay，main 分支删 overlay + 禁用 AdGuardHome |
 | nft add chain `{}` 未引号 → shell 语法错误 | 加单引号 `'{ type nat hook prerouting priority -100; }'` |
 | firewall include reload='1' → fw4 不支持 | 删除 reload 选项 |
 | nft 规则 `counter` 位置导致加载失败 | 删除 counter |

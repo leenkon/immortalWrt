@@ -9,6 +9,7 @@ dns:
   port: 53
   bind_hosts:
     - 0.0.0.0
+    - "::"
   upstream_dns:
     - "tls://1.1.1.1"
     - "tls://223.5.5.5"

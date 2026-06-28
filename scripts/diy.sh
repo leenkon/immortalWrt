@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 set -e
 
 error_exit() { echo "ERR: $1" >&2; exit 1; }
@@ -97,6 +97,15 @@ after)
     mkdir -p "$(dirname "$OUT")"
     rm -f "$OUT" "$SHADOW"
 
+    ADGH_TEMPLATE="$PROJECT_ROOT/configs/adguardhome.yaml"
+    ADGH_OVERLAY="$PROJECT_ROOT/files/etc/AdGuardHome"
+    if [ "$PROFILE_TYPE" = "bypass" ]; then
+        mkdir -p "$ADGH_OVERLAY"
+        cp "$ADGH_TEMPLATE" "$ADGH_OVERLAY/AdGuardHome.yaml"
+    else
+        rm -rf "$ADGH_OVERLAY"
+    fi
+
     ip_esc=$(_escape_uci "$CUSTOM_IP")
 
     echo '#!/bin/sh' > "$OUT"
@@ -143,7 +152,6 @@ WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
 while uci -q delete firewall.@forwarding[0]; do :; done
 uci commit firewall
 
-# 启用 AdGuardHome（uci 方式，适配 OpenWrt 官方包）
 uci set adguardhome.config.enabled='1'
 uci commit adguardhome
 EOT
@@ -199,9 +207,8 @@ while uci -q delete firewall.@forwarding[0]; do :; done
 uci add firewall forwarding
 uci set firewall.@forwarding[-1].src='lan'
 uci set firewall.@forwarding[-1].dest='wan'
-uci commit firewall
 
-# DNS 劫持：53 端口重定向到 dnsmasq（fw4/nftables, IPv4 排除旁路由避免死循环, IPv6 不排除因 AdGuardHome 走 DoT:853）
+# DNS 劫持（IPv4 排除旁路由防死循环，IPv6 不排除因 AdGuardHome 走 DoT:853）
 cat > /etc/dns-hijack.sh << 'HIJACK'
 #!/bin/sh
 nft delete table inet dns_hijack 2>/dev/null
@@ -219,7 +226,6 @@ fi
 HIJACK
 chmod 755 /etc/dns-hijack.sh
 /etc/dns-hijack.sh
-# 用命名 section 避免重复添加 firewall include
 uci set firewall.dns_hijack_include=include
 uci set firewall.dns_hijack_include.path='/etc/dns-hijack.sh'
 uci set firewall.dns_hijack_include.enabled='1'
