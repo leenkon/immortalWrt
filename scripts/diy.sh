@@ -103,8 +103,8 @@ after)
     mkdir -p "$(dirname "$OUT")"
     rm -f "$OUT" "$SHADOW"
 
-    # 主路由固件不含 AdGuardHome，删除即可
-    [ "$PROFILE_TYPE" != "bypass" ] && rm -rf "$PROJECT_ROOT/files/etc/AdGuardHome"
+    # 主路由固件不含 AdGuardHome，删除 overlay 目录
+    [ "$PROFILE_TYPE" != "bypass" ] && rm -rf "$PROJECT_ROOT/files/etc/adguardhome"
 
     ip_esc=$(_escape_uci "$CUSTOM_IP")
 

@@ -28,10 +28,6 @@ uci set dhcp.@dnsmasq[0].strictorder='1'
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
 uci commit dhcp
 
-# 主路由不需要 AdGuardHome，显式禁用（防包意外包含）
-uci -q set adguardhome.config.enabled='0'
-uci -q commit adguardhome
-
 LAN_FW=$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
 [ -n "$LAN_FW" ] && uci set ${LAN_FW}.forward='ACCEPT'
 while uci -q delete firewall.@forwarding[0]; do :; done
