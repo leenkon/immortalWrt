@@ -1,0 +1,17 @@
+# 动态生成文件（diy.sh after 阶段生成，不提交）
+files/etc/uci-defaults/
+files/etc/shadow
+
+# 构建输出
+bin/
+build_dir/
+staging_dir/
+tmp/
+log/
+workflow_*.json
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
