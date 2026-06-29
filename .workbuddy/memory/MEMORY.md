@@ -21,10 +21,14 @@
 - firewall zone 动态查找（避免索引硬编码）
 - SYSCTL 合并进 99-custom.sh，grep -q 守卫避免重复追加
 - `files/` 放在源码根目录会被构建系统自动打包进固件，不需要 CONFIG_FILES（已删除无效配置）
-- AdGuardHome YAML 预置在 `files/etc/AdGuardHome/AdGuardHome.yaml`（静态文件），主路由构建时 diy.sh 删除，旁路由保留
+- AdGuardHome YAML 预置在 `files/etc/adguardhome/adguardhome.yaml`（小写目录，静态文件），主路由构建时 diy.sh 删除，旁路由保留；bind_hosts 包含 `0.0.0.0` 和 `"::"`（IPv6 双栈）；**`filters`/`whitelist_filters`/`user_rules` 是顶层配置项，不能嵌套在 `filtering` 下**
 - 旁路由 `wan` 和 `wan6` network section 完全删除（不是 proto=none），防止物理 WAN 口干扰
 - diy.sh `--bypass-ip` 参数：主路由构建时传入旁路 IP，动态配置 DHCP DNS、dnsmasq 上游、nft 排除规则
-- DNS 劫持 nft 规则：IPv4 用 `ip saddr != $BYPASS_IP meta l4proto` 排除旁路由；IPv6 用 `ip6 daddr ::/0 meta l4proto`（不排除旁路由，因 AdGuardHome 走 DoT:853）
+- DNS 劫持 nft 规则：IPv4 用 `ip saddr != $BYPASS_IP udp dport 53` 排除旁路由；IPv6 用 `ip6 daddr ::/0 udp dport 53`（不排除旁路由，因 AdGuardHome 走 DoT:853；不能用 `meta l4proto` 会导致 `No symbol type information`）
+- dns-hijack 脚本路径：`/usr/sbin/dns-hijack`（无 .sh 后缀，静态放在 `files/usr/sbin/dns-hijack`），主路由保留，旁路由 diy.sh 删除
+- AdGuardHome 版本升级：`scripts/upgrade-adgh.sh` 在 feeds update 后、feeds install 前执行，自动获取 GitHub 最新版本并 patch feeds Makefile（PKG_VERSION/PKG_HASH/FRONTEND_HASH）
+- OpenClash Meta 核心预装：`scripts/upgrade-openclash-core.sh` 在 diy.sh after 后、files 复制前执行，下载最新 mihomo 二进制到 `files/etc/openclash/core/clash_meta`，仅旁路由构建
+- diy.sh 旁路由分支设置 `openclash.config.core_type='Meta'` 和 `openclash.config.core_version='linux-amd64'`
 
 ## 2025-06-27 修复：旁路由无法上网
 - 根因：`wan.proto='none'` 导致旁路由无默认路由，`opkg update` 失败
@@ -32,7 +36,7 @@
   1. 删除 `wan` 和 `wan6` network section（`uci -q delete`）
   2. 添加静态默认路由：`uci set network.default_route=route`，interface='lan'，gateway='10.10.10.1'
   3. 旁路由自身 DNS（network.lan.dns）改为 1.1.1.1 / 223.5.5.5，不指向主路由（避免环路）
-- AdGuardHome 初始配置预置在 `files/etc/AdGuardHome/AdGuardHome.yaml`（schema_version: 34，DoT 上游 tls://1.1.1.1 / tls://223.5.5.5）
+- AdGuardHome 初始配置预置在 `files/etc/adguardhome/adguardhome.yaml`（小写目录，schema_version: 34，DoT 上游 tls://1.1.1.1 / tls://223.5.5.5）
 - AdGuardHome 上游必须用 DoT（端口 853），不能用 plain DNS（端口 53），因为 OpenClash 会劫持旁路由出站 UDP 53 导致上游超时
 
 ## 已知潜在问题（待确认）
@@ -58,20 +62,20 @@
 | 旁路由 wan.proto=none 无默认路由，opkg 无法更新 | 删除 wan.proto=none，添加 static default_route；lan.dns 改为外部 DNS |
 | 主路由 listen_address=127.0.0.1 → dnsmasq 不监听 LAN，全屋 DNS 瘫痪 | 删除主路由 listen_address（仅旁路由保留） |
 | sequential_ip 写在 dhcp.lan（pool section）不生效 | 移到 dhcp.@dnsmasq[0]（全局 dnsmasq section） |
-| AdGuardHome.yaml heredoc 嵌套乱码 | 改为独立文件 files/etc/AdGuardHome/AdGuardHome.yaml |
+| AdGuardHome.yaml heredoc 嵌套乱码 | 改为独立文件 files/etc/adguardhome/adguardhome.yaml |
 | diy.sh UTF-8 BOM 导致 shebang 报错 | sed 移除 BOM |
 | firewall include 每次启动累加 | 添加前先按 path 查找删除已有 include |
 | DNS 劫持清理 grep 不精确 | 改为 `grep "dport 53.*REDIRECT --to-ports 53"` |
 | 主路由缺 LAN→WAN forwarding 规则 | 添加 firewall forwarding section |
 | 旁路由 dnsmasq 禁用会影响 OpenClash 增强模式 | 改为监听 127.0.0.1:5453（保留给 OpenClash，不对外服务） |
-| AdGuardHome YAML 多次 schema 错误 | 查源码确认 v0.107.76 正确 schema：schema_version: 34、bootstraps（非 bootstrap_dns）、blocked_services.ids、duration 带单位 |
-| AdGuardHome 配置文件路径大小写错误 | overlay 改为大写 `files/etc/AdGuardHome/AdGuardHome.yaml` 匹配 UCI 默认值；bind_hosts 加 `"::"` 支持双栈 |
-| AdGuardHome overlay 不应出现在主路由固件 | YAML 直接放在 `files/etc/AdGuardHome/AdGuardHome.yaml`（静态文件），diy.sh 主路由分支 `rm -rf` 删除，旁路由分支保留不动 |
+| AdGuardHome YAML filtering 嵌套结构错误（`filters`/`whitelist_filters`/`user_rules` 嵌套在 `filtering:` 下）| 改为顶层独立配置项（官方文档明确 `filters` 是顶层项）；`protection_enabled`/`filtering_enabled`/`blocked_services` 等从 `dns:` 移到 `filtering:` |
+| dns-hijack grep 用 ERE `+` 但无 `-E` flag | 简化为 `grep -m1 'list server'`（BRE 兼容） |
+| AdGuardHome bind_hosts 缺 IPv6 | 补充 `"::"`（IPv6 DNS 劫持需要 AdGuardHome 监听 IPv6） |
 | nft add chain `{}` 未引号 → shell 语法错误 | 加单引号 `'{ type nat hook prerouting priority -100; }'` |
 | firewall include reload='1' → fw4 不支持 | 删除 reload 选项 |
 | nft 规则 `counter` 位置导致加载失败 | 删除 counter |
 | AdGuardHome 上游 UDP 53 被 OpenClash 劫持 → i/o timeout | upstream_dns 改用 DoT `tls://1.1.1.1` / `tls://223.5.5.5`（端口 853 绕过劫持） |
-| DNS 劫持仅覆盖 IPv4，IPv6 DNS 可绕过 AdGuardHome | IPv4 用 `ip saddr != $BYPASS_IP meta l4proto` 排除旁路由；IPv6 用 `ip6 daddr ::/0 meta l4proto`（`ip6 nexthdr` 是无效语法，已修复） |
+| DNS 劫持仅覆盖 IPv4，IPv6 DNS 可绕过 AdGuardHome | IPv4 用 `ip saddr != $BYPASS_IP udp dport 53` 排除旁路由；IPv6 用 `ip6 daddr ::/0 udp dport 53`（`meta l4proto` 导致 `No symbol type information`，已修复） |
 | 主路由 WAN_FW.forward='ACCEPT' 不必要且有安全风险 | 删除（WAN forward 默认 DROP 是正确姿态，DDNS 走 output 不受影响） |
 | firewall include 缺 enabled='1' | 补上 `uci set firewall.dns_hijack_include.enabled='1'` |
 | `option dns_redirect '1'` 导致 dnsmasq init 注入 nft 规则 UDP 53→5453，旁路由 AdGuardHome 收不到外部 DNS 查询 | diy.sh 主路由+旁路由分支均加 `uci set dhcp.@dnsmasq[0].dns_redirect='0'` |

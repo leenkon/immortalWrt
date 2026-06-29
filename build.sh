@@ -93,7 +93,7 @@ DIY="$SCRIPT_DIR/scripts/diy.sh"
 
 # 1. 换行符
 echo -e "\n${YELLOW}[1/7] 检查换行符和权限...${NC}"
-fix_line_endings "$DIY" "$SCRIPT_DIR/build.sh"
+fix_line_endings "$DIY" "$SCRIPT_DIR/build.sh" "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh"
 chmod +x "$DIY" "$SCRIPT_DIR/build.sh"
 success "完成"
 
@@ -137,6 +137,10 @@ if [[ "$USE_OAF" == "true" ]]; then
   [[ -d "$SCRIPT_DIR/oaf_files/app_icons" ]] && cp -rf "$SCRIPT_DIR/oaf_files/app_icons" package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
 fi
 
+# AdGuardHome 版本升级（使用官方最新版编译）
+chmod +x "$SCRIPT_DIR/scripts/upgrade-adgh.sh"
+"$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$OPENWRT_DIR"
+
 ./scripts/feeds install -a
 cp "$SCRIPT_DIR/configs/${MAIN_VER}-${CFG_PREFIX}.config" .config || error_exit "配置文件不存在"
 sed -i 's/\r$//' .config
@@ -154,11 +158,16 @@ echo -e "\n${YELLOW}[5/7] 生成网络配置...${NC}"
   --root-pass "$ROOT_PWD"
 success "完成"
 
-# 6. 下载必要文件
-echo -e "\n${YELLOW}[6/7] 下载必要文件...${NC}"
+# 6. 预装核心 + 打包 files
+echo -e "\n${YELLOW}[6/7] 预装核心与打包文件...${NC}"
+# OpenClash Meta 核心预装（仅旁路由，跳过首次启动在线下载）
+if [[ "$RUN_TYPE" == "bypass" ]]; then
+    chmod +x "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh"
+    "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR"
+fi
 [[ -d "$SCRIPT_DIR/files" ]] && { rm -rf "$OPENWRT_DIR/files"; cp -rf "$SCRIPT_DIR/files" "$OPENWRT_DIR/"; }
-# 确保 ddns 脚本可执行（OpenWrt ddns 守护进程需要）
-find "$OPENWRT_DIR/files" -name "*.sh" -exec chmod +x {} + 2>/dev/null || true
+# 确保 scripts 可执行（ddns 守护进程和 dns-hijack 需要）
+find "$OPENWRT_DIR/files" -type f -executable -exec chmod 755 {} + 2>/dev/null || true
 make defconfig && make download && make clean
 success "完成"
 

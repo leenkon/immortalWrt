@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 set -e
 
 error_exit() { echo "ERR: $1" >&2; exit 1; }
@@ -103,8 +103,9 @@ after)
     mkdir -p "$(dirname "$OUT")"
     rm -f "$OUT" "$SHADOW"
 
-    # 主路由固件不含 AdGuardHome，旁路由不需要dns劫持，删除 overlay 目录
+    # 主路由固件不含 AdGuardHome / OpenClash 核心，旁路由不需要 DNS 劫持
     [ "$PROFILE_TYPE" != "bypass" ] && rm -rf "$PROJECT_ROOT/files/etc/adguardhome"
+    [ "$PROFILE_TYPE" != "bypass" ] && rm -rf "$PROJECT_ROOT/files/etc/openclash/core"
     [ "$PROFILE_TYPE" = "bypass" ] && rm -f "$PROJECT_ROOT/files/usr/sbin/dns-hijack"
 
     ip_esc=$(_escape_uci "$CUSTOM_IP")
@@ -161,6 +162,9 @@ uci commit adguardhome
 
 # OpenClash: 停用 DNS 劫持，避免与 AdGuardHome 冲突（旁路由场景）
 # Fake-IP 模式依赖 DNS 劫持，改用 redir-host 兼容模式
+# 核心类型和架构：配合 upgrade-openclash-core.sh 预装的核心二进制
+uci set openclash.config.core_type='Meta'
+uci set openclash.config.core_version='linux-amd64'
 uci set openclash.config.enable_redirect_dns='0'
 uci set openclash.config.en_mode='redir-host'
 uci set openclash.config.operation_mode='redir-host'
@@ -219,7 +223,7 @@ uci set firewall.@forwarding[-1].src='lan'
 uci set firewall.@forwarding[-1].dest='wan'
 
 # DNS 劫持（IPv4 排除旁路由防死循环，IPv6 不排除因 AdGuardHome 走 DoT:853）
-# dns-hijack 已通过 files/ 打包进固件（由 configs/dns-hijack 复制而来）
+# dns-hijack 为 files/ 静态文件，直接打包进固件
 chmod 755 /usr/sbin/dns-hijack
 /usr/sbin/dns-hijack
 uci set firewall.dns_hijack_include=include

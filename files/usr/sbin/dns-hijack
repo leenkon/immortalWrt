@@ -1,7 +1,7 @@
 #!/bin/sh
 nft delete table inet dns_hijack 2>/dev/null
 # 动态读取旁路 IP（从 /etc/config/dhcp 的 list server 获取）
-BYPASS_IP=$(grep -m1 "^[[:space:]]*list[[:space:]]+server[[:space:]]" /etc/config/dhcp 2>/dev/null \
+BYPASS_IP=$(grep -m1 'list server' /etc/config/dhcp 2>/dev/null \
     | sed "s/.*'\([^']*\)'.*/\1/; s/.*\"\([^\"]*\)\".*/\1/")
 [ -z "$BYPASS_IP" ] && BYPASS_IP="10.10.10.2"
 if command -v nft >/dev/null 2>&1; then

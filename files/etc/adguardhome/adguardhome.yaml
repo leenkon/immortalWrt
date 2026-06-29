@@ -9,46 +9,51 @@ dns:
   port: 53
   bind_hosts:
     - 0.0.0.0
+    - "::"
   upstream_dns:
     - "tls://1.1.1.1"
     - "tls://223.5.5.5"
   bootstraps:
     - 1.1.1.1
     - 223.5.5.5
-  protection_enabled: true
-  filtering_enabled: true
-  blocked_services:
-    ids: []
-  parental_enabled: false
-  safebrowsing_enabled: false
   cache_enabled: true
   cache_size: 4194304
   cache_optimistic_ttl: 30s
   cache_optimistic_max_age: 12h
   enable_dnssec: false
 filtering:
+  protection_enabled: true
   filtering_enabled: true
-  filters:
-    - id: 1
-      name: "AdGuard DNS filter"
-      url: "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt"
-      enabled: true
-    - id: 2
-      name: "Anti-AD"
-      url: "https://anti-ad.net/easylist.txt"
-      enabled: true
-    - id: 3
-      name: "EasyList China"
-      url: "https://easylist-downloads.adblockplus.org/easylistchina+easylist.txt"
-      enabled: true
-    - id: 4
-      name: "xinggsf Adblock Rule"
-      url: "https://gitee.com/xinggsf/Adblock-Rule/raw/master/rule.txt"
-      enabled: true
-  whitelist_filters: []
-  user_rules: []
-dhcp:
-  enabled: false
+  blocking_mode: default
+  blocked_response_ttl: 3600
+  blocked_services:
+    ids: []
+  parental_enabled: false
+  safebrowsing_enabled: false
+  safebrowsing_cache_size: 1048576
+  safesearch_cache_size: 1048576
+  parental_cache_size: 1048576
+  cache_time: 30
+  filters_update_interval: 24
+filters:
+  - enabled: true
+    url: "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt"
+    name: "AdGuard DNS filter"
+    id: 1
+  - enabled: true
+    url: "https://anti-ad.net/easylist.txt"
+    name: "Anti-AD"
+    id: 2
+  - enabled: true
+    url: "https://easylist-downloads.adblockplus.org/easylistchina+easylist.txt"
+    name: "EasyList China"
+    id: 3
+  - enabled: true
+    url: "https://gitee.com/xinggsf/Adblock-Rule/raw/master/rule.txt"
+    name: "xinggsf Adblock Rule"
+    id: 4
+whitelist_filters: []
+user_rules: []
 querylog:
   enabled: true
   file_enabled: true
@@ -58,6 +63,8 @@ statistics:
   enabled: true
   interval: 24h
   results: 1000
+dhcp:
+  enabled: false
 users:
   - name: admin
     password: "$2b$10$ZEL7fGN0sordgM10nFnFfOh4lfdPXLLJhYeuNfymetjErfPNM9yxe"
