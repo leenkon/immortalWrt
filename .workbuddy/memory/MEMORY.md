@@ -23,7 +23,7 @@
 - `files/` 放在源码根目录会被构建系统自动打包进固件，不需要 CONFIG_FILES（已删除无效配置）
 - AdGuardHome YAML 预置在 `files/etc/adguardhome/adguardhome.yaml`（小写目录，静态文件），主路由构建时 diy.sh 删除，旁路由保留；bind_hosts 包含 `0.0.0.0` 和 `"::"`（IPv6 双栈）；**`filters`/`whitelist_filters`/`user_rules` 是顶层配置项，不能嵌套在 `filtering` 下**
 - 旁路由 `wan` 和 `wan6` network section 完全删除（不是 proto=none），防止物理 WAN 口干扰
-- diy.sh `--bypass-ip` 参数：主路由构建时传入旁路 IP，动态配置 DHCP DNS、dnsmasq 上游、nft 排除规则
+- diy.sh `--bypass-ip` 参数：仅 build.sh 本地编译使用（交互式输入）；workflow 不传此参数，diy.sh 自动回退 `DEF_BYPASS_IP=10.10.10.2`
 - DNS 劫持 nft 规则：IPv4 用 `ip saddr != $BYPASS_IP udp dport 53` 排除旁路由；IPv6 用 `ip6 daddr ::/0 udp dport 53`（不排除旁路由，因 AdGuardHome 走 DoT:853；不能用 `meta l4proto` 会导致 `No symbol type information`）
 - dns-hijack 脚本路径：`/usr/sbin/dns-hijack`（无 .sh 后缀，静态放在 `files/usr/sbin/dns-hijack`），主路由保留，旁路由 diy.sh 删除
 - AdGuardHome 版本升级：`scripts/upgrade-adgh.sh` 在 feeds update 后、feeds install 前执行，自动获取 GitHub 最新版本并 patch feeds Makefile（PKG_VERSION/PKG_HASH/FRONTEND_HASH）

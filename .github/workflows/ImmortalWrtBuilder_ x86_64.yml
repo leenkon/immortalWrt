@@ -11,7 +11,6 @@ on:
       pppoe_username: {description: 'PPPoE账号', type: string, default: ''}
       pppoe_password: {description: 'PPPoE密码', type: string, default: ''}
       install_oaf: {description: '安装OAF', type: boolean, default: false}
-      bypass_ip: {description: '旁路IP(主路由)', type: string, default: ''}
       root_password: {description: 'root密码', type: string, default: ''}
 permissions:
   contents: write
@@ -84,10 +83,8 @@ jobs:
           CGW="${{ github.event.inputs.custom_gateway }}"
           PUSER="${{ github.event.inputs.pppoe_username }}"
           PPASS="${{ github.event.inputs.pppoe_password }}"
-          BIP="${{ github.event.inputs.bypass_ip }}"
           $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p after -t $RUN_TYPE \
             ${CIP:+--ip "$CIP"} ${CGW:+--gateway "$CGW"} \
-            ${BIP:+--bypass-ip "$BIP"} \
             ${PUSER:+--pppoe-user "$PUSER"} ${PPASS:+--pppoe-pass "$PPASS"} \
             --root-pass "$ROOTPWD"
           # OpenClash Meta 核心预装（仅旁路由，跳过首次启动在线下载）
