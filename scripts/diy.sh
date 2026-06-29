@@ -49,17 +49,20 @@ done
 check_build_deps
 
 [ -n "$VERSION" ] && [ -n "$PHASE" ] || error_exit "必填 --version / --phase"
-[ "$PHASE" = "after" ] && [ -z "$PROFILE_TYPE" ] && error_exit "after阶段必须指定 --type main/bypass"
-case "$PROFILE_TYPE" in ""|main|bypass) ;; *) error_exit "--type 仅支持 main / bypass" ;; esac
+[ "$PHASE" = "after" ] && [ -z "$PROFILE_TYPE" ] && error_exit "after阶段必须指定 --type main/bypass/full"
+case "$PROFILE_TYPE" in ""|main|bypass|full) ;; *) error_exit "--type 仅支持 main / bypass / full" ;; esac
 
 if [ "$PROFILE_TYPE" = "bypass" ]; then
     [ -z "$CUSTOM_IP" ] && CUSTOM_IP="$DEF_BYPASS_IP"
     [ -z "$CUSTOM_GATEWAY" ] && CUSTOM_GATEWAY="$DEF_MAIN_IP"
     is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法旁路由IP: $CUSTOM_IP"
     is_valid_ipv4 "$CUSTOM_GATEWAY" || error_exit "非法旁路由网关: $CUSTOM_GATEWAY"
-    [ -n "$PPPOE_USERNAME" ] || [ -n "$PPPOE_PASSWORD" ] && error_exit "旁路由不支持PPPoE，请使用 --type main"
+    [ -n "$PPPOE_USERNAME" ] || [ -n "$PPPOE_PASSWORD" ] && error_exit "旁路由不支持PPPoE，请使用 --type main/full"
     # BYPASS_IP 默认与 CUSTOM_IP 一致（旁路由场景）
     [ -z "$BYPASS_IP" ] && BYPASS_IP="$CUSTOM_IP"
+elif [ "$PROFILE_TYPE" = "full" ]; then
+    [ -z "$CUSTOM_IP" ] && CUSTOM_IP="$DEF_MAIN_IP"
+    is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法路由IP: $CUSTOM_IP"
 else
     [ -z "$CUSTOM_IP" ] && CUSTOM_IP="$DEF_MAIN_IP"
     is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法主路由IP: $CUSTOM_IP"
@@ -102,11 +105,6 @@ after)
     SHADOW="$PROJECT_ROOT/files/etc/shadow"
     mkdir -p "$(dirname "$OUT")"
     rm -f "$OUT" "$SHADOW"
-
-    # 主路由固件不含 AdGuardHome / OpenClash 核心，旁路由不需要 DNS 劫持
-    [ "$PROFILE_TYPE" != "bypass" ] && rm -rf "$PROJECT_ROOT/files/etc/adguardhome"
-    [ "$PROFILE_TYPE" != "bypass" ] && rm -rf "$PROJECT_ROOT/files/etc/openclash/core"
-    [ "$PROFILE_TYPE" = "bypass" ] && rm -f "$PROJECT_ROOT/files/usr/sbin/dns-hijack"
 
     ip_esc=$(_escape_uci "$CUSTOM_IP")
 
@@ -170,6 +168,92 @@ uci set openclash.config.en_mode='redir-host'
 uci set openclash.config.operation_mode='redir-host'
 uci commit openclash
 EOT
+    elif [ "$PROFILE_TYPE" = "full" ]; then
+        # Full router: OAF gateway + ADGH (5335) + OpenClash (redir-host) on single device
+        # DNS chain: dnsmasq(53) → ADGH(5335) → Public DoT / OpenClash(7874) → ADGH(5335) → Public DoT
+        if [ -n "$PPPOE_USERNAME" ]; then
+            u=$(_escape_uci "$PPPOE_USERNAME")
+            p=$(_escape_uci "$PPPOE_PASSWORD")
+            cat >> "$OUT" <<EOT
+uci set network.wan.proto='pppoe'
+uci set network.wan.username='$u'
+uci set network.wan.password='$p'
+uci set network.wan.ipv6='auto'
+uci -q delete network.wan6 || true
+EOT
+        else
+            cat >> "$OUT" <<EOT
+uci set network.wan.proto='dhcp'
+uci -q delete network.wan6 || true
+uci set network.wan6.proto='dhcpv6'
+EOT
+        fi
+
+        cat >> "$OUT" <<EOT
+uci -q delete network.lan6 || true
+uci set network.lan.ip6assign='64'
+uci set network.lan.proto='static'
+uci set network.lan.ipaddr='$ip_esc'
+uci set network.lan.netmask='$SUBNET_MASK'
+uci set network.wan.peerdns='0'
+uci -q delete network.wan.dns || true
+uci add_list network.wan.dns='$DNS_MAIN'
+uci add_list network.wan.dns='$DNS_BACKUP'
+uci commit network
+
+grep -q 'net.ipv4.ip_forward=1' /etc/sysctl.conf || echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf
+
+# dnsmasq: DHCP server + forward to ADGH (5335) + fallback public DNS
+uci -q delete dhcp.lan.dhcp_option || true
+uci add_list dhcp.lan.dhcp_option='6,$ip_esc,$DNS_MAIN,$DNS_BACKUP'
+uci set dhcp.lan.start='6'
+uci set dhcp.lan.limit='150'
+uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
+uci set dhcp.@dnsmasq[0].sequential_ip='1'
+uci -q delete dhcp.@dnsmasq[0].server || true
+uci add_list dhcp.@dnsmasq[0].server='127.0.0.1#5335'
+uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
+uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
+uci set dhcp.@dnsmasq[0].strictorder='1'
+uci set dhcp.@dnsmasq[0].dns_redirect='0'
+uci commit dhcp
+
+# Firewall: LAN→WAN forwarding + block QUIC (UDP 443) to prevent proxy bypass
+LAN_FW=\$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
+[ -n "\$LAN_FW" ] && uci set \${LAN_FW}.forward='ACCEPT'
+while uci -q delete firewall.@forwarding[0]; do :; done
+uci add firewall forwarding
+uci set firewall.@forwarding[-1].src='lan'
+uci set firewall.@forwarding[-1].dest='wan'
+uci add firewall rule
+uci set firewall.@rule[-1].name='Block-QUIC'
+uci set firewall.@rule[-1].src='lan'
+uci set firewall.@rule[-1].dest='wan'
+uci set firewall.@rule[-1].proto='udp'
+uci set firewall.@rule[-1].dest_port='443'
+uci set firewall.@rule[-1].target='REJECT'
+uci commit firewall
+
+# OAF: gateway mode + kernel DPI (app filter depends on forward chain staying open)
+uci set oaf.global.enable='1'
+uci set oaf.global.work_mode='gateway'
+uci commit oaf
+
+# AdGuardHome: enabled, port 5335 (YAML 配置端口，UCI 须同步), 关闭 DNS 重定向
+uci set adguardhome.config.enabled='1'
+uci set adguardhome.config.port='5335'
+uci set adguardhome.config.redirect='0'
+uci commit adguardhome
+
+# OpenClash: redir-host mode, disable DNS hijack, upstream ADGH (127.0.0.1:5335)
+# dnsmasq forwarding mode: OpenClash adds server=/proxy-domain/127.0.0.1#7874 at runtime
+uci set openclash.config.core_type='Meta'
+uci set openclash.config.core_version='linux-amd64'
+uci set openclash.config.enable_redirect_dns='0'
+uci set openclash.config.en_mode='redir-host'
+uci set openclash.config.operation_mode='redir-host'
+uci commit openclash
+EOT
     else
         if [ -n "$PPPOE_USERNAME" ]; then
             u=$(_escape_uci "$PPPOE_USERNAME")
@@ -207,7 +291,7 @@ uci set dhcp.lan.start='6'
 uci set dhcp.lan.limit='150'
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci set dhcp.@dnsmasq[0].sequential_ip='1'
-uci -q del_list dhcp.@dnsmasq[0].server='$BYPASS_IP' || true
+uci -q delete dhcp.@dnsmasq[0].server || true
 uci add_list dhcp.@dnsmasq[0].server='$BYPASS_IP'
 uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
 uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'

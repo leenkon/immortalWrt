@@ -3,12 +3,20 @@
 ## 项目概述
 - immortalWrt GitHub Action 编译项目
 - 核心文件：`scripts/diy.sh`（双阶段配置生成器）、`build.sh`（7步编译流程）
-- 生成目标：`files/etc/uci-defaults/99-custom.sh`（主路由/旁路由两套配置）
+- 生成目标：`files/etc/uci-defaults/99-custom.sh`（主路由/旁路由/完整路由三套配置）
 
 ## 网络拓扑
-- 主路由：10.10.10.1（DHCP/PPPoE 上网，OpenAppFilter，防火墙，DHCP DNS 下发）
-- 旁路由：10.10.10.2（AdGuardHome 全屋去广告 + OpenClash 科学上网）
-- DHCP 下发 DNS：10.10.10.2, 1.1.1.1, 223.5.5.5（旁路宕机自动 fallback）
+- **双路由拓扑**（main + bypass）：
+  - 主路由：10.10.10.1（DHCP/PPPoE 上网，OpenAppFilter，防火墙，DHCP DNS 下发）
+  - 旁路由：10.10.10.2（AdGuardHome 全屋去广告 + OpenClash 科学上网）
+  - DHCP 下发 DNS：10.10.10.2, 1.1.1.1, 223.5.5.5（旁路宕机自动 fallback）
+- **完整路由拓扑**（full）：
+  - 单设备集成 OAF + ADGH(5335) + OpenClash(redir-host)
+  - DNS 链路：dnsmasq(53) → ADGH(127.0.0.1:5335) → Public DoT / OpenClash(7874) → ADGH(5335) → Public DoT
+  - ADGH 端口 5335（不抢占系统 53），bind 127.0.0.1（仅本地）
+  - dnsmasq server=127.0.0.1#5335 + strictorder=1 + fallback 1.1.1.1/223.5.5.5
+  - OAF 网关模式 + 防火墙阻断 UDP 443（QUIC 防逃逸）+ 不关闭 forward 链
+  - OpenClash redir-host 模式 + 关闭 DNS 劫持 + dnsmasq 转发模式
 
 ## 关键技术决策（已实现）
 - dnsmasq server= 列表 + strictorder=1（旁路宕机 fallback；querytimeout/retries 不是有效 UCI option，已删除）
@@ -25,10 +33,16 @@
 - 旁路由 `wan` 和 `wan6` network section 完全删除（不是 proto=none），防止物理 WAN 口干扰
 - diy.sh `--bypass-ip` 参数：仅 build.sh 本地编译使用（交互式输入）；workflow 不传此参数，diy.sh 自动回退 `DEF_BYPASS_IP=10.10.10.2`
 - DNS 劫持 nft 规则：IPv4 用 `ip saddr != $BYPASS_IP udp dport 53` 排除旁路由；IPv6 用 `ip6 daddr ::/0 udp dport 53`（不排除旁路由，因 AdGuardHome 走 DoT:853；不能用 `meta l4proto` 会导致 `No symbol type information`）
-- dns-hijack 脚本路径：`/usr/sbin/dns-hijack`（无 .sh 后缀，静态放在 `files/usr/sbin/dns-hijack`），主路由保留，旁路由 diy.sh 删除
+- dns-hijack 脚本路径：`/usr/sbin/dns-hijack`（无 .sh 后缀，静态放在 `files/usr/sbin/dns-hijack`），主路由保留（build.sh/workflow 清理在 openwrt 副本上操作），旁路由/完整路由删除
 - AdGuardHome 版本升级：`scripts/upgrade-adgh.sh` 在 feeds update 后、feeds install 前执行，自动获取 GitHub 最新版本并 patch feeds Makefile（PKG_VERSION/PKG_HASH/FRONTEND_HASH）
-- OpenClash Meta 核心预装：`scripts/upgrade-openclash-core.sh` 在 diy.sh after 后、files 复制前执行，下载最新 mihomo 二进制到 `files/etc/openclash/core/clash_meta`，仅旁路由构建
+- OpenClash Meta 核心预装：`scripts/upgrade-openclash-core.sh` 在 diy.sh after 后、files 复制前执行，下载最新 mihomo 二进制到 `files/etc/openclash/core/clash_meta`，旁路由+完整路由构建
 - diy.sh 旁路由分支设置 `openclash.config.core_type='Meta'` 和 `openclash.config.core_version='linux-amd64'`
+- 完整路由 ADGH UCI 配置：`adguardhome.config.port='5335'` + `redirect='0'`（UCI 会覆盖 YAML 端口，必须显式设置）
+- 完整路由 ADGH YAML 模板：`files/etc/adguardhome/adguardhome-full.yaml`（port 5335, bind 127.0.0.1），build.sh/workflow 在 openwrt 副本上覆盖为 `adguardhome.yaml`；旁路由模板 `adguardhome.yaml` 同目录共存
+- 完整路由不需要 dns-hijack（ADGH 不在端口 53，无端口竞争）
+- 完整路由不需要 BYPASS_IP（单设备，无旁路）
+- diy.sh 支持 `full` profile type：`--type main/bypass/full`
+- 完整路由专用 workflow：`ImmortalWrtBuilder_FullRouter_x86_64.yml`（简化输入，固定 OAF+ADGH+OpenClash）
 
 ## 2025-06-27 修复：旁路由无法上网
 - 根因：`wan.proto='none'` 导致旁路由无默认路由，`opkg update` 失败
@@ -78,4 +92,11 @@
 | DNS 劫持仅覆盖 IPv4，IPv6 DNS 可绕过 AdGuardHome | IPv4 用 `ip saddr != $BYPASS_IP udp dport 53` 排除旁路由；IPv6 用 `ip6 daddr ::/0 udp dport 53`（`meta l4proto` 导致 `No symbol type information`，已修复） |
 | 主路由 WAN_FW.forward='ACCEPT' 不必要且有安全风险 | 删除（WAN forward 默认 DROP 是正确姿态，DDNS 走 output 不受影响） |
 | firewall include 缺 enabled='1' | 补上 `uci set firewall.dns_hijack_include.enabled='1'` |
-| `option dns_redirect '1'` 导致 dnsmasq init 注入 nft 规则 UDP 53→5453，旁路由 AdGuardHome 收不到外部 DNS 查询 | diy.sh 主路由+旁路由分支均加 `uci set dhcp.@dnsmasq[0].dns_redirect='0'` |
+| `option dns_redirect '1'` 导致 dnsmasq init 注入 nft 规则 UDP 53→5453，旁路由 AdGuardHome 收不到外部 DNS 查询 | diy.sh 主路由+旁路由+完整路由分支均加 `uci set dhcp.@dnsmasq[0].dns_redirect='0'` |
+| upgrade-adgh.sh `cut -d: -f3` 对 `PKG_VERSION:=value` 提取为空 | 改为 `sed -n 's/^PKG_VERSION:=//p'`；补充 FRONTEND_PKG_VERSION patch |
+| upgrade-openclash-core.sh 注释"仅旁路由"过时 + tar `-o` 冗余 | 注释改为"旁路由+完整路由"；`tar zxvfo` → `tar zxf` |
+| workflow 文件名含空格 `ImmortalWrtBuilder_ x86_64.yml` | 重命名为 `ImmortalWrtBuilder_x86_64.yml` |
+| build.sh fix_line_endings 未覆盖 files/ 脚本（CRLF 在 ash 上报错） | 扩展覆盖 dns-hijack、update_aliyun_com.sh、adguardhome.yaml、adguardhome-full.yaml |
+| diy.sh 文件清理在源树上操作 → 本地编译后源树被破坏（需 git checkout 恢复） | 文件清理（rm/cp）从 diy.sh 移至 build.sh/workflow，在 openwrt 副本上操作，源树不再被破坏 |
+| dnsmasq server list 只有首条 del_list+add_list，其余直接 add_list（潜在重复） | 改为 `uci delete dhcp.@dnsmasq[0].server` 整体重建 + add_list（与 network.dns 模式一致） |
+| workflow cp 源路径带尾斜杠 `$GITHUB_WORKSPACE/files/`（语义不清晰） | 去除尾斜杠，与 build.sh 统一 |

@@ -5,7 +5,7 @@
 # 用法: ./scripts/upgrade-openclash-core.sh [项目根目录] [架构]
 # 默认架构: linux-amd64 (x86_64)
 #
-# 仅旁路由构建时调用
+# 仅旁路由和完整路由构建时调用
 # 执行时机: diy.sh after 之后、files/ 复制到 openwrt 之前
 
 set -e
@@ -52,7 +52,7 @@ if [ ! -s "$TMP_TAR" ]; then
 fi
 
 # 解压（tar.gz 内含 clash 二进制）
-tar zxvfo "$TMP_TAR" -C /tmp clash >/dev/null 2>&1 || {
+tar zxf "$TMP_TAR" -C /tmp clash >/dev/null 2>&1 || {
     echo "[ERROR] 核心解压失败"
     rm -f "$TMP_TAR" /tmp/clash
     exit 1

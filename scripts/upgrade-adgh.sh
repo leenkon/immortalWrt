@@ -20,7 +20,7 @@ if [ ! -f "$AGH_MAKEFILE" ]; then
 fi
 
 # 当前 feeds 版本
-CURRENT_VER=$(grep "^PKG_VERSION:=" "$AGH_MAKEFILE" | cut -d: -f3)
+CURRENT_VER=$(sed -n 's/^PKG_VERSION:=//p' "$AGH_MAKEFILE")
 
 # 获取官方最新版本（GitHub API），失败则回退到硬编码版本
 AGH_VER=$(curl -s --connect-timeout 10 https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest \
@@ -61,5 +61,7 @@ sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$AGH_VER/" "$AGH_MAKEFILE"
 sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$AGH_SRC_HASH/" "$AGH_MAKEFILE"
 sed -i "s/^FRONTEND_HASH:=.*/FRONTEND_HASH:=$AGH_FE_HASH/" "$AGH_MAKEFILE"
 sed -i "s/^PKG_RELEASE:=.*/PKG_RELEASE:=1/" "$AGH_MAKEFILE"
+# FRONTEND_PKG_VERSION 通常等于 PKG_VERSION，若 Makefile 中存在则一并更新
+sed -i "s/^FRONTEND_PKG_VERSION:=.*/FRONTEND_PKG_VERSION:=$AGH_VER/" "$AGH_MAKEFILE"
 
 echo "[DONE] AdGuardHome Makefile 已升级到 v$AGH_VER"

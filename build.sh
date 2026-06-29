@@ -34,7 +34,7 @@ success "版本: $VERSION"
 
 # 配置选择
 echo -e "\n请选择编译配置："
-echo "  1) default-main (主路由)  2) mini-bypass (旁路由)  3) full-main (完整)"
+echo "  1) default-main (主路由)  2) mini-bypass (旁路由)  3) full-main (完整路由)"
 read -p "请输入选择 [1-3，默认 1]: " p
 p=${p:-1}
 case "$p" in 1) PROFILE="default-main";; 2) PROFILE="mini-bypass";; 3) PROFILE="full-main";; *) error_exit "无效选择";; esac
@@ -42,6 +42,8 @@ success "配置: $PROFILE"
 
 # 解析配置
 IFS='-' read -r CFG_PREFIX RUN_TYPE <<< "$PROFILE"
+# full-main 的 RUN_TYPE 需要覆盖为 full（diy.sh 需要）
+[[ "$CFG_PREFIX" == "full" ]] && RUN_TYPE="full"
 MAIN_VER=${VERSION%.*}
 
 # 自定义IP
@@ -55,13 +57,18 @@ success "LAN IP: $ROUTER_IP"
 GATEWAY_IP=""
 [[ "$RUN_TYPE" == "bypass" ]] && { read -p "网关IP [默认: $DEF_GATEWAY]: " gw; GATEWAY_IP="${gw:-$DEF_GATEWAY}"; success "网关: $GATEWAY_IP"; }
 
-# PPPoE (仅主路由)
+# PPPoE (主路由/完整路由)
 PPPOE_USER="" PPPOE_PASS=""
-[[ "$RUN_TYPE" == "main" ]] && { read -p "配置PPPoE? [y/N]: " pp; [[ "$pp" =~ ^[Yy]$ ]] && { read -p "用户名: " PPPOE_USER; read -p "密码: " PPPOE_PASS; success "PPPoE已配置"; } || success "使用DHCP"; }
+[[ "$RUN_TYPE" == "main" || "$RUN_TYPE" == "full" ]] && { read -p "配置PPPoE? [y/N]: " pp; [[ "$pp" =~ ^[Yy]$ ]] && { read -p "用户名: " PPPOE_USER; read -p "密码: " PPPOE_PASS; success "PPPoE已配置"; } || success "使用DHCP"; }
 
-# OAF (仅主路由)
+# OAF (主路由可选，完整路由始终安装)
 USE_OAF="false"
-[[ "$RUN_TYPE" == "main" ]] && { read -p "安装OAF? [y/N]: " oaf; [[ "$oaf" =~ ^[Yy]$ ]] && USE_OAF="true" && success "将安装OAF"; }
+if [[ "$RUN_TYPE" == "full" ]]; then
+    USE_OAF="true"
+    success "完整路由: OAF 始终安装"
+elif [[ "$RUN_TYPE" == "main" ]]; then
+    read -p "安装OAF? [y/N]: " oaf; [[ "$oaf" =~ ^[Yy]$ ]] && USE_OAF="true" && success "将安装OAF"
+fi
 
 # 旁路 IP (仅主路由，用于 DNS 劫持排除规则和 DHCP DNS 选项)
 BYPASS_IP=""
@@ -78,7 +85,7 @@ success "密码已设置"
 
 # 确认
 echo -e "\n========================================  准备编译  ========================================"
-echo "  版本: $VERSION | 配置: $PROFILE | IP: $ROUTER_IP"
+echo "  版本: $VERSION | 配置: $PROFILE | IP: $ROUTER_IP | 类型: $RUN_TYPE"
 [[ -n "$GATEWAY_IP" ]] && echo "  网关: $GATEWAY_IP"
 [[ -n "$PPPOE_USER" ]] && echo "  PPPoE: $PPPOE_USER"
 [[ "$USE_OAF" == "true" ]] && echo "  OAF: 是"
@@ -94,6 +101,11 @@ DIY="$SCRIPT_DIR/scripts/diy.sh"
 # 1. 换行符
 echo -e "\n${YELLOW}[1/7] 检查换行符和权限...${NC}"
 fix_line_endings "$DIY" "$SCRIPT_DIR/build.sh" "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh"
+# files/ 下的脚本和 YAML 也需要修复 CRLF（路由器 ash 不兼容 CRLF）
+fix_line_endings "$SCRIPT_DIR/files/usr/sbin/dns-hijack" \
+  "$SCRIPT_DIR/files/usr/lib/ddns/update_aliyun_com.sh" \
+  "$SCRIPT_DIR/files/etc/adguardhome/adguardhome.yaml" \
+  "$SCRIPT_DIR/files/etc/adguardhome/adguardhome-full.yaml"
 chmod +x "$DIY" "$SCRIPT_DIR/build.sh"
 success "完成"
 
@@ -128,7 +140,7 @@ cd "$OPENWRT_DIR"
 "$DIY" -v "$MAIN_VER" -p before -t "$RUN_TYPE"
 ./scripts/feeds update -a
 
-# OAF 处理 (仅主路由) - 与 yml 一致：feeds update 之后，feeds install 之前
+# OAF 处理 (主路由可选，完整路由必需) - feeds update 之后，feeds install 之前
 if [[ "$USE_OAF" == "true" ]]; then
   rm -rf package/{luci-app-oaf,open-app-filter,oaf} feeds/packages/{net/open-app-filter,luci/luci-app-oaf,kernel/oaf}
   rm -rf package/OpenAppFilter
@@ -160,12 +172,26 @@ success "完成"
 
 # 6. 预装核心 + 打包 files
 echo -e "\n${YELLOW}[6/7] 预装核心与打包文件...${NC}"
-# OpenClash Meta 核心预装（仅旁路由，跳过首次启动在线下载）
-if [[ "$RUN_TYPE" == "bypass" ]]; then
+# OpenClash Meta 核心预装（旁路由 + 完整路由，跳过首次启动在线下载）
+if [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]]; then
     chmod +x "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh"
     "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR"
 fi
 [[ -d "$SCRIPT_DIR/files" ]] && { rm -rf "$OPENWRT_DIR/files"; cp -rf "$SCRIPT_DIR/files" "$OPENWRT_DIR/"; }
+# 文件清理：按 profile 删除不需要的静态文件（在 openwrt 副本上操作，不修改源树）
+case "$RUN_TYPE" in
+  main)
+    rm -rf "$OPENWRT_DIR/files/etc/adguardhome"
+    rm -rf "$OPENWRT_DIR/files/etc/openclash/core"
+    ;;
+  bypass)
+    rm -f "$OPENWRT_DIR/files/usr/sbin/dns-hijack"
+    ;;
+  full)
+    rm -f "$OPENWRT_DIR/files/usr/sbin/dns-hijack"
+    cp "$SCRIPT_DIR/files/etc/adguardhome/adguardhome-full.yaml" "$OPENWRT_DIR/files/etc/adguardhome/adguardhome.yaml"
+    ;;
+esac
 # 确保 scripts 可执行（ddns 守护进程和 dns-hijack 需要）
 find "$OPENWRT_DIR/files" -type f -executable -exec chmod 755 {} + 2>/dev/null || true
 make defconfig && make download && make clean
