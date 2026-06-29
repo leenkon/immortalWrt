@@ -37,20 +37,20 @@ filtering:
   filters_update_interval: 24
 filters:
   - enabled: true
-    url: "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt"
-    name: "AdGuard DNS filter"
-    id: 1
-  - enabled: true
-    url: "https://anti-ad.net/easylist.txt"
-    name: "Anti-AD"
-    id: 2
-  - enabled: true
     url: "https://easylist-downloads.adblockplus.org/easylistchina+easylist.txt"
     name: "EasyList China"
-    id: 3
+    id: 1
   - enabled: true
     url: "https://gitee.com/xinggsf/Adblock-Rule/raw/master/rule.txt"
     name: "xinggsf Adblock Rule"
+    id: 2
+  - enabled: true
+    url: "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt"
+    name: "AdGuard DNS filter"
+    id: 3
+  - enabled: true
+    url: "https://anti-ad.net/easylist.txt"
+    name: "Anti-AD"
     id: 4
 whitelist_filters: []
 user_rules: []
