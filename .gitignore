@@ -14,6 +14,7 @@ log/
 workflow_*.json
 
 # 编辑器
+.workbuddy/
 .vscode/
 .idea/
 *.swp
