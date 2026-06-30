@@ -16,7 +16,7 @@ DEF_GATEWAY="10.10.10.1"
 ROOT_PASSWORD="password"
 
 # 修复换行符
-fix_line_endings() { for f in "$@"; do [[ -f "$f" ]] && grep -q $'\r' "$f" 2>/dev/null && sed -i 's/\r$//' "$f"; done; }
+fix_line_endings() { for f in "$@"; do [[ -f "$f" ]] && grep -q $'\r' "$f" 2>/dev/null && sed -i 's/\r$//' "$f"; done || true; }
 
 # 交互式输入
 echo "========================================"

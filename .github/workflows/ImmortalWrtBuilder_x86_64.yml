@@ -51,7 +51,7 @@ jobs:
         run: |
           set -e
           # 修复 Windows 提交可能带来的 CRLF（路由器 ash 不兼容）
-          fix_line_endings() { for f in "$@"; do [[ -f "$f" ]] && grep -q $'\r' "$f" 2>/dev/null && sed -i 's/\r$//' "$f"; done; }
+          fix_line_endings() { for f in "$@"; do [[ -f "$f" ]] && grep -q $'\r' "$f" 2>/dev/null && sed -i 's/\r$//' "$f"; done || true; }
           fix_line_endings $GITHUB_WORKSPACE/scripts/diy.sh \
             $GITHUB_WORKSPACE/scripts/upgrade-adgh.sh \
             $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh \
