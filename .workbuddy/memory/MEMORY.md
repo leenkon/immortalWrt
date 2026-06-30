@@ -11,12 +11,14 @@
   - 旁路由：10.10.10.2（AdGuardHome 全屋去广告 + OpenClash 科学上网）
   - DHCP 下发 DNS：10.10.10.2, 1.1.1.1, 223.5.5.5（旁路宕机自动 fallback）
 - **完整路由拓扑**（full）：
-  - 单设备集成 OAF + ADGH(5335) + OpenClash(redir-host)
-  - DNS 链路：dnsmasq(53) → ADGH(127.0.0.1:5335) → Public DoT / OpenClash(7874) → ADGH(5335) → Public DoT
-  - ADGH 端口 5335（不抢占系统 53），bind 127.0.0.1（仅本地）
-  - dnsmasq server=127.0.0.1#5335 + strictorder=1 + fallback 1.1.1.1/223.5.5.5
+  - 单设备集成 OAF + ADGH(53) + OpenClash(redir-host)
+  - DNS 链路：客户端 → ADGH(53) → Public DoT；DNS 劫持强制所有客户端走 ADGH
+  - ADGH 端口 53（直接面对客户端，可见真实客户端 IP），bind 0.0.0.0 + "::"（IPv6 双栈）
+  - dnsmasq port=5353 + listen=127.0.0.1（不对外提供 DNS，仅 DHCP）
+  - DNS 劫持：nftables redirect :53（dns-hijack 脚本自动检测：有旁路 IP→排除，无→全劫持）
   - OAF 网关模式 + 防火墙阻断 UDP 443（QUIC 防逃逸）+ 不关闭 forward 链
-  - OpenClash redir-host 模式 + 关闭 DNS 劫持 + dnsmasq 转发模式
+  - OpenClash redir-host 模式 + 关闭 DNS 劫持（ADGH 占用 53）
+  - OpenClash 域名识别靠 sniffer（TLS SNI / HTTP Host），clash config 须启用 sniffer section
 
 ## 关键技术决策（已实现）
 - dnsmasq server= 列表 + strictorder=1（旁路宕机 fallback；querytimeout/retries 不是有效 UCI option，已删除）
@@ -37,12 +39,13 @@
 - AdGuardHome 版本升级：`scripts/upgrade-adgh.sh` 在 feeds update 后、feeds install 前执行，自动获取 GitHub 最新版本并 patch feeds Makefile（PKG_VERSION/PKG_HASH/FRONTEND_HASH）
 - OpenClash Meta 核心预装：`scripts/upgrade-openclash-core.sh` 在 diy.sh after 后、files 复制前执行，下载最新 mihomo 二进制到 `files/etc/openclash/core/clash_meta`，旁路由+完整路由构建
 - diy.sh 旁路由分支设置 `openclash.config.core_type='Meta'` 和 `openclash.config.core_version='linux-amd64'`
-- 完整路由 ADGH UCI 配置：`adguardhome.config.port='5335'` + `redirect='0'`（UCI 会覆盖 YAML 端口，必须显式设置）
-- 完整路由 ADGH YAML 模板：`files/etc/adguardhome/adguardhome-full.yaml`（port 5335, bind 127.0.0.1），build.sh/workflow 在 openwrt 副本上覆盖为 `adguardhome.yaml`；旁路由模板 `adguardhome.yaml` 同目录共存
-- 完整路由不需要 dns-hijack（ADGH 不在端口 53，无端口竞争）
+- 完整路由 ADGH UCI 配置：`adguardhome.config.port='53'` + `redirect='0'`（UCI 会覆盖 YAML 端口，必须显式设置）
+- 完整路由 ADGH YAML 模板：`files/etc/adguardhome/adguardhome-full.yaml`（port 53, bind 0.0.0.0 + "::"），build.sh/workflow 在 openwrt 副本上覆盖为 `adguardhome.yaml`；旁路由模板 `adguardhome.yaml` 同目录共存
+- 完整路由需要 dns-hijack（防止客户端自定义 DNS 绕过 ADGH）；dns-hijack 脚本自动检测旁路 IP，无则全劫持
 - 完整路由不需要 BYPASS_IP（单设备，无旁路）
 - diy.sh 支持 `full` profile type：`--type main/bypass/full`
 - 完整路由专用 workflow：`ImmortalWrtBuilder_FullRouter_x86_64.yml`（简化输入，固定 OAF+ADGH+OpenClash）
+- OpenClash sniffer 预置：`files/etc/openclash/custom/openclash_custom_overwrite.yaml`（bypass+full 共用），UCI `enable_custom_overwrite='1'` 启用，与订阅配置合并
 
 ## 2025-06-27 修复：旁路由无法上网
 - 根因：`wan.proto='none'` 导致旁路由无默认路由，`opkg update` 失败

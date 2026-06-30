@@ -101,12 +101,12 @@ jobs:
             main)
               rm -rf files/etc/adguardhome
               rm -rf files/etc/openclash/core
+              rm -rf files/etc/openclash/custom
               ;;
             bypass)
               rm -f files/usr/sbin/dns-hijack
               ;;
             full)
-              rm -f files/usr/sbin/dns-hijack
               cp $GITHUB_WORKSPACE/files/etc/adguardhome/adguardhome-full.yaml files/etc/adguardhome/adguardhome.yaml
               ;;
           esac

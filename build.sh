@@ -105,7 +105,8 @@ fix_line_endings "$DIY" "$SCRIPT_DIR/build.sh" "$SCRIPT_DIR/scripts/upgrade-adgh
 fix_line_endings "$SCRIPT_DIR/files/usr/sbin/dns-hijack" \
   "$SCRIPT_DIR/files/usr/lib/ddns/update_aliyun_com.sh" \
   "$SCRIPT_DIR/files/etc/adguardhome/adguardhome.yaml" \
-  "$SCRIPT_DIR/files/etc/adguardhome/adguardhome-full.yaml"
+  "$SCRIPT_DIR/files/etc/adguardhome/adguardhome-full.yaml" \
+  "$SCRIPT_DIR/files/etc/openclash/custom/openclash_custom_overwrite.yaml"
 chmod +x "$DIY" "$SCRIPT_DIR/build.sh"
 success "完成"
 
@@ -183,12 +184,12 @@ case "$RUN_TYPE" in
   main)
     rm -rf "$OPENWRT_DIR/files/etc/adguardhome"
     rm -rf "$OPENWRT_DIR/files/etc/openclash/core"
+    rm -rf "$OPENWRT_DIR/files/etc/openclash/custom"
     ;;
   bypass)
     rm -f "$OPENWRT_DIR/files/usr/sbin/dns-hijack"
     ;;
   full)
-    rm -f "$OPENWRT_DIR/files/usr/sbin/dns-hijack"
     cp "$SCRIPT_DIR/files/etc/adguardhome/adguardhome-full.yaml" "$OPENWRT_DIR/files/etc/adguardhome/adguardhome.yaml"
     ;;
 esac

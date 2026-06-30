@@ -58,7 +58,6 @@ if [ "$PROFILE_TYPE" = "bypass" ]; then
     is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法旁路由IP: $CUSTOM_IP"
     is_valid_ipv4 "$CUSTOM_GATEWAY" || error_exit "非法旁路由网关: $CUSTOM_GATEWAY"
     [ -n "$PPPOE_USERNAME" ] || [ -n "$PPPOE_PASSWORD" ] && error_exit "旁路由不支持PPPoE，请使用 --type main/full"
-    # BYPASS_IP 默认与 CUSTOM_IP 一致（旁路由场景）
     [ -z "$BYPASS_IP" ] && BYPASS_IP="$CUSTOM_IP"
 elif [ "$PROFILE_TYPE" = "full" ]; then
     [ -z "$CUSTOM_IP" ] && CUSTOM_IP="$DEF_MAIN_IP"
@@ -66,7 +65,6 @@ elif [ "$PROFILE_TYPE" = "full" ]; then
 else
     [ -z "$CUSTOM_IP" ] && CUSTOM_IP="$DEF_MAIN_IP"
     is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法主路由IP: $CUSTOM_IP"
-    # 主路由场景：BYPASS_IP 必须有值（用传入值或默认值）
     [ -z "$BYPASS_IP" ] && BYPASS_IP="$DEF_BYPASS_IP"
     is_valid_ipv4 "$BYPASS_IP" || error_exit "非法旁路路由IP: $BYPASS_IP"
 fi
@@ -81,7 +79,7 @@ PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && pwd -P)
 
 case "$PHASE" in
 before)
-    echo "[BEFORE] 初始化 feeds 配置: $VERSION"
+    echo "[diy] before: $VERSION"
     FEED_CONF_SRC="$PROJECT_ROOT/feeds/$VERSION.conf"
     [ -f "$FEED_CONF_SRC" ] || error_exit "缺失feed配置: $FEED_CONF_SRC"
     rm -f feeds.conf
@@ -89,7 +87,7 @@ before)
     if grep -qs '^[^#].*src-git small' feeds.conf; then
         GOLANG_DIR="feeds/packages/lang/golang"
         if [ ! -d "$GOLANG_DIR/.git" ]; then
-            echo "[BEFORE] 替换golang1.26"
+            echo "[diy] golang → 1.26"
             rm -rf feeds/luci/applications/luci-app-osdns \
                 feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} \
                 feeds/packages/utils/v2dat \
@@ -100,7 +98,7 @@ before)
     ;;
 
 after)
-    echo "[AFTER] 生成 $PROFILE_TYPE 配置"
+    echo "[diy] after: $PROFILE_TYPE"
     OUT="$PROJECT_ROOT/files/etc/uci-defaults/99-custom.sh"
     SHADOW="$PROJECT_ROOT/files/etc/shadow"
     mkdir -p "$(dirname "$OUT")"
@@ -129,7 +127,6 @@ uci set network.default_route.interface='lan'
 uci set network.default_route.target='0.0.0.0'
 uci set network.default_route.netmask='0.0.0.0'
 uci set network.default_route.gateway='$gw_esc'
-# 旁路场景：删除所有 WAN 接口（旁路由只有 LAN）
 uci -q delete network.wan || true
 uci -q delete network.wan6 || true
 uci commit network
@@ -158,19 +155,16 @@ uci commit firewall
 uci set adguardhome.config.enabled='1'
 uci commit adguardhome
 
-# OpenClash: 停用 DNS 劫持，避免与 AdGuardHome 冲突（旁路由场景）
-# Fake-IP 模式依赖 DNS 劫持，改用 redir-host 兼容模式
-# 核心类型和架构：配合 upgrade-openclash-core.sh 预装的核心二进制
+# OpenClash: redir-host, DNS 劫持关闭, sniffer 预置于 openclash_custom_overwrite.yaml
 uci set openclash.config.core_type='Meta'
 uci set openclash.config.core_version='linux-amd64'
 uci set openclash.config.enable_redirect_dns='0'
 uci set openclash.config.en_mode='redir-host'
 uci set openclash.config.operation_mode='redir-host'
+uci set openclash.config.enable_custom_overwrite='1'
 uci commit openclash
 EOT
     elif [ "$PROFILE_TYPE" = "full" ]; then
-        # Full router: OAF gateway + ADGH (5335) + OpenClash (redir-host) on single device
-        # DNS chain: dnsmasq(53) → ADGH(5335) → Public DoT / OpenClash(7874) → ADGH(5335) → Public DoT
         if [ -n "$PPPOE_USERNAME" ]; then
             u=$(_escape_uci "$PPPOE_USERNAME")
             p=$(_escape_uci "$PPPOE_PASSWORD")
@@ -203,22 +197,21 @@ uci commit network
 
 grep -q 'net.ipv4.ip_forward=1' /etc/sysctl.conf || echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf
 
-# dnsmasq: DHCP server + forward to ADGH (5335) + fallback public DNS
+# dnsmasq: port 5353, DHCP only (ADGH 占用 53)
 uci -q delete dhcp.lan.dhcp_option || true
 uci add_list dhcp.lan.dhcp_option='6,$ip_esc,$DNS_MAIN,$DNS_BACKUP'
 uci set dhcp.lan.start='6'
 uci set dhcp.lan.limit='150'
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci set dhcp.@dnsmasq[0].sequential_ip='1'
+uci -q set dhcp.@dnsmasq[0].port='5353' || true
+uci -q delete dhcp.@dnsmasq[0].listen_address || true
+uci add_list dhcp.@dnsmasq[0].listen_address='127.0.0.1'
 uci -q delete dhcp.@dnsmasq[0].server || true
-uci add_list dhcp.@dnsmasq[0].server='127.0.0.1#5335'
-uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
-uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
-uci set dhcp.@dnsmasq[0].strictorder='1'
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
 uci commit dhcp
 
-# Firewall: LAN→WAN forwarding + block QUIC (UDP 443) to prevent proxy bypass
+# Block-QUIC: UDP 443 阻断，防代理逃逸
 LAN_FW=\$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
 [ -n "\$LAN_FW" ] && uci set \${LAN_FW}.forward='ACCEPT'
 while uci -q delete firewall.@forwarding[0]; do :; done
@@ -232,26 +225,34 @@ uci set firewall.@rule[-1].dest='wan'
 uci set firewall.@rule[-1].proto='udp'
 uci set firewall.@rule[-1].dest_port='443'
 uci set firewall.@rule[-1].target='REJECT'
+
+# DNS 劫持：强制 LAN 客户端 DNS 走 ADGH(53)
+chmod 755 /usr/sbin/dns-hijack
+/usr/sbin/dns-hijack
+uci -q delete firewall.dns_hijack_include 2>/dev/null
+uci set firewall.dns_hijack_include=include
+uci set firewall.dns_hijack_include.path='/usr/sbin/dns-hijack'
+uci set firewall.dns_hijack_include.enabled='1'
 uci commit firewall
 
-# OAF: gateway mode + kernel DPI (app filter depends on forward chain staying open)
+# OAF: gateway mode
 uci set oaf.global.enable='1'
 uci set oaf.global.work_mode='gateway'
 uci commit oaf
 
-# AdGuardHome: enabled, port 5335 (YAML 配置端口，UCI 须同步), 关闭 DNS 重定向
+# AdGuardHome: port 53
 uci set adguardhome.config.enabled='1'
-uci set adguardhome.config.port='5335'
+uci set adguardhome.config.port='53'
 uci set adguardhome.config.redirect='0'
 uci commit adguardhome
 
-# OpenClash: redir-host mode, disable DNS hijack, upstream ADGH (127.0.0.1:5335)
-# dnsmasq forwarding mode: OpenClash adds server=/proxy-domain/127.0.0.1#7874 at runtime
+# OpenClash: redir-host, sniffer 预置于 openclash_custom_overwrite.yaml
 uci set openclash.config.core_type='Meta'
 uci set openclash.config.core_version='linux-amd64'
 uci set openclash.config.enable_redirect_dns='0'
 uci set openclash.config.en_mode='redir-host'
 uci set openclash.config.operation_mode='redir-host'
+uci set openclash.config.enable_custom_overwrite='1'
 uci commit openclash
 EOT
     else
@@ -306,10 +307,10 @@ uci add firewall forwarding
 uci set firewall.@forwarding[-1].src='lan'
 uci set firewall.@forwarding[-1].dest='wan'
 
-# DNS 劫持（IPv4 排除旁路由防死循环，IPv6 不排除因 AdGuardHome 走 DoT:853）
-# dns-hijack 为 files/ 静态文件，直接打包进固件
+# DNS 劫持：强制 LAN 客户端 DNS 走旁路 ADGH(53)
 chmod 755 /usr/sbin/dns-hijack
 /usr/sbin/dns-hijack
+uci -q delete firewall.dns_hijack_include 2>/dev/null
 uci set firewall.dns_hijack_include=include
 uci set firewall.dns_hijack_include.path='/usr/sbin/dns-hijack'
 uci set firewall.dns_hijack_include.enabled='1'
@@ -329,7 +330,7 @@ uci commit system
 logger -t uci-defaults "配置应用完成"
 EOT
     chmod 755 "$OUT"
-    echo "[AFTER] uci-defaults已生成: $OUT"
+    echo "[diy] 输出: $OUT"
 
     if [ -n "$ROOT_PASSWORD" ]; then
         crypt=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin) || error_exit "openssl密码加密失败"
@@ -340,4 +341,4 @@ EOT
 *) error_exit "PHASE仅支持 before / after" ;;
 esac
 
-echo "[DONE] 阶段: $PHASE 类型: ${PROFILE_TYPE:-N/A} 根目录: $PROJECT_ROOT"
+echo "[diy] done: $PHASE ${PROFILE_TYPE:-N/A}"
