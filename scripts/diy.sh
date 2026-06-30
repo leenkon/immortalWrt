@@ -153,6 +153,8 @@ WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
 while uci -q delete firewall.@forwarding[0]; do :; done
 uci commit firewall
 uci set adguardhome.config.enabled='1'
+uci set adguardhome.config.port='53'
+uci set adguardhome.config.redirect='0'
 uci commit adguardhome
 
 # OpenClash: redir-host, DNS 劫持关闭, sniffer 预置于 openclash_custom_overwrite.yaml
@@ -197,14 +199,14 @@ uci commit network
 
 grep -q 'net.ipv4.ip_forward=1' /etc/sysctl.conf || echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf
 
-# dnsmasq: port 5353, DHCP only (ADGH 占用 53)
+# dnsmasq: port 5453, DHCP only (ADGH 占用 53)
 uci -q delete dhcp.lan.dhcp_option || true
 uci add_list dhcp.lan.dhcp_option='6,$ip_esc,$DNS_MAIN,$DNS_BACKUP'
 uci set dhcp.lan.start='6'
 uci set dhcp.lan.limit='150'
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci set dhcp.@dnsmasq[0].sequential_ip='1'
-uci -q set dhcp.@dnsmasq[0].port='5353' || true
+uci -q set dhcp.@dnsmasq[0].port='5453' || true
 uci -q delete dhcp.@dnsmasq[0].listen_address || true
 uci add_list dhcp.@dnsmasq[0].listen_address='127.0.0.1'
 uci -q delete dhcp.@dnsmasq[0].server || true
@@ -307,7 +309,7 @@ uci add firewall forwarding
 uci set firewall.@forwarding[-1].src='lan'
 uci set firewall.@forwarding[-1].dest='wan'
 
-# DNS 劫持：强制 LAN 客户端 DNS 走旁路 ADGH(53)
+# DNS 劫持：强制 LAN 客户端 DNS 走本地 dnsmasq（再转发至旁路）
 chmod 755 /usr/sbin/dns-hijack
 /usr/sbin/dns-hijack
 uci -q delete firewall.dns_hijack_include 2>/dev/null

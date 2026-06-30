@@ -11,11 +11,11 @@ dns:
     - 0.0.0.0
     - "::"
   upstream_dns:
-    - "tls://1.1.1.1"
     - "tls://223.5.5.5"
+    - "tls://1.1.1.1"
   bootstraps:
-    - 1.1.1.1
     - 223.5.5.5
+    - 1.1.1.1
   cache_enabled: true
   cache_size: 4194304
   cache_optimistic_ttl: 30s
@@ -37,12 +37,12 @@ filtering:
   filters_update_interval: 24
 filters:
   - enabled: true
-    url: "https://easylist-downloads.adblockplus.org/easylistchina+easylist.txt"
-    name: "EasyList China"
+    url: "https://adguardteam.github.io/HostlistsRegistry/assets/filter_21.txt"
+    name: "Anti-AD-CHN"
     id: 1
   - enabled: true
-    url: "https://gitee.com/xinggsf/Adblock-Rule/raw/master/rule.txt"
-    name: "xinggsf Adblock Rule"
+    url: "https://easylist-downloads.adblockplus.org/easylistchina+easylist.txt"
+    name: "EasyList China"
     id: 2
   - enabled: true
     url: "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt"

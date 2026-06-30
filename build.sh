@@ -106,7 +106,8 @@ fix_line_endings "$SCRIPT_DIR/files/usr/sbin/dns-hijack" \
   "$SCRIPT_DIR/files/usr/lib/ddns/update_aliyun_com.sh" \
   "$SCRIPT_DIR/files/etc/adguardhome/adguardhome.yaml" \
   "$SCRIPT_DIR/files/etc/adguardhome/adguardhome-full.yaml" \
-  "$SCRIPT_DIR/files/etc/openclash/custom/openclash_custom_overwrite.yaml"
+  "$SCRIPT_DIR/files/etc/openclash/custom/openclash_custom_overwrite.yaml" \
+  "$SCRIPT_DIR/files/etc/hotplug.d/iface/99-adgh-filters"
 chmod +x "$DIY" "$SCRIPT_DIR/build.sh"
 success "完成"
 
@@ -193,8 +194,8 @@ case "$RUN_TYPE" in
     cp "$SCRIPT_DIR/files/etc/adguardhome/adguardhome-full.yaml" "$OPENWRT_DIR/files/etc/adguardhome/adguardhome.yaml"
     ;;
 esac
-# 确保 scripts 可执行（ddns 守护进程和 dns-hijack 需要）
-find "$OPENWRT_DIR/files" -type f -executable -exec chmod 755 {} + 2>/dev/null || true
+# 确保 scripts 可执行（Windows 无 Unix x 位，按路径/扩展名匹配）
+find "$OPENWRT_DIR/files" -type f \( -path "*/sbin/*" -o -path "*/hotplug.d/*" -o -path "*/uci-defaults/*" -o -name "*.sh" \) -exec chmod 755 {} + 2>/dev/null || true
 make defconfig && make download && make clean
 success "完成"
 

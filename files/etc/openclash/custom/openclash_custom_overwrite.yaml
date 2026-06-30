@@ -1,7 +1,4 @@
-# OpenClash Custom Overwrite
-# 与订阅配置合并（顶层 key 覆盖），启用条件：openclash.config.enable_custom_overwrite='1'
-# sniffer：从 TLS SNI / HTTP Host 嗅探域名，使 redir-host 模式下域名规则生效
-# 适用场景：ADGH 占用 53 端口，OpenClash 无法通过 DNS 劫持获取域名
+# sniffer: redir-host 模式下从 TLS SNI / HTTP Host 嗅探域名，使域名规则生效
 sniffer:
   enable: true
   force-dns-mapping: true

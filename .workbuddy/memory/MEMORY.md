@@ -14,7 +14,7 @@
   - 单设备集成 OAF + ADGH(53) + OpenClash(redir-host)
   - DNS 链路：客户端 → ADGH(53) → Public DoT；DNS 劫持强制所有客户端走 ADGH
   - ADGH 端口 53（直接面对客户端，可见真实客户端 IP），bind 0.0.0.0 + "::"（IPv6 双栈）
-  - dnsmasq port=5353 + listen=127.0.0.1（不对外提供 DNS，仅 DHCP）
+  - dnsmasq port=5453 + listen=127.0.0.1（不对外提供 DNS，仅 DHCP）
   - DNS 劫持：nftables redirect :53（dns-hijack 脚本自动检测：有旁路 IP→排除，无→全劫持）
   - OAF 网关模式 + 防火墙阻断 UDP 443（QUIC 防逃逸）+ 不关闭 forward 链
   - OpenClash redir-host 模式 + 关闭 DNS 劫持（ADGH 占用 53）
@@ -35,12 +35,14 @@
 - 旁路由 `wan` 和 `wan6` network section 完全删除（不是 proto=none），防止物理 WAN 口干扰
 - diy.sh `--bypass-ip` 参数：仅 build.sh 本地编译使用（交互式输入）；workflow 不传此参数，diy.sh 自动回退 `DEF_BYPASS_IP=10.10.10.2`
 - DNS 劫持 nft 规则：IPv4 用 `ip saddr != $BYPASS_IP udp dport 53` 排除旁路由；IPv6 用 `ip6 daddr ::/0 udp dport 53`（不排除旁路由，因 AdGuardHome 走 DoT:853；不能用 `meta l4proto` 会导致 `No symbol type information`）
-- dns-hijack 脚本路径：`/usr/sbin/dns-hijack`（无 .sh 后缀，静态放在 `files/usr/sbin/dns-hijack`），主路由保留（build.sh/workflow 清理在 openwrt 副本上操作），旁路由/完整路由删除
+- dns-hijack 脚本路径：`/usr/sbin/dns-hijack`（无 .sh 后缀，静态放在 `files/usr/sbin/dns-hijack`），主路由+完整路由保留（build.sh/workflow 清理在 openwrt 副本上操作），旁路由删除
 - AdGuardHome 版本升级：`scripts/upgrade-adgh.sh` 在 feeds update 后、feeds install 前执行，自动获取 GitHub 最新版本并 patch feeds Makefile（PKG_VERSION/PKG_HASH/FRONTEND_HASH）
 - OpenClash Meta 核心预装：`scripts/upgrade-openclash-core.sh` 在 diy.sh after 后、files 复制前执行，下载最新 mihomo 二进制到 `files/etc/openclash/core/clash_meta`，旁路由+完整路由构建
 - diy.sh 旁路由分支设置 `openclash.config.core_type='Meta'` 和 `openclash.config.core_version='linux-amd64'`
-- 完整路由 ADGH UCI 配置：`adguardhome.config.port='53'` + `redirect='0'`（UCI 会覆盖 YAML 端口，必须显式设置）
-- 完整路由 ADGH YAML 模板：`files/etc/adguardhome/adguardhome-full.yaml`（port 53, bind 0.0.0.0 + "::"），build.sh/workflow 在 openwrt 副本上覆盖为 `adguardhome.yaml`；旁路由模板 `adguardhome.yaml` 同目录共存
+- ADGH UCI 配置（bypass + full 均需）：`adguardhome.config.port='53'` + `redirect='0'`（UCI 会覆盖 YAML 端口，必须显式设置）
+- ADGH YAML 过滤规则：旁路由与完整路由模板统一为同一套（Anti-AD-CHN / EasyList China / AdGuard DNS / Anti-AD），避免不同分支行为不一致
+- build.sh 与两个 workflow 均加入 `fix_line_endings` / 等价 CRLF 清理，防止 Windows 提交导致路由器 ash 执行失败
+- ADGH YAML 模板：bypass 用 `files/etc/adguardhome/adguardhome.yaml`，full 用 `adguardhome-full.yaml`（内容一致：port 53, bind 0.0.0.0+"::"），build.sh/workflow 在 openwrt 副本上覆盖为 `adguardhome.yaml`
 - 完整路由需要 dns-hijack（防止客户端自定义 DNS 绕过 ADGH）；dns-hijack 脚本自动检测旁路 IP，无则全劫持
 - 完整路由不需要 BYPASS_IP（单设备，无旁路）
 - diy.sh 支持 `full` profile type：`--type main/bypass/full`
@@ -103,3 +105,8 @@
 | diy.sh 文件清理在源树上操作 → 本地编译后源树被破坏（需 git checkout 恢复） | 文件清理（rm/cp）从 diy.sh 移至 build.sh/workflow，在 openwrt 副本上操作，源树不再被破坏 |
 | dnsmasq server list 只有首条 del_list+add_list，其余直接 add_list（潜在重复） | 改为 `uci delete dhcp.@dnsmasq[0].server` 整体重建 + add_list（与 network.dns 模式一致） |
 | workflow cp 源路径带尾斜杠 `$GITHUB_WORKSPACE/files/`（语义不清晰） | 去除尾斜杠，与 build.sh 统一 |
+| bypass 分支缺少 ADGH UCI `port='53'` + `redirect='0'`，UCI 默认值覆盖 YAML | 补齐（与 full 分支一致） |
+| hotplug 脚本 `sleep 10` 阻塞 hotplug 链 | 改为 `(sleep 10; ...) &` 后台执行 |
+| hotplug 脚本缺 `adguardhome.yaml` 存在性检查，主路由误触发 | 添加 `[ -f ... ] || exit 0` |
+| `find -type f -executable` 对 Windows git 创建的文件不生效（无 x 位） | 改为按路径/扩展名匹配 `\( -path "*/sbin/*" -o -path "*/hotplug.d/*" -o -path "*/uci-defaults/*" -o -name "*.sh" \)` |
+| adguardhome.yaml (bypass) bootstraps 顺序与 upstream_dns 不一致 | 统一为 `[223.5.5.5, 1.1.1.1]` |
