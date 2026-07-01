@@ -202,6 +202,8 @@ uci -q delete dhcp.lan.dhcp_option || true
 uci add_list dhcp.lan.dhcp_option='6,$ip_esc,$DNS_MAIN,$DNS_BACKUP'
 uci set dhcp.lan.start='7'
 uci set dhcp.lan.limit='149'
+uci set dhcp.lan.dhcpv6='server'
+uci set dhcp.lan.ra='server'
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci set dhcp.@dnsmasq[0].sequential_ip='1'
 uci -q set dhcp.@dnsmasq[0].port='5453' || true
@@ -288,6 +290,8 @@ uci -q delete dhcp.lan.dhcp_option || true
 uci add_list dhcp.lan.dhcp_option='6,$BYPASS_IP,$DNS_MAIN,$DNS_BACKUP'
 uci set dhcp.lan.start='7'
 uci set dhcp.lan.limit='149'
+uci set dhcp.lan.dhcpv6='server'
+uci set dhcp.lan.ra='server'
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci set dhcp.@dnsmasq[0].sequential_ip='1'
 uci -q delete dhcp.@dnsmasq[0].server || true

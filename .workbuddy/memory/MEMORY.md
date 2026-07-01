@@ -15,6 +15,7 @@
   - DNS 链路：客户端 → ADGH(53) → Public DoT；DNS 劫持强制所有客户端走 ADGH
   - ADGH 端口 53（直接面对客户端，可见真实客户端 IP），bind 0.0.0.0 + "::"（IPv6 双栈）
   - dnsmasq port=5453（不对外提供 DNS，仅 DHCP；port 已隔离 ADGH，无需 listen_address 限制）
+  - dhcp.lan.dhcpv6='server' + ra='server'（full + main 分支显式设置，OpenWrt 默认 disabled 会导致 DHCPv6 租约为空）
   - DNS 劫持：nftables redirect :53（dns-hijack 脚本自动检测：有旁路 IP→排除，无→全劫持）
   - OAF 网关模式 + 防火墙阻断 UDP 443（QUIC 防逃逸）+ 不关闭 forward 链
   - OpenClash redir-host 模式 + 关闭 DNS 劫持（ADGH 占用 53）
