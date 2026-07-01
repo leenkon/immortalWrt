@@ -100,7 +100,7 @@ DIY="$SCRIPT_DIR/scripts/diy.sh"
 
 # 1. 换行符
 echo -e "\n${YELLOW}[1/7] 检查换行符和权限...${NC}"
-fix_line_endings "$DIY" "$SCRIPT_DIR/build.sh" "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh"
+fix_line_endings "$DIY" "$SCRIPT_DIR/build.sh" "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
 # files/ 下的脚本和 YAML 也需要修复 CRLF（路由器 ash 不兼容 CRLF）
 fix_line_endings "$SCRIPT_DIR/files/usr/sbin/dns-hijack" \
   "$SCRIPT_DIR/files/usr/lib/ddns/update_aliyun_com.sh" \
@@ -155,6 +155,12 @@ fi
 chmod +x "$SCRIPT_DIR/scripts/upgrade-adgh.sh"
 "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$OPENWRT_DIR"
 
+# OpenClash LuCI 替换为 GitHub 最新版（旁路由 + 完整路由）
+if [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]]; then
+  chmod +x "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
+  "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh" "$OPENWRT_DIR"
+fi
+
 ./scripts/feeds install -a
 cp "$SCRIPT_DIR/configs/${MAIN_VER}-${CFG_PREFIX}.config" .config || error_exit "配置文件不存在"
 sed -i 's/\r$//' .config
@@ -194,6 +200,8 @@ case "$RUN_TYPE" in
     cp "$SCRIPT_DIR/files/etc/adguardhome/adguardhome-full.yaml" "$OPENWRT_DIR/files/etc/adguardhome/adguardhome.yaml"
     ;;
 esac
+BXPLUG_VER="${MAIN_VER%%.*}"
+case "$BXPLUG_VER" in 25) rm -f "$OPENWRT_DIR/files/etc/bxplug.ipk";; 24) rm -f "$OPENWRT_DIR/files/etc/bxplug.apk";; esac
 # 确保 scripts 可执行（Windows 无 Unix x 位，按路径/扩展名匹配）
 find "$OPENWRT_DIR/files" -type f \( -path "*/sbin/*" -o -path "*/hotplug.d/*" -o -path "*/uci-defaults/*" -o -name "*.sh" \) -exec chmod 755 {} + 2>/dev/null || true
 make defconfig && make download && make clean

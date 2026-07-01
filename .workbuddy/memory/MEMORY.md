@@ -41,12 +41,12 @@
 - diy.sh 旁路由分支设置 `openclash.config.core_type='Meta'` 和 `openclash.config.core_version='linux-amd64'`
 - ADGH UCI 配置（bypass + full 均需）：`adguardhome.config.port='53'` + `redirect='0'`（UCI 会覆盖 YAML 端口，必须显式设置）
 - ADGH YAML 过滤规则：旁路由与完整路由模板统一为同一套（Anti-AD-CHN / EasyList China / AdGuard DNS / Anti-AD），避免不同分支行为不一致
-- build.sh 与两个 workflow 均加入 `fix_line_endings` / 等价 CRLF 清理，防止 Windows 提交导致路由器 ash 执行失败
+- build.sh 与主 workflow 均加入 `fix_line_endings` / 等价 CRLF 清理，防止 Windows 提交导致路由器 ash 执行失败
 - ADGH YAML 模板：bypass 用 `files/etc/adguardhome/adguardhome.yaml`，full 用 `adguardhome-full.yaml`（内容一致：port 53, bind 0.0.0.0+"::"），build.sh/workflow 在 openwrt 副本上覆盖为 `adguardhome.yaml`
 - 完整路由需要 dns-hijack（防止客户端自定义 DNS 绕过 ADGH）；dns-hijack 脚本自动检测旁路 IP，无则全劫持
 - 完整路由不需要 BYPASS_IP（单设备，无旁路）
 - diy.sh 支持 `full` profile type：`--type main/bypass/full`
-- 完整路由专用 workflow：`ImmortalWrtBuilder_FullRouter_x86_64.yml`（简化输入，固定 OAF+ADGH+OpenClash）
+- 完整路由通过主 workflow `ImmortalWrtBuilder_x86_64.yml` 选择 `full-main` profile 构建（原专用 workflow 已删除）
 - OpenClash sniffer 预置：`files/etc/openclash/custom/openclash_custom_overwrite.yaml`（bypass+full 共用），UCI `enable_custom_overwrite='1'` 启用，与订阅配置合并
 
 ## 2025-06-27 修复：旁路由无法上网
