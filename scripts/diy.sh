@@ -332,7 +332,6 @@ if [ -f /etc/bxplug.apk ]; then
 elif [ -f /etc/bxplug.ipk ]; then
     opkg install /etc/bxplug.ipk && rm -f /etc/bxplug.ipk
 fi
-
 logger -t uci-defaults "配置应用完成"
 EOT
     chmod 755 "$OUT"
