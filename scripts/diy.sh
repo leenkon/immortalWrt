@@ -135,8 +135,6 @@ uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'
 uci -q set dhcp.@dnsmasq[0].port='5453' || true
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
-uci -q delete dhcp.@dnsmasq[0].listen_address || true
-uci add_list dhcp.@dnsmasq[0].listen_address='127.0.0.1'
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
 uci commit dhcp
 LAN_FW=\$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
@@ -207,8 +205,6 @@ uci set dhcp.lan.limit='150'
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci set dhcp.@dnsmasq[0].sequential_ip='1'
 uci -q set dhcp.@dnsmasq[0].port='5453' || true
-uci -q delete dhcp.@dnsmasq[0].listen_address || true
-uci add_list dhcp.@dnsmasq[0].listen_address='127.0.0.1'
 uci -q delete dhcp.@dnsmasq[0].server || true
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
 uci commit dhcp
