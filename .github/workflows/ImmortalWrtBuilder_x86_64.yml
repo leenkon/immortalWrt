@@ -51,91 +51,66 @@ jobs:
         run: |
           set -e
           # 修复 Windows 提交可能带来的 CRLF（路由器 ash 不兼容）
-          fix_line_endings() { for f in "$@"; do [[ -f "$f" ]] && grep -q $'\r' "$f" 2>/dev/null && sed -i 's/\r$//' "$f"; done || true; }
-          fix_line_endings $GITHUB_WORKSPACE/scripts/diy.sh \
-            $GITHUB_WORKSPACE/scripts/upgrade-adgh.sh \
-            $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh \
-            $GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh \
-            $GITHUB_WORKSPACE/files/usr/sbin/dns-hijack \
-            $GITHUB_WORKSPACE/files/usr/lib/ddns/update_aliyun_com.sh \
-            $GITHUB_WORKSPACE/files/etc/adguardhome/adguardhome.yaml \
-            $GITHUB_WORKSPACE/files/etc/adguardhome/adguardhome-full.yaml \
-            $GITHUB_WORKSPACE/files/etc/openclash/custom/openclash_custom_overwrite.yaml \
-            $GITHUB_WORKSPACE/files/etc/hotplug.d/iface/99-adgh-filters
+          find $GITHUB_WORKSPACE -type f \( -name "*.sh" -o -name "*.yaml" -o -name "dns-hijack" -o -name "99-adgh-filters" \) \
+            -exec sed -i 's/\r$//' {} + 2>/dev/null || true
           cd openwrt
           IFS='-' read -r CFG_PREFIX RUN_TYPE <<< "${{ github.event.inputs.profile }}"
-          # full-main profile → RUN_TYPE 需覆盖为 full（diy.sh 需要区分）
           [[ "$CFG_PREFIX" == "full" ]] && RUN_TYPE="full"
-          MAIN_VER="${{ github.event.inputs.version }}"
-          MAIN_VER="${MAIN_VER%.*}"
+          MAIN_VER="${{ github.event.inputs.version }}"; MAIN_VER="${MAIN_VER%.*}"
+          # OAF：主路由勾选或完整路由必装；OC/ADGH：仅旁路由/完整路由需要
+          [[ ("${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main") || "$RUN_TYPE" == "full" ]] && INSTALL_OAF=true || INSTALL_OAF=false
+          [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]] && WITH_OC_ADGH=true || WITH_OC_ADGH=false
+
           chmod +x $GITHUB_WORKSPACE/scripts/diy.sh
           $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p before -t $RUN_TYPE
           ./scripts/feeds update -a
 
-          # OAF: 主路由可选安装，完整路由始终安装
-          if [[ "${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main" ]] || [[ "$RUN_TYPE" == "full" ]]; then
-            rm -rf package/{luci-app-oaf,open-app-filter,oaf} feeds/packages/{net/open-app-filter,luci/luci-app-oaf,kernel/oaf}
-            rm -rf package/OpenAppFilter
+          if $INSTALL_OAF; then
+            rm -rf package/{luci-app-oaf,open-app-filter,oaf} feeds/packages/{net/open-app-filter,luci/luci-app-oaf,kernel/oaf} package/OpenAppFilter
             timeout 120 git clone --depth 1 https://github.com/destan19/OpenAppFilter package/OpenAppFilter
             cp -f $GITHUB_WORKSPACE/oaf_files/feature.cfg package/OpenAppFilter/open-app-filter/files/
             cp -rf $GITHUB_WORKSPACE/oaf_files/app_icons/ package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
           fi
 
-          # AdGuardHome 版本升级（使用官方最新版编译）
-          chmod +x $GITHUB_WORKSPACE/scripts/upgrade-adgh.sh
-          $GITHUB_WORKSPACE/scripts/upgrade-adgh.sh .
-
-          # OpenClash LuCI 替换为 GitHub 最新版（旁路由 + 完整路由）
-          if [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]]; then
-            chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh
+          if $WITH_OC_ADGH; then
+            chmod +x $GITHUB_WORKSPACE/scripts/upgrade-{adgh,openclash-luci}.sh
+            $GITHUB_WORKSPACE/scripts/upgrade-adgh.sh .
             $GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh .
           fi
 
           ./scripts/feeds install -a
           cp $GITHUB_WORKSPACE/configs/${MAIN_VER}-${CFG_PREFIX}.config .config
-
-          if [[ "${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main" ]] || [[ "$RUN_TYPE" == "full" ]]; then
-            echo -e "\nCONFIG_PACKAGE_luci-app-oaf=y" >> .config
-          fi
-
-          ROOTPWD="${{ github.event.inputs.root_password }}"
-          ROOTPWD="${ROOTPWD:-password}"
-          CIP="${{ github.event.inputs.custom_ip }}"
-          CGW="${{ github.event.inputs.custom_gateway }}"
-          PUSER="${{ github.event.inputs.pppoe_username }}"
-          PPASS="${{ github.event.inputs.pppoe_password }}"
+          $INSTALL_OAF && echo -e "\nCONFIG_PACKAGE_luci-app-oaf=y" >> .config || true
+          ROOTPWD="${{ github.event.inputs.root_password }}"; ROOTPWD="${ROOTPWD:-password}"
+          CIP="${{ github.event.inputs.custom_ip }}"; CGW="${{ github.event.inputs.custom_gateway }}"
+          PUSER="${{ github.event.inputs.pppoe_username }}"; PPASS="${{ github.event.inputs.pppoe_password }}"
           $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p after -t $RUN_TYPE \
             ${CIP:+--ip "$CIP"} ${CGW:+--gateway "$CGW"} \
             ${PUSER:+--pppoe-user "$PUSER"} ${PPASS:+--pppoe-pass "$PPASS"} \
             --root-pass "$ROOTPWD"
-          # OpenClash Meta 核心预装（旁路由 + 完整路由，跳过首次启动在线下载）
-          if [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]]; then
-            chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh
-            $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh $GITHUB_WORKSPACE
-          fi
-          [[ -d "$GITHUB_WORKSPACE/files" ]] && { rm -rf files; cp -rf "$GITHUB_WORKSPACE/files" .; }
-          # 文件清理：按 profile 删除不需要的静态文件（在 openwrt 副本上操作，不修改源树）
+
+          $WITH_OC_ADGH && { chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh; $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh $GITHUB_WORKSPACE; } || true
+          [[ -d "$GITHUB_WORKSPACE/files" ]] && { rm -rf files; cp -rf "$GITHUB_WORKSPACE/files/" .; } || true
+
+          # 按 profile 删除不需要的静态文件（在 openwrt 副本上操作，不修改源树）
           case "$RUN_TYPE" in
-            main)
-              rm -rf files/etc/adguardhome
-              rm -rf files/etc/openclash/core
-              rm -rf files/etc/openclash/custom
-              ;;
-            bypass)
-              rm -f files/usr/sbin/dns-hijack
-              ;;
-            full)
-              cp $GITHUB_WORKSPACE/files/etc/adguardhome/adguardhome-full.yaml files/etc/adguardhome/adguardhome.yaml
-              ;;
+            main)   rm -rf files/etc/{adguardhome,openclash};;
+            bypass) rm -f files/usr/sbin/dns-hijack;;
+            full)   cp -f $GITHUB_WORKSPACE/files/etc/adguardhome/adguardhome-full.yaml files/etc/adguardhome/adguardhome.yaml;;
           esac
+          # bxplug：25.x=apk, 24.x=ipk, 清理与当前版本不匹配的格式
           BXPLUG_VER="${MAIN_VER%%.*}"
-          case "$BXPLUG_VER" in 25) rm -f files/etc/bxplug.ipk;; 24) rm -f files/etc/bxplug.apk;; esac
+          case "$BXPLUG_VER" in
+            25) rm -f files/etc/bxplug.ipk;;
+            24) rm -f files/etc/bxplug.apk;;
+            *)  rm -f files/etc/bxplug.{ipk,apk};;
+          esac
           find files/ -type f \( -path "*/sbin/*" -o -path "*/hotplug.d/*" -o -path "*/uci-defaults/*" -o -name "*.sh" \) -exec chmod 755 {} + 2>/dev/null || true
           make defconfig && make download && make clean
           make -j$(nproc) || make -j1 V=s
-          TIMESTAMP=$(date +%Y%m%d%H%M%S)
-          echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
-          shopt -s nullglob; for f in bin/targets/x86/64/*combined.img.gz; do mv "$f" "${f%.img.gz}-$TIMESTAMP.img.gz"; done; shopt -u nullglob
+          TS=$(date +%Y%m%d%H%M%S)
+          echo "timestamp=$TS" >> $GITHUB_OUTPUT
+          shopt -s nullglob; for f in bin/targets/x86/64/*combined.img.gz; do mv "$f" "${f%.img.gz}-$TS.img.gz"; done; shopt -u nullglob
 
       - name: 上传固件
         uses: softprops/action-gh-release@v2
