@@ -200,8 +200,8 @@ grep -q 'net.ipv4.ip_forward=1' /etc/sysctl.conf || echo 'net.ipv4.ip_forward=1'
 # dnsmasq: port 5453, DHCP only (ADGH 占用 53)
 uci -q delete dhcp.lan.dhcp_option || true
 uci add_list dhcp.lan.dhcp_option='6,$ip_esc,$DNS_MAIN,$DNS_BACKUP'
-uci set dhcp.lan.start='6'
-uci set dhcp.lan.limit='150'
+uci set dhcp.lan.start='7'
+uci set dhcp.lan.limit='149'
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci set dhcp.@dnsmasq[0].sequential_ip='1'
 uci -q set dhcp.@dnsmasq[0].port='5453' || true
@@ -286,8 +286,8 @@ uci commit network
 
 uci -q delete dhcp.lan.dhcp_option || true
 uci add_list dhcp.lan.dhcp_option='6,$BYPASS_IP,$DNS_MAIN,$DNS_BACKUP'
-uci set dhcp.lan.start='6'
-uci set dhcp.lan.limit='150'
+uci set dhcp.lan.start='7'
+uci set dhcp.lan.limit='149'
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
 uci set dhcp.@dnsmasq[0].sequential_ip='1'
 uci -q delete dhcp.@dnsmasq[0].server || true
