@@ -106,84 +106,12 @@ after)
 
     ip_esc=$(_escape_uci "$CUSTOM_IP")
 
-    echo '#!/bin/sh' > "$OUT"
-    echo "logger -t uci-defaults \"开始应用${PROFILE_TYPE}配置\"" >> "$OUT"
+    # ===== 公共配置块（各 profile 按需引用） =====
+    # 1) IP 转发开关：所有 profile 统一开启
+    IP_FORWARD_LN='grep -q '\''net.ipv4.ip_forward=1'\'' /etc/sysctl.conf || echo '\''net.ipv4.ip_forward=1'\'' >> /etc/sysctl.conf'
 
-    if [ "$PROFILE_TYPE" = "bypass" ]; then
-        gw_esc=$(_escape_uci "$CUSTOM_GATEWAY")
-        cat >> "$OUT" <<EOT
-grep -q 'net.ipv4.ip_forward=1' /etc/sysctl.conf || echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf
-uci set network.lan.proto='static'
-uci set network.lan.ipaddr='$ip_esc'
-uci set network.lan.netmask='$SUBNET_MASK'
-uci set network.lan.gateway='$gw_esc'
-uci -q delete network.lan.dns || true
-uci add_list network.lan.dns='$DNS_MAIN'
-uci add_list network.lan.dns='$DNS_BACKUP'
-uci -q delete network.lan6 || true
-uci -q delete network.default_route || true
-uci set network.default_route=route
-uci set network.default_route.interface='lan'
-uci set network.default_route.target='0.0.0.0'
-uci set network.default_route.netmask='0.0.0.0'
-uci set network.default_route.gateway='$gw_esc'
-uci -q delete network.wan || true
-uci -q delete network.wan6 || true
-uci commit network
-
-uci set dhcp.lan.ignore='1'
-uci set dhcp.lan6.ignore='1'
-uci -q set dhcp.@dnsmasq[0].port='5453' || true
-uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
-uci set dhcp.@dnsmasq[0].dns_redirect='0'
-uci commit dhcp
-LAN_FW=\$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
-WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
-[ -n "\$LAN_FW" ] && {
-    uci set \${LAN_FW}.input='ACCEPT'
-    uci set \${LAN_FW}.output='ACCEPT'
-    uci set \${LAN_FW}.forward='ACCEPT'
-}
-[ -n "\$WAN_FW" ] && {
-    uci set \${WAN_FW}.network=''
-    uci set \${WAN_FW}.masq='0'
-}
-while uci -q delete firewall.@forwarding[0]; do :; done
-uci commit firewall
-uci set adguardhome.config.enabled='1'
-uci set adguardhome.config.port='53'
-uci set adguardhome.config.redirect='0'
-uci commit adguardhome
-
-# OpenClash: redir-host, DNS 劫持关闭, sniffer 预置于 openclash_custom_overwrite.yaml
-uci set openclash.config.core_type='Meta'
-uci set openclash.config.core_version='linux-amd64'
-uci set openclash.config.enable_redirect_dns='0'
-uci set openclash.config.en_mode='redir-host'
-uci set openclash.config.operation_mode='redir-host'
-uci set openclash.config.enable_custom_overwrite='1'
-uci commit openclash
-EOT
-    elif [ "$PROFILE_TYPE" = "full" ]; then
-        if [ -n "$PPPOE_USERNAME" ]; then
-            u=$(_escape_uci "$PPPOE_USERNAME")
-            p=$(_escape_uci "$PPPOE_PASSWORD")
-            cat >> "$OUT" <<EOT
-uci set network.wan.proto='pppoe'
-uci set network.wan.username='$u'
-uci set network.wan.password='$p'
-uci set network.wan.ipv6='auto'
-uci -q delete network.wan6 || true
-EOT
-        else
-            cat >> "$OUT" <<EOT
-uci set network.wan.proto='dhcp'
-uci -q delete network.wan6 || true
-uci set network.wan6.proto='dhcpv6'
-EOT
-        fi
-
-        cat >> "$OUT" <<EOT
+    # 2) full/main 共用：LAN 静态 + peerdns 关 + wan.dns 公共上游
+    LAN_WAN_COMMON_BLK=$(cat <<EOF
 uci -q delete network.lan6 || true
 uci set network.lan.ip6assign='64'
 uci set network.lan.proto='static'
@@ -194,53 +122,11 @@ uci -q delete network.wan.dns || true
 uci add_list network.wan.dns='$DNS_MAIN'
 uci add_list network.wan.dns='$DNS_BACKUP'
 uci commit network
+EOF
+)
 
-grep -q 'net.ipv4.ip_forward=1' /etc/sysctl.conf || echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf
-
-# dnsmasq: port 5453, DHCP only (ADGH 占用 53)
-uci -q delete dhcp.lan.dhcp_option || true
-uci add_list dhcp.lan.dhcp_option='6,$ip_esc,$DNS_MAIN,$DNS_BACKUP'
-uci set dhcp.lan.start='7'
-uci set dhcp.lan.limit='149'
-uci set dhcp.lan.dhcpv6='server'
-uci set dhcp.lan.ra='server'
-uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
-uci set dhcp.@dnsmasq[0].sequential_ip='1'
-uci -q set dhcp.@dnsmasq[0].port='5453' || true
-uci -q delete dhcp.@dnsmasq[0].server || true
-uci set dhcp.@dnsmasq[0].dns_redirect='0'
-uci commit dhcp
-
-# Block-QUIC: UDP 443 阻断，防代理逃逸
-LAN_FW=\$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
-[ -n "\$LAN_FW" ] && uci set \${LAN_FW}.forward='ACCEPT'
-while uci -q delete firewall.@forwarding[0]; do :; done
-uci add firewall forwarding
-uci set firewall.@forwarding[-1].src='lan'
-uci set firewall.@forwarding[-1].dest='wan'
-uci add firewall rule
-uci set firewall.@rule[-1].name='Block-QUIC'
-uci set firewall.@rule[-1].src='lan'
-uci set firewall.@rule[-1].dest='wan'
-uci set firewall.@rule[-1].proto='udp'
-uci set firewall.@rule[-1].dest_port='443'
-uci set firewall.@rule[-1].target='REJECT'
-
-# DNS 劫持：强制 LAN 客户端 DNS 走 ADGH(53)
-chmod 755 /usr/sbin/dns-hijack
-/usr/sbin/dns-hijack
-uci -q delete firewall.dns_hijack_include 2>/dev/null
-uci set firewall.dns_hijack_include=include
-uci set firewall.dns_hijack_include.path='/usr/sbin/dns-hijack'
-uci set firewall.dns_hijack_include.enabled='1'
-uci commit firewall
-
-# OAF: gateway mode
-uci set oaf.global.enable='1'
-uci set oaf.global.work_mode='gateway'
-uci commit oaf
-
-# AdGuardHome: port 53
+    # 3) bypass/full 共用：AdGuardHome + OpenClash meta/redir-host
+    ADGH_OC_BLK=$(cat <<'EOF'
 uci set adguardhome.config.enabled='1'
 uci set adguardhome.config.port='53'
 uci set adguardhome.config.redirect='0'
@@ -254,37 +140,162 @@ uci set openclash.config.en_mode='redir-host'
 uci set openclash.config.operation_mode='redir-host'
 uci set openclash.config.enable_custom_overwrite='1'
 uci commit openclash
+EOF
+)
+
+    # 4) full/main 共用：LAN 区 forward + lan->wan forwarding 重置
+    LAN_FORWARD_BLK=$(cat <<'EOF'
+LAN_FW=$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
+[ -n "$LAN_FW" ] && uci set ${LAN_FW}.forward='ACCEPT'
+while uci -q delete firewall.@forwarding[0]; do :; done
+uci add firewall forwarding
+uci set firewall.@forwarding[-1].src='lan'
+uci set firewall.@forwarding[-1].dest='wan'
+EOF
+)
+
+    # 5) full/main 共用：dns-hijack + firewall include（放在最后，避免上游未就绪时形成黑洞）
+    DNS_HIJACK_BLK=$(cat <<'EOF'
+# DNS 劫持：LAN DNS 请求强制走本地解析链路
+chmod 755 /usr/sbin/dns-hijack
+/usr/sbin/dns-hijack
+uci -q delete firewall.dns_hijack_include 2>/dev/null
+uci set firewall.dns_hijack_include=include
+uci set firewall.dns_hijack_include.path='/usr/sbin/dns-hijack'
+uci set firewall.dns_hijack_include.enabled='1'
+uci commit firewall
+EOF
+)
+
+    echo '#!/bin/sh' > "$OUT"
+    echo "logger -t uci-defaults \"开始应用${PROFILE_TYPE}配置\"" >> "$OUT"
+
+    if [ "$PROFILE_TYPE" = "bypass" ]; then
+        gw_esc=$(_escape_uci "$CUSTOM_GATEWAY")
+        cat >> "$OUT" <<EOT
+$IP_FORWARD_LN
+uci set network.lan.proto='static'
+uci set network.lan.ipaddr='$ip_esc'
+uci set network.lan.netmask='$SUBNET_MASK'
+uci set network.lan.gateway='$gw_esc'
+uci -q delete network.lan.dns || true
+uci add_list network.lan.dns='$DNS_MAIN'
+uci add_list network.lan.dns='$DNS_BACKUP'
+uci -q delete network.lan6 || true
+uci -q delete network.wan || true
+uci -q delete network.wan6 || true
+uci commit network
+
+uci set dhcp.lan.ignore='1'
+uci set dhcp.lan6.ignore='1'
+uci -q set dhcp.@dnsmasq[0].port='5453' || true
+uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
+uci set dhcp.@dnsmasq[0].dns_redirect='0'
+uci commit dhcp
+
+LAN_FW=\$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
+WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
+[ -n "\$LAN_FW" ] && {
+    uci set \${LAN_FW}.input='ACCEPT'
+    uci set \${LAN_FW}.output='ACCEPT'
+    uci set \${LAN_FW}.forward='ACCEPT'
+    uci set \${LAN_FW}.masq='1'
+    uci set \${LAN_FW}.mtu_fix='1'
+}
+[ -n "\$WAN_FW" ] && {
+    uci set \${WAN_FW}.network=''
+    uci set \${WAN_FW}.masq='0'
+}
+while uci -q delete firewall.@forwarding[0]; do :; done
+uci commit firewall
+
+$ADGH_OC_BLK
 EOT
-    else
+    elif [ "$PROFILE_TYPE" = "full" ]; then
         if [ -n "$PPPOE_USERNAME" ]; then
-            u=$(_escape_uci "$PPPOE_USERNAME")
-            p=$(_escape_uci "$PPPOE_PASSWORD")
-            cat >> "$OUT" <<EOT
+            u=$(_escape_uci "$PPPOE_USERNAME"); p=$(_escape_uci "$PPPOE_PASSWORD")
+            WAN_BLK=$(cat <<EOT
 uci set network.wan.proto='pppoe'
 uci set network.wan.username='$u'
 uci set network.wan.password='$p'
 uci set network.wan.ipv6='auto'
 uci -q delete network.wan6 || true
 EOT
+)
         else
-            cat >> "$OUT" <<EOT
+            WAN_BLK=$(cat <<EOT
 uci set network.wan.proto='dhcp'
 uci -q delete network.wan6 || true
 uci set network.wan6.proto='dhcpv6'
 EOT
+)
         fi
-
         cat >> "$OUT" <<EOT
-uci -q delete network.lan6 || true
-uci set network.lan.ip6assign='64'
-uci set network.lan.proto='static'
-uci set network.lan.ipaddr='$ip_esc'
-uci set network.lan.netmask='$SUBNET_MASK'
-uci set network.wan.peerdns='0'
-uci -q delete network.wan.dns || true
-uci add_list network.wan.dns='$DNS_MAIN'
-uci add_list network.wan.dns='$DNS_BACKUP'
-uci commit network
+$WAN_BLK
+$LAN_WAN_COMMON_BLK
+
+$IP_FORWARD_LN
+
+# dnsmasq: port 5453, DHCP only (ADGH 占用 53)
+# DHCP 仅下发 ADGH IP（避免多 DNS race：nftables 重定向后源 IP 与请求目的不匹配导致客户端丢包）
+uci -q delete dhcp.lan.dhcp_option || true
+uci add_#list dhcp.lan.dhcp_option='6,$ip_esc,$DNS_MAIN,$DNS_BACKUP'
+uci add_list dhcp.lan.dhcp_option='6,$ip_esc'
+uci set dhcp.lan.start='7'
+uci set dhcp.lan.limit='149'
+uci set dhcp.lan.dhcpv6='server'
+uci set dhcp.lan.ra='server'
+uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
+uci set dhcp.@dnsmasq[0].sequential_ip='1'
+uci -q set dhcp.@dnsmasq[0].port='5453' || true
+uci -q delete dhcp.@dnsmasq[0].server || true
+uci set dhcp.@dnsmasq[0].dns_redirect='0'
+uci commit dhcp
+
+# Block-QUIC: UDP 443 阻断，防代理逃逸
+$LAN_FORWARD_BLK
+uci add firewall rule
+uci set firewall.@rule[-1].name='Block-QUIC'
+uci set firewall.@rule[-1].src='lan'
+uci set firewall.@rule[-1].dest='wan'
+uci set firewall.@rule[-1].proto='udp'
+uci set firewall.@rule[-1].dest_port='443'
+uci set firewall.@rule[-1].target='REJECT'
+uci commit firewall
+
+# OAF: gateway mode
+uci set oaf.global.enable='1'
+uci set oaf.global.work_mode='gateway'
+uci commit oaf
+
+$ADGH_OC_BLK
+
+$DNS_HIJACK_BLK
+EOT
+    else
+        if [ -n "$PPPOE_USERNAME" ]; then
+            u=$(_escape_uci "$PPPOE_USERNAME"); p=$(_escape_uci "$PPPOE_PASSWORD")
+            WAN_BLK=$(cat <<EOT
+uci set network.wan.proto='pppoe'
+uci set network.wan.username='$u'
+uci set network.wan.password='$p'
+uci set network.wan.ipv6='auto'
+uci -q delete network.wan6 || true
+EOT
+)
+        else
+            WAN_BLK=$(cat <<EOT
+uci set network.wan.proto='dhcp'
+uci -q delete network.wan6 || true
+uci set network.wan6.proto='dhcpv6'
+EOT
+)
+        fi
+        cat >> "$OUT" <<EOT
+$WAN_BLK
+$LAN_WAN_COMMON_BLK
+
+$IP_FORWARD_LN
 
 uci -q delete dhcp.lan.dhcp_option || true
 uci add_list dhcp.lan.dhcp_option='6,$BYPASS_IP,$DNS_MAIN,$DNS_BACKUP'
@@ -302,22 +313,9 @@ uci set dhcp.@dnsmasq[0].strictorder='1'
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
 uci commit dhcp
 
-LAN_FW=\$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
-[ -n "\$LAN_FW" ] && uci set \${LAN_FW}.forward='ACCEPT'
-while uci -q delete firewall.@forwarding[0]; do :; done
-uci add firewall forwarding
-uci set firewall.@forwarding[-1].src='lan'
-uci set firewall.@forwarding[-1].dest='wan'
+$LAN_FORWARD_BLK
 
-# DNS 劫持：强制 LAN 客户端 DNS 走本地 dnsmasq（再转发至旁路）
-chmod 755 /usr/sbin/dns-hijack
-/usr/sbin/dns-hijack
-uci -q delete firewall.dns_hijack_include 2>/dev/null
-uci set firewall.dns_hijack_include=include
-uci set firewall.dns_hijack_include.path='/usr/sbin/dns-hijack'
-uci set firewall.dns_hijack_include.enabled='1'
-uci commit firewall
-
+$DNS_HIJACK_BLK
 EOT
     fi
 

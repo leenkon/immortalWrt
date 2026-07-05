@@ -151,13 +151,10 @@ if [[ "$USE_OAF" == "true" ]]; then
   [[ -d "$SCRIPT_DIR/oaf_files/app_icons" ]] && cp -rf "$SCRIPT_DIR/oaf_files/app_icons" package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
 fi
 
-# AdGuardHome 版本升级（使用官方最新版编译）
-chmod +x "$SCRIPT_DIR/scripts/upgrade-adgh.sh"
-"$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$OPENWRT_DIR"
-
-# OpenClash LuCI 替换为 GitHub 最新版（旁路由 + 完整路由）
+# AdGuardHome 版本升级 + OpenClash LuCI 替换（仅旁路由 / 完整路由需要）
 if [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]]; then
-  chmod +x "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
+  chmod +x "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
+  "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$OPENWRT_DIR"
   "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh" "$OPENWRT_DIR"
 fi
 
@@ -190,8 +187,7 @@ fi
 case "$RUN_TYPE" in
   main)
     rm -rf "$OPENWRT_DIR/files/etc/adguardhome"
-    rm -rf "$OPENWRT_DIR/files/etc/openclash/core"
-    rm -rf "$OPENWRT_DIR/files/etc/openclash/custom"
+    rm -rf "$OPENWRT_DIR/files/etc/openclash"
     ;;
   bypass)
     rm -f "$OPENWRT_DIR/files/usr/sbin/dns-hijack"
@@ -201,7 +197,11 @@ case "$RUN_TYPE" in
     ;;
 esac
 BXPLUG_VER="${MAIN_VER%%.*}"
-case "$BXPLUG_VER" in 25) rm -f "$OPENWRT_DIR/files/etc/bxplug.ipk";; 24) rm -f "$OPENWRT_DIR/files/etc/bxplug.apk";; esac
+case "$BXPLUG_VER" in
+  25) rm -f "$OPENWRT_DIR/files/etc/bxplug.ipk";;
+  24) rm -f "$OPENWRT_DIR/files/etc/bxplug.apk";;
+  *)  rm -f "$OPENWRT_DIR/files/etc/bxplug.ipk" "$OPENWRT_DIR/files/etc/bxplug.apk";;
+esac
 # 确保 scripts 可执行（Windows 无 Unix x 位，按路径/扩展名匹配）
 find "$OPENWRT_DIR/files" -type f \( -path "*/sbin/*" -o -path "*/hotplug.d/*" -o -path "*/uci-defaults/*" -o -name "*.sh" \) -exec chmod 755 {} + 2>/dev/null || true
 make defconfig && make download && make clean
