@@ -112,13 +112,13 @@ after)
 
     # 2) full/main 共用：LAN 静态 + peerdns 关 + wan.dns 公共上游
     LAN_WAN_COMMON_BLK=$(cat <<EOF
-uci -q delete network.lan6 || true
+uci -q delete network.lan6
 uci set network.lan.ip6assign='64'
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ip_esc'
 uci set network.lan.netmask='$SUBNET_MASK'
 uci set network.wan.peerdns='0'
-uci -q delete network.wan.dns || true
+uci -q delete network.wan.dns
 uci add_list network.wan.dns='$DNS_MAIN'
 uci add_list network.wan.dns='$DNS_BACKUP'
 uci commit network
@@ -132,7 +132,6 @@ uci set adguardhome.config.port='53'
 uci set adguardhome.config.redirect='0'
 uci commit adguardhome
 
-# OpenClash: redir-host, sniffer 预置于 openclash_custom_overwrite.yaml
 uci set openclash.config.core_type='Meta'
 uci set openclash.config.core_version='linux-amd64'
 uci set openclash.config.enable_redirect_dns='0'
@@ -156,16 +155,50 @@ EOF
 
     # 5) full/main 共用：dns-hijack + firewall include（放在最后，避免上游未就绪时形成黑洞）
     DNS_HIJACK_BLK=$(cat <<'EOF'
-# DNS 劫持：LAN DNS 请求强制走本地解析链路
 chmod 755 /usr/sbin/dns-hijack
 /usr/sbin/dns-hijack
-uci -q delete firewall.dns_hijack_include 2>/dev/null
+uci -q delete firewall.dns_hijack_include
 uci set firewall.dns_hijack_include=include
 uci set firewall.dns_hijack_include.path='/usr/sbin/dns-hijack'
 uci set firewall.dns_hijack_include.enabled='1'
 uci commit firewall
 EOF
 )
+
+    # 6) full/main 共用：DHCP 公共段（范围、RA、下发单 DNS 等）
+    DHCP_COMMON_BLK=$(cat <<EOF
+uci -q delete dhcp.lan.dhcp_option
+uci add_list dhcp.lan.dhcp_option='6,$ip_esc'
+uci set dhcp.lan.start='7'
+uci set dhcp.lan.limit='149'
+uci set dhcp.lan.dhcpv6='server'
+uci set dhcp.lan.ra='server'
+uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
+uci set dhcp.@dnsmasq[0].sequential_ip='1'
+EOF
+)
+
+    # 7) full/main 共用：WAN 段（PPPoE / DHCP）提前生成，避免两个分支重复
+    if [ "$PROFILE_TYPE" = "full" ] || [ "$PROFILE_TYPE" = "main" ]; then
+        if [ -n "$PPPOE_USERNAME" ]; then
+            u=$(_escape_uci "$PPPOE_USERNAME"); p=$(_escape_uci "$PPPOE_PASSWORD")
+            WAN_BLK=$(cat <<EOT
+uci set network.wan.proto='pppoe'
+uci set network.wan.username='$u'
+uci set network.wan.password='$p'
+uci set network.wan.ipv6='auto'
+uci -q delete network.wan6
+EOT
+)
+        else
+            WAN_BLK=$(cat <<EOT
+uci set network.wan.proto='dhcp'
+uci -q delete network.wan6
+uci set network.wan6.proto='dhcpv6'
+EOT
+)
+        fi
+    fi
 
     echo '#!/bin/sh' > "$OUT"
     echo "logger -t uci-defaults \"开始应用${PROFILE_TYPE}配置\"" >> "$OUT"
@@ -178,18 +211,18 @@ uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ip_esc'
 uci set network.lan.netmask='$SUBNET_MASK'
 uci set network.lan.gateway='$gw_esc'
-uci -q delete network.lan.dns || true
+uci -q delete network.lan.dns
 uci add_list network.lan.dns='$DNS_MAIN'
 uci add_list network.lan.dns='$DNS_BACKUP'
-uci -q delete network.lan6 || true
-uci -q delete network.wan || true
-uci -q delete network.wan6 || true
+uci -q delete network.lan6
+uci -q delete network.wan
+uci -q delete network.wan6
 uci commit network
 
 uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'
-uci -q set dhcp.@dnsmasq[0].port='5453' || true
-uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
+uci -q set dhcp.@dnsmasq[0].port='5453'
+uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
 uci commit dhcp
 
@@ -212,47 +245,18 @@ uci commit firewall
 $ADGH_OC_BLK
 EOT
     elif [ "$PROFILE_TYPE" = "full" ]; then
-        if [ -n "$PPPOE_USERNAME" ]; then
-            u=$(_escape_uci "$PPPOE_USERNAME"); p=$(_escape_uci "$PPPOE_PASSWORD")
-            WAN_BLK=$(cat <<EOT
-uci set network.wan.proto='pppoe'
-uci set network.wan.username='$u'
-uci set network.wan.password='$p'
-uci set network.wan.ipv6='auto'
-uci -q delete network.wan6 || true
-EOT
-)
-        else
-            WAN_BLK=$(cat <<EOT
-uci set network.wan.proto='dhcp'
-uci -q delete network.wan6 || true
-uci set network.wan6.proto='dhcpv6'
-EOT
-)
-        fi
         cat >> "$OUT" <<EOT
 $WAN_BLK
 $LAN_WAN_COMMON_BLK
 
 $IP_FORWARD_LN
 
-# dnsmasq: port 5453, DHCP only (ADGH 占用 53)
-# DHCP 仅下发 ADGH IP（避免多 DNS race：nftables 重定向后源 IP 与请求目的不匹配导致客户端丢包）
-uci -q delete dhcp.lan.dhcp_option || true
-#uci add_list dhcp.lan.dhcp_option='6,$ip_esc,$DNS_MAIN,$DNS_BACKUP'
-uci add_list dhcp.lan.dhcp_option='6,$ip_esc'
-uci set dhcp.lan.start='7'
-uci set dhcp.lan.limit='149'
-uci set dhcp.lan.dhcpv6='server'
-uci set dhcp.lan.ra='server'
-uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
-uci set dhcp.@dnsmasq[0].sequential_ip='1'
-uci -q set dhcp.@dnsmasq[0].port='5453' || true
-uci -q delete dhcp.@dnsmasq[0].server || true
+$DHCP_COMMON_BLK
+uci -q set dhcp.@dnsmasq[0].port='5453'
+uci -q delete dhcp.@dnsmasq[0].server
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
 uci commit dhcp
 
-# Block-QUIC: UDP 443 阻断，防代理逃逸
 $LAN_FORWARD_BLK
 uci add firewall rule
 uci set firewall.@rule[-1].name='Block-QUIC'
@@ -263,7 +267,6 @@ uci set firewall.@rule[-1].dest_port='443'
 uci set firewall.@rule[-1].target='REJECT'
 uci commit firewall
 
-# OAF: gateway mode
 uci set oaf.global.enable='1'
 uci set oaf.global.work_mode='gateway'
 uci commit oaf
@@ -273,43 +276,17 @@ $ADGH_OC_BLK
 $DNS_HIJACK_BLK
 EOT
     else
-        if [ -n "$PPPOE_USERNAME" ]; then
-            u=$(_escape_uci "$PPPOE_USERNAME"); p=$(_escape_uci "$PPPOE_PASSWORD")
-            WAN_BLK=$(cat <<EOT
-uci set network.wan.proto='pppoe'
-uci set network.wan.username='$u'
-uci set network.wan.password='$p'
-uci set network.wan.ipv6='auto'
-uci -q delete network.wan6 || true
-EOT
-)
-        else
-            WAN_BLK=$(cat <<EOT
-uci set network.wan.proto='dhcp'
-uci -q delete network.wan6 || true
-uci set network.wan6.proto='dhcpv6'
-EOT
-)
-        fi
         cat >> "$OUT" <<EOT
 $WAN_BLK
 $LAN_WAN_COMMON_BLK
 
 $IP_FORWARD_LN
 
-uci -q delete dhcp.lan.dhcp_option || true
-uci add_list dhcp.lan.dhcp_option='6,$BYPASS_IP,$DNS_MAIN,$DNS_BACKUP'
-uci set dhcp.lan.start='7'
-uci set dhcp.lan.limit='149'
-uci set dhcp.lan.dhcpv6='server'
-uci set dhcp.lan.ra='server'
-uci -q set dhcp.@dnsmasq[0].rebind_protection='0' || true
-uci set dhcp.@dnsmasq[0].sequential_ip='1'
-uci -q delete dhcp.@dnsmasq[0].server || true
+$DHCP_COMMON_BLK
+uci -q delete dhcp.@dnsmasq[0].server
 uci add_list dhcp.@dnsmasq[0].server='$BYPASS_IP'
 uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
 uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
-uci set dhcp.@dnsmasq[0].strictorder='1'
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
 uci commit dhcp
 
@@ -320,6 +297,10 @@ EOT
     fi
 
     cat >> "$OUT" <<EOT
+uci set firewall.@defaults[0].flow_offloading='1'
+uci set firewall.@defaults[0].flow_offloading_hw='1'
+uci commit firewall
+
 uci set system.@system[0].hostname='Router-${PROFILE_TYPE}'
 uci set system.@system[0].timezone='CST-8'
 uci set system.@system[0].zonename='Asia/Shanghai'
@@ -328,7 +309,6 @@ uci add_list system.ntp.server='ntp.aliyun.com'
 uci add_list system.ntp.server='cn.pool.ntp.org'
 uci commit system
 
-# bxplug 插件安装（根据包管理器自动选择）
 if [ -f /etc/bxplug.apk ]; then
     apk --allow-untrusted add /etc/bxplug.apk && rm -f /etc/bxplug.apk
 elif [ -f /etc/bxplug.ipk ]; then

@@ -96,7 +96,7 @@ jobs:
           case "$RUN_TYPE" in
             main)   rm -rf files/etc/{adguardhome,openclash};;
             bypass) rm -f files/usr/sbin/dns-hijack;;
-            full)   cp -f $GITHUB_WORKSPACE/files/etc/adguardhome/adguardhome-full.yaml files/etc/adguardhome/adguardhome.yaml;;
+            full)   ;;
           esac
           # bxplug：25.x=apk, 24.x=ipk, 清理与当前版本不匹配的格式
           BXPLUG_VER="${MAIN_VER%%.*}"

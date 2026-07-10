@@ -105,7 +105,6 @@ fix_line_endings "$DIY" "$SCRIPT_DIR/build.sh" "$SCRIPT_DIR/scripts/upgrade-adgh
 fix_line_endings "$SCRIPT_DIR/files/usr/sbin/dns-hijack" \
   "$SCRIPT_DIR/files/usr/lib/ddns/update_aliyun_com.sh" \
   "$SCRIPT_DIR/files/etc/adguardhome/adguardhome.yaml" \
-  "$SCRIPT_DIR/files/etc/adguardhome/adguardhome-full.yaml" \
   "$SCRIPT_DIR/files/etc/openclash/custom/openclash_custom_overwrite.yaml" \
   "$SCRIPT_DIR/files/etc/hotplug.d/iface/99-adgh-filters"
 chmod +x "$DIY" "$SCRIPT_DIR/build.sh"
@@ -193,7 +192,6 @@ case "$RUN_TYPE" in
     rm -f "$OPENWRT_DIR/files/usr/sbin/dns-hijack"
     ;;
   full)
-    cp "$SCRIPT_DIR/files/etc/adguardhome/adguardhome-full.yaml" "$OPENWRT_DIR/files/etc/adguardhome/adguardhome.yaml"
     ;;
 esac
 BXPLUG_VER="${MAIN_VER%%.*}"
