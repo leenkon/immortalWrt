@@ -239,7 +239,7 @@ $IP_FORWARD_LN
 # dnsmasq: port 5453, DHCP only (ADGH 占用 53)
 # DHCP 仅下发 ADGH IP（避免多 DNS race：nftables 重定向后源 IP 与请求目的不匹配导致客户端丢包）
 uci -q delete dhcp.lan.dhcp_option || true
-uci add_#list dhcp.lan.dhcp_option='6,$ip_esc,$DNS_MAIN,$DNS_BACKUP'
+#uci add_list dhcp.lan.dhcp_option='6,$ip_esc,$DNS_MAIN,$DNS_BACKUP'
 uci add_list dhcp.lan.dhcp_option='6,$ip_esc'
 uci set dhcp.lan.start='7'
 uci set dhcp.lan.limit='149'
