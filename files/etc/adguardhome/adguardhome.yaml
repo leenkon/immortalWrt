@@ -11,13 +11,10 @@ dns:
     - 0.0.0.0
     - "::"
   upstream_dns:
-    - "tls://223.5.5.5"
+    - "udp://94.140.14.140"
     - "udp://223.5.5.5"
+    - "tls://223.5.5.5"
     - "tls://1.1.1.1"
-    - "udp://1.1.1.1"
-  bootstraps:
-    - 223.5.5.5
-    - 1.1.1.1
   cache_enabled: true
   cache_size: 4194304
   cache_optimistic_ttl: 30s

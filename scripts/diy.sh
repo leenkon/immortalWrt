@@ -117,7 +117,6 @@ uci set network.lan.ip6assign='64'
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ip_esc'
 uci set network.lan.netmask='$SUBNET_MASK'
-uci set network.wan.peerdns='0'
 uci -q delete network.wan.dns
 uci add_list network.wan.dns='$DNS_MAIN'
 uci add_list network.wan.dns='$DNS_BACKUP'
@@ -127,11 +126,13 @@ EOF
 
     # 3) bypass/full 共用：AdGuardHome + OpenClash meta/redir-host
     ADGH_OC_BLK=$(cat <<'EOF'
+uci -q get adguardhome.config.enabled >/dev/null || uci set adguardhome.config=adguardhome
 uci set adguardhome.config.enabled='1'
 uci set adguardhome.config.port='53'
 uci set adguardhome.config.redirect='0'
 uci commit adguardhome
 
+uci -q get openclash.config.core_type >/dev/null || uci set openclash.config=openclash
 uci set openclash.config.core_type='Meta'
 uci set openclash.config.core_version='linux-amd64'
 uci set openclash.config.enable_redirect_dns='0'
@@ -187,14 +188,17 @@ uci set network.wan.proto='pppoe'
 uci set network.wan.username='$u'
 uci set network.wan.password='$p'
 uci set network.wan.ipv6='auto'
+uci set network.wan.peerdns='0'
 uci -q delete network.wan6
 EOT
 )
         else
             WAN_BLK=$(cat <<EOT
 uci set network.wan.proto='dhcp'
-uci -q delete network.wan6
+uci set network.wan.peerdns='0'
 uci set network.wan6.proto='dhcpv6'
+uci set network.wan6.reqaddress='try'
+uci set network.wan6.reqprefix='auto'
 EOT
 )
         fi
@@ -267,6 +271,7 @@ uci set firewall.@rule[-1].dest_port='443'
 uci set firewall.@rule[-1].target='REJECT'
 uci commit firewall
 
+uci -q get oaf.global.enable >/dev/null || uci set oaf.global=oaf
 uci set oaf.global.enable='1'
 uci set oaf.global.work_mode='gateway'
 uci commit oaf
@@ -314,6 +319,7 @@ if [ -f /etc/bxplug.apk ]; then
 elif [ -f /etc/bxplug.ipk ]; then
     opkg install /etc/bxplug.ipk && rm -f /etc/bxplug.ipk
 fi
+( sleep 10; /etc/init.d/odhcpd restart ) &
 logger -t uci-defaults "配置应用完成"
 EOT
     chmod 755 "$OUT"
