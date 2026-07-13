@@ -34,16 +34,17 @@ success "版本: $VERSION"
 
 # 配置选择
 echo -e "\n请选择编译配置："
-echo "  1) default-main (主路由)  2) mini-bypass (旁路由)  3) full-main (完整路由)"
-read -p "请输入选择 [1-3，默认 1]: " p
+echo "  1) default-main (主路由)  2) mini-bypass (旁路由)  3) full-main (完整路由+ADGH)  4) full-noadgh (完整路由无ADGH)"
+read -p "请输入选择 [1-4，默认 1]: " p
 p=${p:-1}
-case "$p" in 1) PROFILE="default-main";; 2) PROFILE="mini-bypass";; 3) PROFILE="full-main";; *) error_exit "无效选择";; esac
+case "$p" in 1) PROFILE="default-main";; 2) PROFILE="mini-bypass";; 3) PROFILE="full-main";; 4) PROFILE="full-noadgh";; *) error_exit "无效选择";; esac
 success "配置: $PROFILE"
 
 # 解析配置
 IFS='-' read -r CFG_PREFIX RUN_TYPE <<< "$PROFILE"
-# full-main 的 RUN_TYPE 需要覆盖为 full（diy.sh 需要）
+# full-main / full-noadgh 的 RUN_TYPE 需要覆盖为 full（diy.sh 需要）
 [[ "$CFG_PREFIX" == "full" ]] && RUN_TYPE="full"
+NO_ADGH="false"; [[ "$PROFILE" == *"noadgh"* ]] && NO_ADGH="true"
 MAIN_VER=${VERSION%.*}
 
 # 自定义IP
@@ -150,34 +151,51 @@ if [[ "$USE_OAF" == "true" ]]; then
   [[ -d "$SCRIPT_DIR/oaf_files/app_icons" ]] && cp -rf "$SCRIPT_DIR/oaf_files/app_icons" package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
 fi
 
-# AdGuardHome 版本升级 + OpenClash LuCI 替换（仅旁路由 / 完整路由需要）
-if [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]]; then
+# AdGuardHome 版本升级 + OpenClash LuCI 替换
+# OC 装在 bypass / full（含 noadgh，OC 仍启用）；ADGH 升级仅对实际编入 ADGH 的 profile：
+# bypass 始终带 ADGH；full 带 ADGH，但 noadgh 在 .config 阶段即剔除 ADGH（不编入、不升级）。
+WITH_OC=false; WITH_ADGH=false
+[[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]] && WITH_OC=true
+if [[ "$RUN_TYPE" == "bypass" ]] || [[ "$RUN_TYPE" == "full" && "$NO_ADGH" != "true" ]]; then
+  WITH_ADGH=true
+fi
+if $WITH_ADGH; then
   chmod +x "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
   "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$OPENWRT_DIR"
+  "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh" "$OPENWRT_DIR"
+elif $WITH_OC; then
+  chmod +x "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
   "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh" "$OPENWRT_DIR"
 fi
 
 ./scripts/feeds install -a
 cp "$SCRIPT_DIR/configs/${MAIN_VER}-${CFG_PREFIX}.config" .config || error_exit "配置文件不存在"
 sed -i 's/\r$//' .config
+# noadgh：构建期即从 .config 剔除 AdGuardHome 三个包（adguardhome / luci-app-adguardhome / i18n），
+# 与普通 full 共用同一份源码配置，仅 .config 形态不同；普通 full 不受影响。
+if [[ "$NO_ADGH" == "true" ]]; then
+  sed -i '/CONFIG_PACKAGE_.*adguardhome/d' .config
+fi
 # files/ 目录放在源码根目录下会被构建系统自动打包进固件，无需特殊配置
 [[ "$USE_OAF" == "true" ]] && echo -e "\nCONFIG_PACKAGE_luci-app-oaf=y" >> .config
 success "完成"
 
 # 5. 网络配置
 echo -e "\n${YELLOW}[5/7] 生成网络配置...${NC}"
+NO_ADGH_ARG=""; [[ "$NO_ADGH" == "true" ]] && NO_ADGH_ARG="--no-adgh"
 "$DIY" -v "$MAIN_VER" -p after -t "$RUN_TYPE" \
   ${ROUTER_IP:+--ip "$ROUTER_IP"} \
   ${GATEWAY_IP:+--gateway "$GATEWAY_IP"} \
   ${BYPASS_IP:+--bypass-ip "$BYPASS_IP"} \
+  ${NO_ADGH_ARG:+--no-adgh} \
   ${PPPOE_USER:+--pppoe-user "$PPPOE_USER"} ${PPPOE_PASS:+--pppoe-pass "$PPPOE_PASS"} \
   --root-pass "$ROOT_PWD"
 success "完成"
 
 # 6. 预装核心 + 打包 files
 echo -e "\n${YELLOW}[6/7] 预装核心与打包文件...${NC}"
-# OpenClash Meta 核心预装（旁路由 + 完整路由，跳过首次启动在线下载）
-if [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]]; then
+# OpenClash Meta 核心预装（旁路由 + 完整路由 + full-noadgh，跳过首次启动在线下载）
+if $WITH_OC; then
     chmod +x "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh"
     "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR"
 fi
@@ -192,6 +210,11 @@ case "$RUN_TYPE" in
     rm -f "$OPENWRT_DIR/files/usr/sbin/dns-hijack"
     ;;
   full)
+    if [[ "$NO_ADGH" == "true" ]]; then
+      rm -rf "$OPENWRT_DIR/files/etc/adguardhome"
+      rm -f "$OPENWRT_DIR/files/usr/sbin/dns-hijack"
+      rm -f "$OPENWRT_DIR/files/etc/hotplug.d/iface/99-adgh-filters"
+    fi
     ;;
 esac
 BXPLUG_VER="${MAIN_VER%%.*}"

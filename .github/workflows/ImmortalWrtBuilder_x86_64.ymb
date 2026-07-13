@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       version: {description: '版本', required: true, type: choice, options: [25.12.1, 25.12.0, 24.10.6, 24.10.1]}
-      profile: {description: '配置', required: true, type: choice, options: [mini-bypass, default-main, full-main, full-noadgh]}
+      profile: {description: '配置', required: true, type: choice, options: [mini-bypass, default-main, full-main]}
       custom_ip: {description: '自定义IP', type: string, default: ''}
       custom_gateway: {description: '网关(旁路由)', type: string, default: ''}
       pppoe_username: {description: 'PPPoE账号', type: string, default: ''}
@@ -56,16 +56,10 @@ jobs:
           cd openwrt
           IFS='-' read -r CFG_PREFIX RUN_TYPE <<< "${{ github.event.inputs.profile }}"
           [[ "$CFG_PREFIX" == "full" ]] && RUN_TYPE="full"
-          NO_ADGH=false; [[ "${{ github.event.inputs.profile }}" == *"noadgh"* ]] && NO_ADGH=true
           MAIN_VER="${{ github.event.inputs.version }}"; MAIN_VER="${MAIN_VER%.*}"
-          # OAF：主路由勾选或完整路由必装；OC 装 bypass/full（含 noadgh）；
-          # ADGH 升级仅 bypass 与 full（不含 noadgh）；noadgh 的“无 ADGH”在 .config 阶段剔除。
+          # OAF：主路由勾选或完整路由必装；OC/ADGH：仅旁路由/完整路由需要
           [[ ("${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main") || "$RUN_TYPE" == "full" ]] && INSTALL_OAF=true || INSTALL_OAF=false
-          WITH_OC=false; WITH_ADGH=false
-          case "$RUN_TYPE" in
-            bypass) WITH_OC=true; WITH_ADGH=true;;
-            full)   WITH_OC=true; WITH_ADGH=true; [[ "$NO_ADGH" == "true" ]] && WITH_ADGH=false;;
-          esac
+          [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]] && WITH_OC_ADGH=true || WITH_OC_ADGH=false
 
           chmod +x $GITHUB_WORKSPACE/scripts/diy.sh
           $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p before -t $RUN_TYPE
@@ -78,38 +72,31 @@ jobs:
             cp -rf $GITHUB_WORKSPACE/oaf_files/app_icons/ package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
           fi
 
-          if $WITH_ADGH; then
+          if $WITH_OC_ADGH; then
             chmod +x $GITHUB_WORKSPACE/scripts/upgrade-{adgh,openclash-luci}.sh
             $GITHUB_WORKSPACE/scripts/upgrade-adgh.sh .
-            $GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh .
-          elif $WITH_OC; then
-            chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh
             $GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh .
           fi
 
           ./scripts/feeds install -a
           cp $GITHUB_WORKSPACE/configs/${MAIN_VER}-${CFG_PREFIX}.config .config
-          # noadgh：构建期即从 .config 剔除 AdGuardHome 三个包；普通 full 不受影响
-          [[ "$NO_ADGH" == "true" ]] && sed -i '/CONFIG_PACKAGE_.*adguardhome/d' .config || true
           $INSTALL_OAF && echo -e "\nCONFIG_PACKAGE_luci-app-oaf=y" >> .config || true
           ROOTPWD="${{ github.event.inputs.root_password }}"; ROOTPWD="${ROOTPWD:-password}"
           CIP="${{ github.event.inputs.custom_ip }}"; CGW="${{ github.event.inputs.custom_gateway }}"
           PUSER="${{ github.event.inputs.pppoe_username }}"; PPASS="${{ github.event.inputs.pppoe_password }}"
-          NO_ADGH_ARG=""; $NO_ADGH && NO_ADGH_ARG="--no-adgh"
           $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p after -t $RUN_TYPE \
             ${CIP:+--ip "$CIP"} ${CGW:+--gateway "$CGW"} \
-            ${NO_ADGH_ARG:+--no-adgh} \
             ${PUSER:+--pppoe-user "$PUSER"} ${PPASS:+--pppoe-pass "$PPASS"} \
             --root-pass "$ROOTPWD"
 
-          $WITH_OC && { chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh; $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh $GITHUB_WORKSPACE; } || true
+          $WITH_OC_ADGH && { chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh; $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh $GITHUB_WORKSPACE; } || true
           [[ -d "$GITHUB_WORKSPACE/files" ]] && { rm -rf files; cp -rf "$GITHUB_WORKSPACE/files/" .; } || true
 
           # 按 profile 删除不需要的静态文件（在 openwrt 副本上操作，不修改源树）
           case "$RUN_TYPE" in
             main)   rm -rf files/etc/{adguardhome,openclash};;
             bypass) rm -f files/usr/sbin/dns-hijack;;
-            full)   $NO_ADGH && { rm -rf files/etc/adguardhome; rm -f files/usr/sbin/dns-hijack files/etc/hotplug.d/iface/99-adgh-filters; };;
+            full)   ;;
           esac
           # bxplug：25.x=apk, 24.x=ipk, 清理与当前版本不匹配的格式
           BXPLUG_VER="${MAIN_VER%%.*}"
