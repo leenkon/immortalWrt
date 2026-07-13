@@ -26,9 +26,9 @@ DEF_MAIN_IP="10.10.10.1"
 DEF_BYPASS_IP="10.10.10.2"
 SUBNET_MASK="255.255.255.0"
 DNS_MAIN="223.5.5.5"
-DNS_BACKUP="1.1.1.1"
+DNS_BACKUP="223.6.6.6"
 
-VERSION="" PHASE="" PROFILE_TYPE=""
+VERSION="" PHASE="" PROFILE_TYPE="" NO_ADGH=""
 CUSTOM_IP="" CUSTOM_GATEWAY="" BYPASS_IP="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
 
 while [ $# -gt 0 ]; do
@@ -42,6 +42,7 @@ while [ $# -gt 0 ]; do
         --pppoe-pass) PPPOE_PASSWORD="$2"; shift 2 ;;
         --root-pass)  ROOT_PASSWORD="$2"; shift 2 ;;
         --bypass-ip) BYPASS_IP="$2"; shift 2 ;;
+        --no-adgh)   NO_ADGH="1"; shift ;;
         *) error_exit "未知参数 $1" ;;
     esac
 done
@@ -106,11 +107,10 @@ after)
 
     ip_esc=$(_escape_uci "$CUSTOM_IP")
 
-    # ===== 公共配置块（各 profile 按需引用） =====
-    # 1) IP 转发开关：所有 profile 统一开启
+    # 公共配置块（按需拼装到各 profile）
     IP_FORWARD_LN='grep -q '\''net.ipv4.ip_forward=1'\'' /etc/sysctl.conf || echo '\''net.ipv4.ip_forward=1'\'' >> /etc/sysctl.conf'
 
-    # 2) full/main 共用：LAN 静态 + peerdns 关 + wan.dns 公共上游
+    # full/main 共用：LAN 静态 + peerdns 关 + wan.dns 公共上游
     LAN_WAN_COMMON_BLK=$(cat <<EOF
 uci -q delete network.lan6
 uci set network.lan.ip6assign='64'
@@ -124,18 +124,21 @@ uci commit network
 EOF
 )
 
-    # 3) bypass/full 共用：AdGuardHome + OpenClash meta/redir-host
-    ADGH_OC_BLK=$(cat <<'EOF'
+    # AdGuardHome：占 53（bypass/full 共用）
+    ADGH_BLK=$(cat <<'EOF'
 uci -q get adguardhome.config.enabled >/dev/null || uci set adguardhome.config=adguardhome
 uci set adguardhome.config.enabled='1'
 uci set adguardhome.config.port='53'
 uci set adguardhome.config.redirect='0'
 uci commit adguardhome
+EOF
+)
 
+    # OpenClash 公共核心（bypass/full 共用；redirect 与 dns_port 在各分支单独设置）
+    OC_CORE_BLK=$(cat <<'EOF'
 uci -q get openclash.config.core_type >/dev/null || uci set openclash.config=openclash
 uci set openclash.config.core_type='Meta'
 uci set openclash.config.core_version='linux-amd64'
-uci set openclash.config.enable_redirect_dns='0'
 uci set openclash.config.en_mode='redir-host'
 uci set openclash.config.operation_mode='redir-host'
 uci set openclash.config.enable_custom_overwrite='1'
@@ -143,7 +146,7 @@ uci commit openclash
 EOF
 )
 
-    # 4) full/main 共用：LAN 区 forward + lan->wan forwarding 重置
+    # full/main 共用：LAN 区 forward + lan->wan forwarding 重置
     LAN_FORWARD_BLK=$(cat <<'EOF'
 LAN_FW=$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
 [ -n "$LAN_FW" ] && uci set ${LAN_FW}.forward='ACCEPT'
@@ -154,7 +157,7 @@ uci set firewall.@forwarding[-1].dest='wan'
 EOF
 )
 
-    # 5) full/main 共用：dns-hijack + firewall include（放在最后，避免上游未就绪时形成黑洞）
+    # 仅 main 使用：dns-hijack + firewall include（full/bypass 已改为 ADGH→OC 直连，不再依赖端口劫持）
     DNS_HIJACK_BLK=$(cat <<'EOF'
 chmod 755 /usr/sbin/dns-hijack
 /usr/sbin/dns-hijack
@@ -166,7 +169,7 @@ uci commit firewall
 EOF
 )
 
-    # 6) full/main 共用：DHCP 公共段（范围、RA、下发单 DNS 等）
+    # full/main 共用：DHCP 公共段（范围、RA、下发单 DNS 等）
     DHCP_COMMON_BLK=$(cat <<EOF
 uci -q delete dhcp.lan.dhcp_option
 uci add_list dhcp.lan.dhcp_option='6,$ip_esc'
@@ -179,7 +182,7 @@ uci set dhcp.@dnsmasq[0].sequential_ip='1'
 EOF
 )
 
-    # 7) full/main 共用：WAN 段（PPPoE / DHCP）提前生成，避免两个分支重复
+    # full/main 共用：WAN 段（PPPoE / DHCP）提前生成，避免两个分支重复
     if [ "$PROFILE_TYPE" = "full" ] || [ "$PROFILE_TYPE" = "main" ]; then
         if [ -n "$PPPOE_USERNAME" ]; then
             u=$(_escape_uci "$PPPOE_USERNAME"); p=$(_escape_uci "$PPPOE_PASSWORD")
@@ -246,10 +249,48 @@ WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
 while uci -q delete firewall.@forwarding[0]; do :; done
 uci commit firewall
 
-$ADGH_OC_BLK
+$ADGH_BLK
+$OC_CORE_BLK
+uci set openclash.config.enable_redirect_dns='0'
+uci set openclash.config.dns_port='7874'
 EOT
     elif [ "$PROFILE_TYPE" = "full" ]; then
-        cat >> "$OUT" <<EOT
+        if [ -n "$NO_ADGH" ]; then
+            # full 不带 AdGuardHome：dnsmasq 占 53，OpenClash 自行劫持 DNS（不再跑自定义 dns-hijack）
+            cat >> "$OUT" <<EOT
+$WAN_BLK
+$LAN_WAN_COMMON_BLK
+
+$IP_FORWARD_LN
+
+$DHCP_COMMON_BLK
+uci -q delete dhcp.@dnsmasq[0].server
+uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
+uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
+uci set dhcp.@dnsmasq[0].dns_redirect='0'
+uci commit dhcp
+
+$LAN_FORWARD_BLK
+uci add firewall rule
+uci set firewall.@rule[-1].name='Block-QUIC'
+uci set firewall.@rule[-1].src='lan'
+uci set firewall.@rule[-1].dest='wan'
+uci set firewall.@rule[-1].proto='udp'
+uci set firewall.@rule[-1].dest_port='443'
+uci set firewall.@rule[-1].target='REJECT'
+uci commit firewall
+
+uci -q get oaf.global.enable >/dev/null || uci set oaf.global=oaf
+uci set oaf.global.enable='1'
+uci set oaf.global.work_mode='gateway'
+uci commit oaf
+
+# 无 ADGH：dnsmasq 占 53，OC 自行劫持 DNS（redirect=1）
+$OC_CORE_BLK
+uci set openclash.config.enable_redirect_dns='1'
+EOT
+        else
+            cat >> "$OUT" <<EOT
 $WAN_BLK
 $LAN_WAN_COMMON_BLK
 
@@ -276,10 +317,12 @@ uci set oaf.global.enable='1'
 uci set oaf.global.work_mode='gateway'
 uci commit oaf
 
-$ADGH_OC_BLK
-
-$DNS_HIJACK_BLK
+$ADGH_BLK
+$OC_CORE_BLK
+uci set openclash.config.enable_redirect_dns='0'
+uci set openclash.config.dns_port='7874'
 EOT
+        fi
     else
         cat >> "$OUT" <<EOT
 $WAN_BLK
@@ -302,9 +345,15 @@ EOT
     fi
 
     cat >> "$OUT" <<EOT
+# 软件流卸载保留；硬件流卸载(hardware offload)在多数 x86 网卡/虚拟化环境下不稳定，
+# 会导致 NAT 转发偶发丢包、并与 nft DNS 重定向冲突，故关闭以换取稳定（代价：大带宽 NAT 吞吐略降）
 uci set firewall.@defaults[0].flow_offloading='1'
-uci set firewall.@defaults[0].flow_offloading_hw='1'
+uci set firewall.@defaults[0].flow_offloading_hw='0'
 uci commit firewall
+
+# WAN 区 MSS 钳制：防 PPPoE / 大包 MTU 黑洞导致的间歇断流（仅当 wan 区存在时设置）
+WAN_ZONE=$(uci show firewall | grep -m1 "\.name='wan'" | cut -d. -f1-2)
+[ -n "$WAN_ZONE" ] && uci set ${WAN_ZONE}.mtu_fix='1'
 
 uci set system.@system[0].hostname='Router-${PROFILE_TYPE}'
 uci set system.@system[0].timezone='CST-8'
@@ -313,6 +362,17 @@ uci -q delete system.ntp.server
 uci add_list system.ntp.server='ntp.aliyun.com'
 uci add_list system.ntp.server='cn.pool.ntp.org'
 uci commit system
+
+# conntrack：仅提升上限不够。缩短已建立连接超时，避免连接数暴涨时新连接被丢弃
+# （典型表现：网页/视频突然卡死、数秒后恢复）。
+grep -q '^net.netfilter.nf_conntrack_max' /etc/sysctl.conf || echo 'net.netfilter.nf_conntrack_max=262144' >> /etc/sysctl.conf
+grep -q '^net.netfilter.nf_conntrack_tcp_timeout_established' /etc/sysctl.conf || echo 'net.netfilter.nf_conntrack_tcp_timeout_established=3600' >> /etc/sysctl.conf
+grep -q '^net.netfilter.nf_conntrack_udp_timeout' /etc/sysctl.conf || echo 'net.netfilter.nf_conntrack_udp_timeout=60' >> /etc/sysctl.conf
+
+# x86 路由：锁定 CPU 为 performance 调度，避免降频/深空闲导致网络延迟抖动（间歇断流）。
+# 立即应用一次（首启），并启用开机脚本保证后续启动持续生效（脚本即唯一实现源，避免重复）。
+/etc/init.d/cpufreq-perf start 2>/dev/null
+/etc/init.d/cpufreq-perf enabled >/dev/null 2>&1 || /etc/init.d/cpufreq-perf enable 2>/dev/null
 
 if [ -f /etc/bxplug.apk ]; then
     apk --allow-untrusted add /etc/bxplug.apk && rm -f /etc/bxplug.apk
