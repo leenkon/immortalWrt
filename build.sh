@@ -100,7 +100,7 @@ DIY="$SCRIPT_DIR/scripts/diy.sh"
 
 # 1. 换行符
 echo -e "\n${YELLOW}[1/7] 检查换行符和权限...${NC}"
-fix_line_endings "$DIY" "$SCRIPT_DIR/build.sh" "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
+fix_line_endings "$DIY" "$SCRIPT_DIR/build.sh" "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
 # files/ 下的脚本和 YAML 也需要修复 CRLF（路由器 ash 不兼容 CRLF）
 fix_line_endings "$SCRIPT_DIR/files/usr/sbin/dns-hijack" \
   "$SCRIPT_DIR/files/usr/lib/ddns/update_aliyun_com.sh" \
@@ -150,14 +150,14 @@ if [[ "$USE_OAF" == "true" ]]; then
   [[ -d "$SCRIPT_DIR/oaf_files/app_icons" ]] && cp -rf "$SCRIPT_DIR/oaf_files/app_icons" package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
 fi
 
-# AdGuardHome 版本升级 + OpenClash LuCI 替换（仅旁路由 / 完整路由需要）
+# OpenClash LuCI 替换（仅旁路由 / 完整路由需要）。
+# 注：AdGuardHome 已改为官方预编译二进制注入（见步骤 6），此处不再做 feeds 编译升级。
 if [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]]; then
-  chmod +x "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
-  "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$OPENWRT_DIR"
+  chmod +x "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
   "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh" "$OPENWRT_DIR"
 fi
 
-./scripts/feeds install -a
+./scripts/feeds install -a -f
 cp "$SCRIPT_DIR/configs/${MAIN_VER}-${CFG_PREFIX}.config" .config || error_exit "配置文件不存在"
 sed -i 's/\r$//' .config
 # files/ 目录放在源码根目录下会被构建系统自动打包进固件，无需特殊配置
@@ -181,12 +181,19 @@ if [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]]; then
     chmod +x "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh"
     "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR"
 fi
+# AdGuardHome 官方预编译二进制注入（旁路由 + 完整路由；构建期免 Go 编译，保证最新版）。
+# 二进制写入 $SCRIPT_DIR/files/usr/bin/AdGuardHome，随后随 files/ 一起打包进固件。
+if [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]]; then
+    chmod +x "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh"
+    "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh" "$SCRIPT_DIR"
+fi
 [[ -d "$SCRIPT_DIR/files" ]] && { rm -rf "$OPENWRT_DIR/files"; cp -rf "$SCRIPT_DIR/files" "$OPENWRT_DIR/"; }
 # 文件清理：按 profile 删除不需要的静态文件（在 openwrt 副本上操作，不修改源树）
 case "$RUN_TYPE" in
   main)
     rm -rf "$OPENWRT_DIR/files/etc/adguardhome"
     rm -rf "$OPENWRT_DIR/files/etc/openclash"
+    rm -f "$OPENWRT_DIR/files/usr/bin/AdGuardHome"
     ;;
   bypass)
     rm -f "$OPENWRT_DIR/files/usr/sbin/dns-hijack"
@@ -200,8 +207,8 @@ case "$BXPLUG_VER" in
   24) rm -f "$OPENWRT_DIR/files/etc/bxplug.apk";;
   *)  rm -f "$OPENWRT_DIR/files/etc/bxplug.ipk" "$OPENWRT_DIR/files/etc/bxplug.apk";;
 esac
-# 确保 scripts 可执行（Windows 无 Unix x 位，按路径/扩展名匹配）
-find "$OPENWRT_DIR/files" -type f \( -path "*/sbin/*" -o -path "*/hotplug.d/*" -o -path "*/uci-defaults/*" -o -name "*.sh" \) -exec chmod 755 {} + 2>/dev/null || true
+# 确保脚本可执行（Windows 无 Unix x 位，按路径/扩展名匹配）
+find "$OPENWRT_DIR/files" -type f \( -path "*/sbin/*" -o -path "*/init.d/*" -o -path "*/hotplug.d/*" -o -path "*/uci-defaults/*" -o -name "*.sh" \) -exec chmod 755 {} + 2>/dev/null || true
 make defconfig && make download && make clean
 success "完成"
 

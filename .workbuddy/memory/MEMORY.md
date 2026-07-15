@@ -5,11 +5,22 @@
 - 核心文件：`scripts/diy.sh`（双阶段配置生成器）、`build.sh`（7步编译流程）
 - 生成目标：`files/etc/uci-defaults/99-custom.sh`（主路由/旁路由/完整路由三套配置）
 
+## ADGH 方案（2026-07-15 定稿 = 二进制注入）
+- **核心决策**：放弃 feeds 编译 ADGH（需 Go 工具链 + Makefile hash 打补丁，新版本频繁要求更高 Go，脆弱），改为构建期拉取官方预编译静态二进制经 `files/` 注入。
+- 新增 `scripts/upgrade-adgh-binary.sh`：拉 `AdGuardHome_linux_amd64.tar.gz`（`latest` 或 `--version`），校验 `checksums.txt` 本架构 sha256，安装到 `files/usr/bin/AdGuardHome`；主源 + ghproxy 回退；幂等（版本匹配跳过）。
+- 新增 `files/etc/init.d/adguardhome`（Procd，root 运行）：`/usr/bin/AdGuardHome --config /etc/adguardhome/adguardhome.yaml --work-dir /var/lib/adguardhome --no-check-update --logfile syslog`；interface.up 触发器延后启动。
+- 新增 `files/etc/config/adguardhome`：`enabled=1`。
+- `99-custom.sh`（bypass/full）`enable`+`start` 该 init，确保首刷即自启（files/ 注入的 init 不会自动 enable，S19 早于 99-custom，故必须显式 start）。
+- 4 个 configs 注释 `adguardhome`/`luci-app-adguardhome`/`luci-i18n-adguardhome-zh-cn`（二进制提供功能，luci-app 不再需要，官方二进制自带 :8030 Web UI）。
+- 删除 `scripts/upgrade-adgh.sh` / `scripts/upgrade-golang.sh`。
+- `build.sh`/`workflow`：`feeds install -a -f`（消除 core package 覆盖警告）；步骤 6 注入二进制 + init.d 纳入可执行 chmod；main 清理删除 `files/usr/bin/AdGuardHome` 与 `files/etc/adguardhome`。
+- ADGH YAML `files/etc/adguardhome/adguardhome.yaml`：upstream = OpenClash `127.0.0.1:7874`（主，域名分流）+ 国内 DoT/明文兜底（223.5.5.5/223.6.6.6），`parallel_requests=false`（OC 在时由其分流不泄漏），**严禁境外解析器**；querylog.file_enabled=false（防 overlay 闪存写爆）。
+
 ## 网络拓扑
 - **双路由拓扑**（main + bypass）：
   - 主路由：10.10.10.1（DHCP/PPPoE 上网，OpenAppFilter，防火墙，DHCP DNS 下发）
   - 旁路由：10.10.10.2（AdGuardHome 全屋去广告 + OpenClash 科学上网）
-  - DHCP 下发 DNS：10.10.10.2, 1.1.1.1, 223.5.5.5（旁路宕机自动 fallback）
+  - DHCP 下发 DNS：10.10.10.2, 223.5.5.5, 223.6.6.6（旁路宕机自动 fallback；已去除境外 1.1.1.1）
 - **完整路由拓扑**（full）：
   - 单设备集成 OAF + ADGH(53) + OpenClash(redir-host)
   - DNS 链路：客户端 → ADGH(53) → Public DoT；DNS 劫持强制所有客户端走 ADGH
@@ -37,13 +48,13 @@
 - diy.sh `--bypass-ip` 参数：仅 build.sh 本地编译使用（交互式输入）；workflow 不传此参数，diy.sh 自动回退 `DEF_BYPASS_IP=10.10.10.2`
 - DNS 劫持 nft 规则：IPv4 用 `ip saddr != $BYPASS_IP udp dport 53` 排除旁路由；IPv6 用 `ip6 daddr ::/0 udp dport 53`（不排除旁路由，因 AdGuardHome 走 DoT:853；不能用 `meta l4proto` 会导致 `No symbol type information`）
 - dns-hijack 脚本路径：`/usr/sbin/dns-hijack`（无 .sh 后缀，静态放在 `files/usr/sbin/dns-hijack`），主路由+完整路由保留（build.sh/workflow 清理在 openwrt 副本上操作），旁路由删除
-- AdGuardHome 版本升级：`scripts/upgrade-adgh.sh` 在 feeds update 后、feeds install 前执行，自动获取 GitHub 最新版本并 patch feeds Makefile（PKG_VERSION/PKG_HASH/FRONTEND_HASH）
+- AdGuardHome 现改为**官方预编译二进制注入**（2026-07-15 定稿）：`scripts/upgrade-adgh-binary.sh` 构建期拉取 `AdGuardHome_linux_amd64.tar.gz`（latest 或 --version），校验 `checksums.txt` 本架构 sha256，解包到 `files/usr/bin/AdGuardHome`；随 files/ 打包进固件。**彻底免 Go 编译、免 Makefile 打补丁、24.10/25.12 通用、保证最新版。** 旧的 `upgrade-adgh.sh`/`upgrade-golang.sh`（编译式）已删除。
 - OpenClash Meta 核心预装：`scripts/upgrade-openclash-core.sh` 在 diy.sh after 后、files 复制前执行，下载最新 mihomo 二进制到 `files/etc/openclash/core/clash_meta`，旁路由+完整路由构建
 - diy.sh 旁路由分支设置 `openclash.config.core_type='Meta'` 和 `openclash.config.core_version='linux-amd64'`
-- ADGH UCI 配置（bypass + full 均需）：`adguardhome.config.port='53'` + `redirect='0'`（UCI 会覆盖 YAML 端口，必须显式设置）
+- ADGH 二进制方案下不再依赖 feeds 包的 adguardhome uci schema：`port`/`redirect` 由 `files/etc/adguardhome/adguardhome.yaml`（port:53, bind 0.0.0.0+"::"）接管；启动由 `files/etc/init.d/adguardhome`（Procd）负责，在 `99-custom.sh` 里 `enable`+`start` 实现首启即运行。
 - ADGH YAML 过滤规则：旁路由与完整路由模板统一为同一套（Anti-AD-CHN / EasyList China / AdGuard DNS / Anti-AD），避免不同分支行为不一致
 - build.sh 与主 workflow 均加入 `fix_line_endings` / 等价 CRLF 清理，防止 Windows 提交导致路由器 ash 执行失败
-- ADGH YAML 模板：bypass 用 `files/etc/adguardhome/adguardhome.yaml`，full 用 `adguardhome-full.yaml`（内容一致：port 53, bind 0.0.0.0+"::"），build.sh/workflow 在 openwrt 副本上覆盖为 `adguardhome.yaml`
+- ADGH YAML：bypass/full 统一使用 `files/etc/adguardhome/adguardhome.yaml`（port 53, bind 0.0.0.0+"::"），不再有 adguardhome-full.yaml；querylog.file_enabled=false（防 overlay 闪存写爆）
 - 完整路由需要 dns-hijack（防止客户端自定义 DNS 绕过 ADGH）；dns-hijack 脚本自动检测旁路 IP，无则全劫持
 - 完整路由不需要 BYPASS_IP（单设备，无旁路）
 - diy.sh 支持 `full` profile type：`--type main/bypass/full`
@@ -56,8 +67,8 @@
   1. 删除 `wan` 和 `wan6` network section（`uci -q delete`）
   2. 添加静态默认路由：`uci set network.default_route=route`，interface='lan'，gateway='10.10.10.1'
   3. 旁路由自身 DNS（network.lan.dns）改为 1.1.1.1 / 223.5.5.5，不指向主路由（避免环路）
-- AdGuardHome 初始配置预置在 `files/etc/adguardhome/adguardhome.yaml`（小写目录，schema_version: 34，DoT 上游 tls://1.1.1.1 / tls://223.5.5.5）
-- AdGuardHome 上游必须用 DoT（端口 853），不能用 plain DNS（端口 53），因为 OpenClash 会劫持旁路由出站 UDP 53 导致上游超时
+- AdGuardHome 初始配置预置在 `files/etc/adguardhome/adguardhome.yaml`（小写目录，schema_version: 34）。上游 = OpenClash `127.0.0.1:7874`（域名分流）为主 + 国内 DoT/明文兜底（223.5.5.5/223.6.6.6），**严禁境外解析器**；OC 停止时自动直连兜底。
+- AdGuardHome 上游主用 `127.0.0.1:7874`（OpenClash redir-host DNS 端口）；因 OC 可能未运行，upstream_dns 顺序放置国内兜底（tls://223.5.5.5 等），`parallel_requests=false` 保证 OC 在时由其做域名分流不泄漏。
 
 ## 已知潜在问题（待确认）
 - set -eu 在 diy.sh（编译机）正常，99-custom.sh 无 set -eu（正确，ash source 执行）
@@ -99,7 +110,7 @@
 | 主路由 WAN_FW.forward='ACCEPT' 不必要且有安全风险 | 删除（WAN forward 默认 DROP 是正确姿态，DDNS 走 output 不受影响） |
 | firewall include 缺 enabled='1' | 补上 `uci set firewall.dns_hijack_include.enabled='1'` |
 | `option dns_redirect '1'` 导致 dnsmasq init 注入 nft 规则 UDP 53→5453，旁路由 AdGuardHome 收不到外部 DNS 查询 | diy.sh 主路由+旁路由+完整路由分支均加 `uci set dhcp.@dnsmasq[0].dns_redirect='0'` |
-| upgrade-adgh.sh `cut -d: -f3` 对 `PKG_VERSION:=value` 提取为空 | 改为 `sed -n 's/^PKG_VERSION:=//p'`；补充 FRONTEND_PKG_VERSION patch |
+| 编译式 ADGH（upgrade-adgh.sh patch feeds Makefile + Go 版本耦合）脆弱易败 | **改为官方预编译二进制注入（upgrade-adgh-binary.sh）**，免 Go 编译/打补丁；feeds 不再编译 adguardhome 包（4 个 config 已注释）；`feeds install -a -f` 消除 core package 覆盖警告 |
 | upgrade-openclash-core.sh 注释"仅旁路由"过时 + tar `-o` 冗余 | 注释改为"旁路由+完整路由"；`tar zxvfo` → `tar zxf` |
 | workflow 文件名含空格 `ImmortalWrtBuilder_ x86_64.yml` | 重命名为 `ImmortalWrtBuilder_x86_64.yml` |
 | build.sh fix_line_endings 未覆盖 files/ 脚本（CRLF 在 ash 上报错） | 扩展覆盖 dns-hijack、update_aliyun_com.sh、adguardhome.yaml、adguardhome-full.yaml |
@@ -110,4 +121,4 @@
 | hotplug 脚本 `sleep 10` 阻塞 hotplug 链 | 改为 `(sleep 10; ...) &` 后台执行 |
 | hotplug 脚本缺 `adguardhome.yaml` 存在性检查，主路由误触发 | 添加 `[ -f ... ] || exit 0` |
 | `find -type f -executable` 对 Windows git 创建的文件不生效（无 x 位） | 改为按路径/扩展名匹配 `\( -path "*/sbin/*" -o -path "*/hotplug.d/*" -o -path "*/uci-defaults/*" -o -name "*.sh" \)` |
-| adguardhome.yaml (bypass) bootstraps 顺序与 upstream_dns 不一致 | 统一为 `[223.5.5.5, 1.1.1.1]` |
+| adguardhome.yaml 上游曾用境外解析器(94.140.14.14/1.1.1.1) | 改为 OC `127.0.0.1:7874` 主 + 国内兜底，严禁境外 |

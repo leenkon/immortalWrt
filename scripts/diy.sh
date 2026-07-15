@@ -26,7 +26,7 @@ DEF_MAIN_IP="10.10.10.1"
 DEF_BYPASS_IP="10.10.10.2"
 SUBNET_MASK="255.255.255.0"
 DNS_MAIN="223.5.5.5"
-DNS_BACKUP="1.1.1.1"
+DNS_BACKUP="223.6.6.6"
 
 VERSION="" PHASE="" PROFILE_TYPE=""
 CUSTOM_IP="" CUSTOM_GATEWAY="" BYPASS_IP="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
@@ -124,14 +124,10 @@ uci commit network
 EOF
 )
 
-    # 3) bypass/full 共用：AdGuardHome + OpenClash meta/redir-host
-    ADGH_OC_BLK=$(cat <<'EOF'
-uci -q get adguardhome.config.enabled >/dev/null || uci set adguardhome.config=adguardhome
-uci set adguardhome.config.enabled='1'
-uci set adguardhome.config.port='53'
-uci set adguardhome.config.redirect='0'
-uci commit adguardhome
-
+    # 3) bypass/full 共用：OpenClash meta/redir-host + 启用二进制 AdGuardHome
+    #    注：AdGuardHome 已改为官方预编译二进制（files/ 注入 + init.d 启动），
+    #        不再用 feeds 包的 adguardhome uci schema，port/redirect 由 adguardhome.yaml 接管。
+    OC_BLK=$(cat <<'EOF'
 uci -q get openclash.config.core_type >/dev/null || uci set openclash.config=openclash
 uci set openclash.config.core_type='Meta'
 uci set openclash.config.core_version='linux-amd64'
@@ -140,6 +136,11 @@ uci set openclash.config.en_mode='redir-host'
 uci set openclash.config.operation_mode='redir-host'
 uci set openclash.config.enable_custom_overwrite='1'
 uci commit openclash
+
+# 启用官方二进制 AdGuardHome（init.d 经 files/ 注入；Procd 脚本需 enable 才开机自启）
+chmod 755 /etc/init.d/adguardhome
+/etc/init.d/adguardhome enable
+/etc/init.d/adguardhome start
 EOF
 )
 
@@ -246,7 +247,7 @@ WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
 while uci -q delete firewall.@forwarding[0]; do :; done
 uci commit firewall
 
-$ADGH_OC_BLK
+$OC_BLK
 EOT
     elif [ "$PROFILE_TYPE" = "full" ]; then
         cat >> "$OUT" <<EOT
@@ -276,7 +277,7 @@ uci set oaf.global.enable='1'
 uci set oaf.global.work_mode='gateway'
 uci commit oaf
 
-$ADGH_OC_BLK
+$OC_BLK
 
 $DNS_HIJACK_BLK
 EOT
@@ -313,6 +314,11 @@ uci -q delete system.ntp.server
 uci add_list system.ntp.server='ntp.aliyun.com'
 uci add_list system.ntp.server='cn.pool.ntp.org'
 uci commit system
+
+# x86 CPU 性能调度：固定 performance，避免降频/深空闲导致网络抖动（全 profile 生效）
+chmod 755 /etc/init.d/cpufreq-perf
+/etc/init.d/cpufreq-perf enable
+/etc/init.d/cpufreq-perf start
 
 if [ -f /etc/bxplug.apk ]; then
     apk --allow-untrusted add /etc/bxplug.apk && rm -f /etc/bxplug.apk
