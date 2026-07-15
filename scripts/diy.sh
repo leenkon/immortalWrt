@@ -124,7 +124,7 @@ uci commit network
 EOF
 )
 
-    # AdGuardHome：占 53（bypass/full 共用）
+    # 3) bypass/full 共用：AdGuardHome + OpenClash meta/redir-host
     ADGH_BLK=$(cat <<'EOF'
 uci -q get adguardhome.config.enabled >/dev/null || uci set adguardhome.config=adguardhome
 uci set adguardhome.config.enabled='1'
@@ -157,7 +157,7 @@ uci set firewall.@forwarding[-1].dest='wan'
 EOF
 )
 
-    # 仅 main 使用：dns-hijack + firewall include（full/bypass 已改为 ADGH→OC 直连，不再依赖端口劫持）
+    # 5) full/main 共用：dns-hijack + firewall include（放在最后，避免上游未就绪时形成黑洞）
     DNS_HIJACK_BLK=$(cat <<'EOF'
 chmod 755 /usr/sbin/dns-hijack
 /usr/sbin/dns-hijack
@@ -210,6 +210,15 @@ EOT
     echo '#!/bin/sh' > "$OUT"
     echo "logger -t uci-defaults \"开始应用${PROFILE_TYPE}配置\"" >> "$OUT"
 
+    # full 分支是否带 ADGH：noadgh 时跳过 ADGH UCI 块，并让 OC 自行劫持 :53（否则无 ADGH 且无劫持，DNS 在 :53 悬空）
+    FULL_ADGH_OC=""
+    OC_REDIR='0'
+    if [ "$PROFILE_TYPE" = "full" ] && [ "$NO_ADGH" = "1" ]; then
+        OC_REDIR='1'
+    else
+        FULL_ADGH_OC="$ADGH_BLK"
+    fi
+
     if [ "$PROFILE_TYPE" = "bypass" ]; then
         gw_esc=$(_escape_uci "$CUSTOM_GATEWAY")
         cat >> "$OUT" <<EOT
@@ -255,42 +264,7 @@ uci set openclash.config.enable_redirect_dns='0'
 uci set openclash.config.dns_port='7874'
 EOT
     elif [ "$PROFILE_TYPE" = "full" ]; then
-        if [ -n "$NO_ADGH" ]; then
-            # full 不带 AdGuardHome：dnsmasq 占 53，OpenClash 自行劫持 DNS（不再跑自定义 dns-hijack）
-            cat >> "$OUT" <<EOT
-$WAN_BLK
-$LAN_WAN_COMMON_BLK
-
-$IP_FORWARD_LN
-
-$DHCP_COMMON_BLK
-uci -q delete dhcp.@dnsmasq[0].server
-uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
-uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
-uci set dhcp.@dnsmasq[0].dns_redirect='0'
-uci commit dhcp
-
-$LAN_FORWARD_BLK
-uci add firewall rule
-uci set firewall.@rule[-1].name='Block-QUIC'
-uci set firewall.@rule[-1].src='lan'
-uci set firewall.@rule[-1].dest='wan'
-uci set firewall.@rule[-1].proto='udp'
-uci set firewall.@rule[-1].dest_port='443'
-uci set firewall.@rule[-1].target='REJECT'
-uci commit firewall
-
-uci -q get oaf.global.enable >/dev/null || uci set oaf.global=oaf
-uci set oaf.global.enable='1'
-uci set oaf.global.work_mode='gateway'
-uci commit oaf
-
-# 无 ADGH：dnsmasq 占 53，OC 自行劫持 DNS（redirect=1）
-$OC_CORE_BLK
-uci set openclash.config.enable_redirect_dns='1'
-EOT
-        else
-            cat >> "$OUT" <<EOT
+        cat >> "$OUT" <<EOT
 $WAN_BLK
 $LAN_WAN_COMMON_BLK
 
@@ -317,12 +291,11 @@ uci set oaf.global.enable='1'
 uci set oaf.global.work_mode='gateway'
 uci commit oaf
 
-$ADGH_BLK
+$FULL_ADGH_OC
 $OC_CORE_BLK
-uci set openclash.config.enable_redirect_dns='0'
+uci set openclash.config.enable_redirect_dns='$OC_REDIR'
 uci set openclash.config.dns_port='7874'
 EOT
-        fi
     else
         cat >> "$OUT" <<EOT
 $WAN_BLK
@@ -355,6 +328,16 @@ uci commit firewall
 WAN_ZONE=$(uci show firewall | grep -m1 "\.name='wan'" | cut -d. -f1-2)
 [ -n "$WAN_ZONE" ] && uci set ${WAN_ZONE}.mtu_fix='1'
 
+# conntrack：仅提升上限不够。缩短已建立连接超时，避免连接数暴涨时新连接被丢弃
+# （典型表现：网页/视频突然卡死、数秒后恢复）
+grep -q '^net.netfilter.nf_conntrack_max' /etc/sysctl.conf || echo 'net.netfilter.nf_conntrack_max=262144' >> /etc/sysctl.conf
+grep -q '^net.netfilter.nf_conntrack_tcp_timeout_established' /etc/sysctl.conf || echo 'net.netfilter.nf_conntrack_tcp_timeout_established=3600' >> /etc/sysctl.conf
+grep -q '^net.netfilter.nf_conntrack_udp_timeout' /etc/sysctl.conf || echo 'net.netfilter.nf_conntrack_udp_timeout=60' >> /etc/sysctl.conf
+
+# x86 路由：锁定 CPU 为 performance 调度，避免降频/深空闲导致网络延迟抖动（间歇断流）
+/etc/init.d/cpufreq-perf start 2>/dev/null
+/etc/init.d/cpufreq-perf enabled >/dev/null 2>&1 || /etc/init.d/cpufreq-perf enable 2>/dev/null
+
 uci set system.@system[0].hostname='Router-${PROFILE_TYPE}'
 uci set system.@system[0].timezone='CST-8'
 uci set system.@system[0].zonename='Asia/Shanghai'
@@ -362,17 +345,6 @@ uci -q delete system.ntp.server
 uci add_list system.ntp.server='ntp.aliyun.com'
 uci add_list system.ntp.server='cn.pool.ntp.org'
 uci commit system
-
-# conntrack：仅提升上限不够。缩短已建立连接超时，避免连接数暴涨时新连接被丢弃
-# （典型表现：网页/视频突然卡死、数秒后恢复）。
-grep -q '^net.netfilter.nf_conntrack_max' /etc/sysctl.conf || echo 'net.netfilter.nf_conntrack_max=262144' >> /etc/sysctl.conf
-grep -q '^net.netfilter.nf_conntrack_tcp_timeout_established' /etc/sysctl.conf || echo 'net.netfilter.nf_conntrack_tcp_timeout_established=3600' >> /etc/sysctl.conf
-grep -q '^net.netfilter.nf_conntrack_udp_timeout' /etc/sysctl.conf || echo 'net.netfilter.nf_conntrack_udp_timeout=60' >> /etc/sysctl.conf
-
-# x86 路由：锁定 CPU 为 performance 调度，避免降频/深空闲导致网络延迟抖动（间歇断流）。
-# 立即应用一次（首启），并启用开机脚本保证后续启动持续生效（脚本即唯一实现源，避免重复）。
-/etc/init.d/cpufreq-perf start 2>/dev/null
-/etc/init.d/cpufreq-perf enabled >/dev/null 2>&1 || /etc/init.d/cpufreq-perf enable 2>/dev/null
 
 if [ -f /etc/bxplug.apk ]; then
     apk --allow-untrusted add /etc/bxplug.apk && rm -f /etc/bxplug.apk

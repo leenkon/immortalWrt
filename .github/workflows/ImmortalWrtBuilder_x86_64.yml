@@ -80,9 +80,9 @@ jobs:
             cp -rf $GITHUB_WORKSPACE/oaf_files/app_icons/ package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
           fi
 
-          if $WITH_ADGH; then
-            chmod +x $GITHUB_WORKSPACE/scripts/upgrade-{adgh,golang,openclash-luci}.sh
-            ADGH_VER="${{ github.event.inputs.adgh_version }}" $GITHUB_WORKSPACE/scripts/upgrade-adgh.sh .
+          if $WITH_OC_ADGH; then
+            chmod +x $GITHUB_WORKSPACE/scripts/upgrade-{adgh,openclash-luci}.sh
+            $GITHUB_WORKSPACE/scripts/upgrade-adgh.sh .
             $GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh .
           elif $WITH_OC; then
             chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh
@@ -98,10 +98,8 @@ jobs:
           CIP="${{ github.event.inputs.custom_ip }}"; CGW="${{ github.event.inputs.custom_gateway }}"
           BIP="${{ github.event.inputs.bypass_ip }}"
           PUSER="${{ github.event.inputs.pppoe_username }}"; PPASS="${{ github.event.inputs.pppoe_password }}"
-          NO_ADGH_ARG=""; [[ "$NO_ADGH" == "true" ]] && NO_ADGH_ARG="--no-adgh"
           $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p after -t $RUN_TYPE \
-            ${CIP:+--ip "$CIP"} ${CGW:+--gateway "$CGW"} ${BIP:+--bypass-ip "$BIP"} \
-            ${NO_ADGH_ARG:+--no-adgh} \
+            ${CIP:+--ip "$CIP"} ${CGW:+--gateway "$CGW"} \
             ${PUSER:+--pppoe-user "$PUSER"} ${PPASS:+--pppoe-pass "$PPASS"} \
             --root-pass "$ROOTPWD"
 
@@ -112,7 +110,7 @@ jobs:
           case "$RUN_TYPE" in
             main)   rm -rf files/etc/{adguardhome,openclash};;
             bypass) rm -f files/usr/sbin/dns-hijack;;
-            full)   rm -f files/usr/sbin/dns-hijack; [[ "$NO_ADGH" == "true" ]] && { rm -rf files/etc/adguardhome; rm -f files/etc/hotplug.d/iface/99-adgh-filters; };;
+            full)   ;;
           esac
           # bxplug：25.x=apk, 24.x=ipk, 清理与当前版本不匹配的格式
           BXPLUG_VER="${MAIN_VER%%.*}"

@@ -11,14 +11,10 @@ dns:
     - 0.0.0.0
     - "::"
   upstream_dns:
-    # 让 OpenClash 真正接管域名：用 domain-specific 上游把全部常规查询路由到 OC 的 DNS(7874)，
-    # OC 在解析期即拿到域名、规则分流生效。裸 127.0.0.1 会被 ADGH 视为私有上游、仅作 PTR，故必须用 [/./] 形式。
     - "[/./]127.0.0.1:7874"
-  # 兜底（仅当 OC DNS 不可达/超时才启用，绝不并行抢占）：国内 DoT，守住“OC 挂掉也不致 DNS 全断”底线
   fallback_dns:
     - "tls://223.5.5.5"
     - "tls://223.6.6.6"
-  # 关闭并行请求：确保只走 OC 上游，fallback 仅在 OC 失败后才用（避免国内上游抢答绕过 OC 分流）
   parallel_requests: false
   upstream_timeout: 3s
   cache_enabled: true

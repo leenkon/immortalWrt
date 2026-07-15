@@ -1,6 +1,6 @@
 #!/bin/sh /etc/rc.common
 START=89
-start_service() {
+start() {
     for f in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
         [ -w "$f" ] && echo performance > "$f" 2>/dev/null
     done

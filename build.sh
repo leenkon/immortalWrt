@@ -151,17 +151,10 @@ if [[ "$USE_OAF" == "true" ]]; then
   [[ -d "$SCRIPT_DIR/oaf_files/app_icons" ]] && cp -rf "$SCRIPT_DIR/oaf_files/app_icons" package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
 fi
 
-# AdGuardHome 版本升级 + OpenClash LuCI 替换
-# OC 装在 bypass / full（含 noadgh，OC 仍启用）；ADGH 升级仅对实际编入 ADGH 的 profile：
-# bypass 始终带 ADGH；full 带 ADGH，但 noadgh 在 .config 阶段即剔除 ADGH（不编入、不升级）。
-WITH_OC=false; WITH_ADGH=false
-[[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]] && WITH_OC=true
-if [[ "$RUN_TYPE" == "bypass" ]] || [[ "$RUN_TYPE" == "full" && "$NO_ADGH" != "true" ]]; then
-  WITH_ADGH=true
-fi
-if $WITH_ADGH; then
-  chmod +x "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$SCRIPT_DIR/scripts/upgrade-golang.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
-  ADGH_VER="${ADGH_VER}" "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$OPENWRT_DIR"
+# AdGuardHome 版本升级 + OpenClash LuCI 替换（仅旁路由 / 完整路由需要）
+if [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]]; then
+  chmod +x "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
+  "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$OPENWRT_DIR"
   "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh" "$OPENWRT_DIR"
 elif $WITH_OC; then
   chmod +x "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
@@ -210,12 +203,6 @@ case "$RUN_TYPE" in
     rm -f "$OPENWRT_DIR/files/usr/sbin/dns-hijack"
     ;;
   full)
-    # full 不再依赖 nftables 端口劫持：ADGH 占 :53 作 DHCP DNS，上游指向 OpenClash(7874)
-    rm -f "$OPENWRT_DIR/files/usr/sbin/dns-hijack"
-    if [[ "$NO_ADGH" == "true" ]]; then
-      rm -rf "$OPENWRT_DIR/files/etc/adguardhome"
-      rm -f "$OPENWRT_DIR/files/etc/hotplug.d/iface/99-adgh-filters"
-    fi
     ;;
 esac
 BXPLUG_VER="${MAIN_VER%%.*}"
