@@ -13,7 +13,6 @@ on:
       pppoe_password: {description: 'PPPoE密码', type: string, default: ''}
       install_oaf: {description: '安装OAF', type: boolean, default: false}
       root_password: {description: 'root密码', type: string, default: ''}
-      adgh_version: {description: 'AdGuardHome版本(留空=用feeds自带;填版本号或latest=自动升级到该版本,并强制把feeds的lang/golang升级到其go.mod要求的Go版本,解决.built失败;注意24.10的Go太旧无法升级,请用25.12)', type: string, default: ''}
 permissions:
   contents: write
 
@@ -61,7 +60,8 @@ jobs:
           NO_ADGH=false; [[ "${{ github.event.inputs.profile }}" == *"noadgh"* ]] && NO_ADGH=true
           MAIN_VER="${{ github.event.inputs.version }}"; MAIN_VER="${MAIN_VER%.*}"
           # OAF：主路由勾选或完整路由必装；OC 装 bypass/full（含 noadgh）；
-          # ADGH 升级仅 bypass 与 full（不含 noadgh）；noadgh 的“无 ADGH”在 .config 阶段剔除。
+          # ADGH：bypass / full（非 noadgh）包含；24.x 用 feeds 自带版本，25.x 自动升最新（配套升 Go）；
+          # noadgh 的“无 ADGH”在 .config 阶段剔除。
           [[ ("${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main") || "$RUN_TYPE" == "full" ]] && INSTALL_OAF=true || INSTALL_OAF=false
           WITH_OC=false; WITH_ADGH=false
           case "$RUN_TYPE" in
@@ -80,13 +80,17 @@ jobs:
             cp -rf $GITHUB_WORKSPACE/oaf_files/app_icons/ package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
           fi
 
-          if $WITH_OC_ADGH; then
-            chmod +x $GITHUB_WORKSPACE/scripts/upgrade-{adgh,openclash-luci}.sh
-            $GITHUB_WORKSPACE/scripts/upgrade-adgh.sh .
-            $GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh .
-          elif $WITH_OC; then
+          # OpenClash LuCI 替换：bypass / full（含 noadgh）均需要
+          if $WITH_OC; then
             chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh
             $GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh .
+          fi
+          # AdGuardHome 升级：仅 25.x 且实际包含 ADGH（bypass / full 非 noadgh）时，
+          # 自动升到最新版并配套升级 feeds Go（解决 .built 的 Go 版本不匹配）；
+          # 24.x 直接用 feeds 自带版本（Go 太旧无法升，求稳）。
+          if $WITH_ADGH && [[ "$MAIN_VER" == "25" ]]; then
+            chmod +x $GITHUB_WORKSPACE/scripts/upgrade-{adgh,golang}.sh
+            $GITHUB_WORKSPACE/scripts/upgrade-adgh.sh . --version latest
           fi
 
           ./scripts/feeds install -a

@@ -46,12 +46,14 @@
 - 仍待上机验证/取舍的嫌疑：① 若仍断流，进一步关软件流卸载 `flow_offloading='0'` ② NIC 卸载(ethtool GRO/LRO/TSO)、IRQ 均衡、virtio(若为 VM) ③ IPv6 DNS 下发（确认 RA/dhcpv6 只下发路由自身 IPv6，避免客户端直连 ISP IPv6 DNS 绕过 DNS 链）④ Block-QUIC（full 独有）⑤ OAF 网关模式 CPU。
 - 诊断命令：ping 长测看 gaps；`cat /proc/sys/net/netfilter/nf_conntrack_count` vs `...nf_conntrack_max`；`logread | grep -iE 'offload|conntrack|dns|adguard|openclash|oaf'`；`cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor`；`ping -M do -s 1472 223.5.5.5`（PPPoE 用 1464）测 MTU 黑洞。
 
-## AdGuardHome 编译关键约束（feeds golang 与 Go 版本耦合）
-- **根因**：AdGuardHome >=0.107.70 全部要求 Go >= 1.25（0.107.70→Go1.25.5、0.107.77→Go1.26.3、0.107.78→Go1.26.5）。OpenWrt **25.12** feeds `lang/golang` 已自带 **Go 1.26.4**（按大版本拆包 `golang1.26`，`golang-values.mk` 的 `GO_DEFAULT_VERSION:=1.26`，`golang` 虚包→`golang1.26/host`，adguardhome 依赖 `golang/host`）；**24.10** 仅单一 `golang` 包 **1.23.12**，bootstrap 链(go1.4/1.17/1.20)过旧无法 bootstrap Go 1.26。
-- **机制（2026-07-15 强制升级）**：`upgrade-adgh.sh` 默认不覆盖 feeds 自带版本；显式 `ADGH_VER`（版本号/`latest`）时才升级。升级时读目标版本 go.mod 的 `go X.Y` 作为 `req_go`，**调用 `scripts/upgrade-golang.sh --require-go "$req_go"` 强制把 feeds `lang/golang` 升到该 Go 版本**（25.12 改 `golang1.26/Makefile` 的 `GO_VERSION_PATCH`+`PKG_HASH`；当前→1.26.5 即满足 0.107.78），包名/大版本不变、依赖链自动跟随。下载 tarball 校验 gzip magic(`1f8b`) 防 404 HTML 错算 hash。
-- **24.10 限制**：大版本不匹配时 `upgrade-golang.sh` 明确 ABORT 并指引改用 25.12（24.10 无法编最新 ADGH）。
-- build.sh / workflow 均透传 `ADGH_VER`（workflow `adgh_version` 输入，留空=feeds 自带版；25.12 填 `latest` 即自动升 golang+ADGH 编最新）。
-- 注：用更新 ADGH 必须喂够网络（下载 go<ver>.src.tar.gz 与 ADGH 源码/前端）；否则 golang 升级失败会 ABORT 编译。
+## AdGuardHome 编译策略（feeds golang 与 Go 版本耦合，2026-07-15 定稿）
+- **根因**：AdGuardHome >=0.107.70 全部要求 Go >= 1.25（0.107.78→Go1.26.5）。OpenWrt **25.12** feeds `lang/golang` 自带 **Go 1.26.4**（包 `golang1.26`，`golang-values.mk` 的 `GO_DEFAULT_VERSION:=1.26`，`golang` 虚包→`golang1.26/host`，adguardhome 依赖 `golang/host`）；**24.10** 仅单一 `golang` 包 **1.23.x**，bootstrap 链(go1.4/1.17/1.20)过旧无法 bootstrap Go 1.26。
+- **分支策略（用户定稿，设置界面无需指定版本）**：
+  - **24.10 = 直接用 feeds 自带版本**：build.sh/workflow **不调用** `upgrade-adgh.sh`（最稳，Go 1.23 匹配自带 ADGH，无需升级）。
+  - **25.12 = 自动升最新 + 配套升 Go**：仅当 `WITH_ADGH`(bypass/full 非 noadgh) 且 `MAIN_VER==25` 时，调用 `upgrade-adgh.sh . --version latest`；脚本读目标版 go.mod 的 Go 要求 → 调用 `upgrade-golang.sh --require-go` 把 `golang1.26` 补丁号提到该 Go（如 1.26.5），包名/大版本不变、依赖链自动跟随。
+- **升级脚本接口**：`upgrade-adgh.sh [dir] [--version latest|<ver>]`（默认 latest，兼容 `ADGH_VER` 环境变量回退）；`upgrade-golang.sh [dir] --require-go <X.Y.Z>`（25.12 改 `golang1.26/Makefile` 的 `GO_VERSION_PATCH`+`PKG_HASH`；24.10 大版本不匹配时明确 ABORT 并指引改用 25.12）。
+- **workflow 已移除 `adgh_version` 输入**：版本由分支自动决定（24.10 自带 / 25.12 最新），用户无需在设置界面指定 ADGH。
+- 下载校验：tarball 校验 gzip magic(`1f8b`) 防 404 HTML 错算 hash；升级需联网下载 `go<ver>.src.tar.gz` 与 ADGH 源码/前端，否则 golang 升级失败 ABORT。
 
 ## 已知待确认
 - （无）

@@ -46,6 +46,11 @@ IFS='-' read -r CFG_PREFIX RUN_TYPE <<< "$PROFILE"
 [[ "$CFG_PREFIX" == "full" ]] && RUN_TYPE="full"
 NO_ADGH="false"; [[ "$PROFILE" == *"noadgh"* ]] && NO_ADGH="true"
 MAIN_VER=${VERSION%.*}
+# OC 用于 bypass / full（含 noadgh）；ADGH 用于 bypass / full 非 noadgh
+WITH_OC=false; WITH_ADGH=false
+[[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]] && WITH_OC=true
+[[ "$RUN_TYPE" == "bypass" ]] && WITH_ADGH=true
+[[ "$RUN_TYPE" == "full" && "$NO_ADGH" != "true" ]] && WITH_ADGH=true
 
 # 自定义IP
 echo -e "\n[LAN IP]"
@@ -151,14 +156,17 @@ if [[ "$USE_OAF" == "true" ]]; then
   [[ -d "$SCRIPT_DIR/oaf_files/app_icons" ]] && cp -rf "$SCRIPT_DIR/oaf_files/app_icons" package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
 fi
 
-# AdGuardHome 版本升级 + OpenClash LuCI 替换（仅旁路由 / 完整路由需要）
-if [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]]; then
-  chmod +x "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
-  "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$OPENWRT_DIR"
-  "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh" "$OPENWRT_DIR"
-elif $WITH_OC; then
+# OpenClash LuCI 替换：bypass / full（含 noadgh）均需要
+if $WITH_OC; then
   chmod +x "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
   "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh" "$OPENWRT_DIR"
+fi
+# AdGuardHome 升级：仅 25.x 且实际包含 ADGH（bypass / full 非 noadgh）时，
+# 自动升到最新版并配套升级 feeds Go（解决 .built 的 Go 版本不匹配）。
+# 24.x 直接用 feeds 自带版本（其 Go 太旧无法升，求稳）。
+if $WITH_ADGH && [[ "$MAIN_VER" == "25" ]]; then
+  chmod +x "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$SCRIPT_DIR/scripts/upgrade-golang.sh"
+  "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$OPENWRT_DIR" --version latest
 fi
 
 ./scripts/feeds install -a
