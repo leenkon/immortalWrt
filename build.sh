@@ -34,23 +34,17 @@ success "版本: $VERSION"
 
 # 配置选择
 echo -e "\n请选择编译配置："
-echo "  1) default-main (主路由)  2) mini-bypass (旁路由)  3) full-main (完整路由+ADGH)  4) full-noadgh (完整路由无ADGH)"
-read -p "请输入选择 [1-4，默认 1]: " p
+echo "  1) default-main (主路由)  2) mini-bypass (旁路由)  3) full-main (完整路由)"
+read -p "请输入选择 [1-3，默认 1]: " p
 p=${p:-1}
-case "$p" in 1) PROFILE="default-main";; 2) PROFILE="mini-bypass";; 3) PROFILE="full-main";; 4) PROFILE="full-noadgh";; *) error_exit "无效选择";; esac
+case "$p" in 1) PROFILE="default-main";; 2) PROFILE="mini-bypass";; 3) PROFILE="full-main";; *) error_exit "无效选择";; esac
 success "配置: $PROFILE"
 
 # 解析配置
 IFS='-' read -r CFG_PREFIX RUN_TYPE <<< "$PROFILE"
-# full-main / full-noadgh 的 RUN_TYPE 需要覆盖为 full（diy.sh 需要）
+# full-main 的 RUN_TYPE 需要覆盖为 full（diy.sh 需要）
 [[ "$CFG_PREFIX" == "full" ]] && RUN_TYPE="full"
-NO_ADGH="false"; [[ "$PROFILE" == *"noadgh"* ]] && NO_ADGH="true"
 MAIN_VER=${VERSION%.*}
-# OC 用于 bypass / full（含 noadgh）；ADGH 用于 bypass / full 非 noadgh
-WITH_OC=false; WITH_ADGH=false
-[[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]] && WITH_OC=true
-[[ "$RUN_TYPE" == "bypass" ]] && WITH_ADGH=true
-[[ "$RUN_TYPE" == "full" && "$NO_ADGH" != "true" ]] && WITH_ADGH=true
 
 # 自定义IP
 echo -e "\n[LAN IP]"
@@ -106,11 +100,7 @@ DIY="$SCRIPT_DIR/scripts/diy.sh"
 
 # 1. 换行符
 echo -e "\n${YELLOW}[1/7] 检查换行符和权限...${NC}"
-<<<<<<< HEAD
 fix_line_endings "$DIY" "$SCRIPT_DIR/build.sh" "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
-=======
-fix_line_endings "$DIY" "$SCRIPT_DIR/build.sh" "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$SCRIPT_DIR/scripts/upgrade-golang.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
->>>>>>> 47e5a75adaf1a47a07fcaa287bfe33a943ad7d98
 # files/ 下的脚本和 YAML 也需要修复 CRLF（路由器 ash 不兼容 CRLF）
 fix_line_endings "$SCRIPT_DIR/files/usr/sbin/dns-hijack" \
   "$SCRIPT_DIR/files/usr/lib/ddns/update_aliyun_com.sh" \
@@ -160,53 +150,34 @@ if [[ "$USE_OAF" == "true" ]]; then
   [[ -d "$SCRIPT_DIR/oaf_files/app_icons" ]] && cp -rf "$SCRIPT_DIR/oaf_files/app_icons" package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
 fi
 
-<<<<<<< HEAD
 # OpenClash LuCI 替换（仅旁路由 / 完整路由需要）。
 # 注：AdGuardHome 已改为官方预编译二进制注入（见步骤 6），此处不再做 feeds 编译升级。
 if [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]]; then
-=======
-# OpenClash LuCI 替换：bypass / full（含 noadgh）均需要
-if $WITH_OC; then
->>>>>>> 47e5a75adaf1a47a07fcaa287bfe33a943ad7d98
   chmod +x "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
   "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh" "$OPENWRT_DIR"
-fi
-# AdGuardHome 升级：仅 25.x 且实际包含 ADGH（bypass / full 非 noadgh）时，
-# 自动升到最新版并配套升级 feeds Go（解决 .built 的 Go 版本不匹配）。
-# 24.x 直接用 feeds 自带版本（其 Go 太旧无法升，求稳）。
-if $WITH_ADGH && [[ "$MAIN_VER" == "25" ]]; then
-  chmod +x "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$SCRIPT_DIR/scripts/upgrade-golang.sh"
-  "$SCRIPT_DIR/scripts/upgrade-adgh.sh" "$OPENWRT_DIR" --version latest
 fi
 
 ./scripts/feeds install -a -f
 cp "$SCRIPT_DIR/configs/${MAIN_VER}-${CFG_PREFIX}.config" .config || error_exit "配置文件不存在"
 sed -i 's/\r$//' .config
-# noadgh：构建期即从 .config 剔除 AdGuardHome 三个包（adguardhome / luci-app-adguardhome / i18n），
-# 与普通 full 共用同一份源码配置，仅 .config 形态不同；普通 full 不受影响。
-if [[ "$NO_ADGH" == "true" ]]; then
-  sed -i '/CONFIG_PACKAGE_.*adguardhome/d' .config
-fi
 # files/ 目录放在源码根目录下会被构建系统自动打包进固件，无需特殊配置
 [[ "$USE_OAF" == "true" ]] && echo -e "\nCONFIG_PACKAGE_luci-app-oaf=y" >> .config
 success "完成"
 
 # 5. 网络配置
 echo -e "\n${YELLOW}[5/7] 生成网络配置...${NC}"
-NO_ADGH_ARG=""; [[ "$NO_ADGH" == "true" ]] && NO_ADGH_ARG="--no-adgh"
 "$DIY" -v "$MAIN_VER" -p after -t "$RUN_TYPE" \
   ${ROUTER_IP:+--ip "$ROUTER_IP"} \
   ${GATEWAY_IP:+--gateway "$GATEWAY_IP"} \
   ${BYPASS_IP:+--bypass-ip "$BYPASS_IP"} \
-  ${NO_ADGH_ARG:+--no-adgh} \
   ${PPPOE_USER:+--pppoe-user "$PPPOE_USER"} ${PPPOE_PASS:+--pppoe-pass "$PPPOE_PASS"} \
   --root-pass "$ROOT_PWD"
 success "完成"
 
 # 6. 预装核心 + 打包 files
 echo -e "\n${YELLOW}[6/7] 预装核心与打包文件...${NC}"
-# OpenClash Meta 核心预装（旁路由 + 完整路由 + full-noadgh，跳过首次启动在线下载）
-if $WITH_OC; then
+# OpenClash Meta 核心预装（旁路由 + 完整路由，跳过首次启动在线下载）
+if [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]]; then
     chmod +x "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh"
     "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR"
 fi
