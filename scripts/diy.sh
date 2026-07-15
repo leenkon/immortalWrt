@@ -29,6 +29,7 @@ DNS_MAIN="223.5.5.5"
 DNS_BACKUP="223.6.6.6"
 
 VERSION="" PHASE="" PROFILE_TYPE=""
+NO_ADGH=0
 CUSTOM_IP="" CUSTOM_GATEWAY="" BYPASS_IP="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
 
 while [ $# -gt 0 ]; do
@@ -42,6 +43,7 @@ while [ $# -gt 0 ]; do
         --pppoe-pass) PPPOE_PASSWORD="$2"; shift 2 ;;
         --root-pass)  ROOT_PASSWORD="$2"; shift 2 ;;
         --bypass-ip) BYPASS_IP="$2"; shift 2 ;;
+        --no-adgh)   NO_ADGH=1; shift ;;
         *) error_exit "未知参数 $1" ;;
     esac
 done
@@ -99,6 +101,8 @@ before)
 
 after)
     echo "[diy] after: $PROFILE_TYPE"
+    # noadgh 仅 full 模式有意义；main/bypass 强制无 ADGH（bypass 本质即 ADGH+OC 旁路由）
+    [ "$PROFILE_TYPE" != "full" ] && NO_ADGH=0
     OUT="$PROJECT_ROOT/files/etc/uci-defaults/99-custom.sh"
     SHADOW="$PROJECT_ROOT/files/etc/shadow"
     mkdir -p "$(dirname "$OUT")"
@@ -124,10 +128,10 @@ uci commit network
 EOF
 )
 
-    # 3) bypass/full 共用：OpenClash meta/redir-host + 启用二进制 AdGuardHome
+    # 3) bypass/full 共用：OpenClash meta/redir-host 配置
     #    注：AdGuardHome 已改为官方预编译二进制（files/ 注入 + init.d 启动），
     #        不再用 feeds 包的 adguardhome uci schema，port/redirect 由 adguardhome.yaml 接管。
-    OC_BLK=$(cat <<'EOF'
+    OC_CONFIG_BLK=$(cat <<'EOF'
 uci -q get openclash.config.core_type >/dev/null || uci set openclash.config=openclash
 uci set openclash.config.core_type='Meta'
 uci set openclash.config.core_version='linux-amd64'
@@ -136,8 +140,11 @@ uci set openclash.config.en_mode='redir-host'
 uci set openclash.config.operation_mode='redir-host'
 uci set openclash.config.enable_custom_overwrite='1'
 uci commit openclash
+EOF
+)
 
-# 启用官方二进制 AdGuardHome（init.d 经 files/ 注入；Procd 脚本需 enable 才开机自启）
+    # 3b) 带 ADGH 时启用二进制 AdGuardHome（init.d 经 files/ 注入；Procd 脚本需 enable 才开机自启）
+    ADGH_ENABLE_BLK=$(cat <<'EOF'
 chmod 755 /etc/init.d/adguardhome
 /etc/init.d/adguardhome enable
 /etc/init.d/adguardhome start
@@ -247,7 +254,8 @@ WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
 while uci -q delete firewall.@forwarding[0]; do :; done
 uci commit firewall
 
-$OC_BLK
+$OC_CONFIG_BLK
+$ADGH_ENABLE_BLK
 EOT
     elif [ "$PROFILE_TYPE" = "full" ]; then
         cat >> "$OUT" <<EOT
@@ -257,11 +265,30 @@ $LAN_WAN_COMMON_BLK
 $IP_FORWARD_LN
 
 $DHCP_COMMON_BLK
+EOT
+        if [ "$NO_ADGH" = "1" ]; then
+            # noadgh：dnsmasq 占 :53，上游指向 OpenClash redir-host DNS(:7874) + 公共兜底；
+            # OC 停止时 dnsmasq 直连兜底，避免 DNS 全断（兼容 OC 停止场景）
+            cat >> "$OUT" <<EOT
+uci -q delete dhcp.@dnsmasq[0].port
+uci -q delete dhcp.@dnsmasq[0].server
+uci add_list dhcp.@dnsmasq[0].server='127.0.0.1#7874'
+uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
+uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
+uci set dhcp.@dnsmasq[0].noresolv='0'
+uci set dhcp.@dnsmasq[0].dns_redirect='0'
+uci commit dhcp
+EOT
+        else
+            # 带 ADGH：dnsmasq 让出 :53（port 5453，仅 DHCP），AdGuardHome 占 :53
+            cat >> "$OUT" <<EOT
 uci -q set dhcp.@dnsmasq[0].port='5453'
 uci -q delete dhcp.@dnsmasq[0].server
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
 uci commit dhcp
-
+EOT
+        fi
+        cat >> "$OUT" <<EOT
 $LAN_FORWARD_BLK
 uci add firewall rule
 uci set firewall.@rule[-1].name='Block-QUIC'
@@ -277,8 +304,14 @@ uci set oaf.global.enable='1'
 uci set oaf.global.work_mode='gateway'
 uci commit oaf
 
-$OC_BLK
-
+$OC_CONFIG_BLK
+EOT
+        if [ "$NO_ADGH" != "1" ]; then
+            cat >> "$OUT" <<EOT
+$ADGH_ENABLE_BLK
+EOT
+        fi
+        cat >> "$OUT" <<EOT
 $DNS_HIJACK_BLK
 EOT
     else

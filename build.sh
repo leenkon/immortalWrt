@@ -34,16 +34,18 @@ success "版本: $VERSION"
 
 # 配置选择
 echo -e "\n请选择编译配置："
-echo "  1) default-main (主路由)  2) mini-bypass (旁路由)  3) full-main (完整路由)"
-read -p "请输入选择 [1-3，默认 1]: " p
+echo "  1) default-main (主路由)  2) mini-bypass (旁路由)  3) full-main (完整路由)  4) full-noadgh (完整路由无ADGH)"
+read -p "请输入选择 [1-4，默认 1]: " p
 p=${p:-1}
-case "$p" in 1) PROFILE="default-main";; 2) PROFILE="mini-bypass";; 3) PROFILE="full-main";; *) error_exit "无效选择";; esac
+case "$p" in 1) PROFILE="default-main";; 2) PROFILE="mini-bypass";; 3) PROFILE="full-main";; 4) PROFILE="full-noadgh";; *) error_exit "无效选择";; esac
 success "配置: $PROFILE"
 
 # 解析配置
 IFS='-' read -r CFG_PREFIX RUN_TYPE <<< "$PROFILE"
-# full-main 的 RUN_TYPE 需要覆盖为 full（diy.sh 需要）
+# full-main / full-noadgh 的 RUN_TYPE 都需要覆盖为 full（diy.sh 需要）
 [[ "$CFG_PREFIX" == "full" ]] && RUN_TYPE="full"
+NO_ADGH="false"
+[[ "$PROFILE" == "full-noadgh" ]] && NO_ADGH="true"
 MAIN_VER=${VERSION%.*}
 
 # 自定义IP
@@ -171,6 +173,7 @@ echo -e "\n${YELLOW}[5/7] 生成网络配置...${NC}"
   ${GATEWAY_IP:+--gateway "$GATEWAY_IP"} \
   ${BYPASS_IP:+--bypass-ip "$BYPASS_IP"} \
   ${PPPOE_USER:+--pppoe-user "$PPPOE_USER"} ${PPPOE_PASS:+--pppoe-pass "$PPPOE_PASS"} \
+  ${NO_ADGH:+--no-adgh} \
   --root-pass "$ROOT_PWD"
 success "完成"
 
@@ -181,9 +184,9 @@ if [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]]; then
     chmod +x "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh"
     "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR"
 fi
-# AdGuardHome 官方预编译二进制注入（旁路由 + 完整路由；构建期免 Go 编译，保证最新版）。
-# 二进制写入 $SCRIPT_DIR/files/usr/bin/AdGuardHome，随后随 files/ 一起打包进固件。
-if [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]]; then
+# AdGuardHome 官方预编译二进制注入（旁路由 + 完整路由；full-noadgh 不注入）。
+# 构建期免 Go 编译，保证最新版；二进制写入 $SCRIPT_DIR/files/usr/bin/AdGuardHome 后随 files/ 打包。
+if [[ "$RUN_TYPE" == "bypass" || ("$RUN_TYPE" == "full" && "$NO_ADGH" != "true") ]]; then
     chmod +x "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh"
     "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh" "$SCRIPT_DIR"
 fi
@@ -194,11 +197,19 @@ case "$RUN_TYPE" in
     rm -rf "$OPENWRT_DIR/files/etc/adguardhome"
     rm -rf "$OPENWRT_DIR/files/etc/openclash"
     rm -f "$OPENWRT_DIR/files/usr/bin/AdGuardHome"
+    rm -f "$OPENWRT_DIR/files/etc/init.d/adguardhome"
+    rm -f "$OPENWRT_DIR/files/etc/config/adguardhome"
     ;;
   bypass)
     rm -f "$OPENWRT_DIR/files/usr/sbin/dns-hijack"
     ;;
   full)
+    if [ "$NO_ADGH" = "true" ]; then
+      rm -rf "$OPENWRT_DIR/files/etc/adguardhome"
+      rm -f "$OPENWRT_DIR/files/usr/bin/AdGuardHome"
+      rm -f "$OPENWRT_DIR/files/etc/init.d/adguardhome"
+      rm -f "$OPENWRT_DIR/files/etc/config/adguardhome"
+    fi
     ;;
 esac
 BXPLUG_VER="${MAIN_VER%%.*}"
