@@ -127,6 +127,5 @@ jobs:
           name: ImmortalWrt ${{ github.event.inputs.version }} (${{ github.event.inputs.profile }})
           tag_name: ${{ github.event.inputs.version }}-${{ github.event.inputs.profile }}
           files: openwrt/bin/targets/x86/64/*-${{ steps.build.outputs.timestamp }}.img.gz
-          overwrite_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
