@@ -11,6 +11,7 @@ dns:
     - 0.0.0.0
     - "::"
   upstream_dns:
+<<<<<<< HEAD
     - "127.0.0.1:7874"        # 主上游：OpenClash（域名分流/代理）。OC 停止/崩溃时 ADGH 自动跳过，改走下一条
     - "tls://223.5.5.5"       # 兜底（不依赖 OC）：国内 DoT
     - "tls://223.6.6.6"
@@ -18,6 +19,13 @@ dns:
     - "223.6.6.6"
   fallback_dns: []            # 兜底已并入 upstream_dns 第二条起，避免双路径重复
   parallel_requests: false    # 先走 OC；OC 不可达才顺序尝试直连兜底（保证 OC 在时由其做域名分流，不泄漏）
+=======
+    - "[/./]127.0.0.1:7874"
+  fallback_dns:
+    - "tls://223.5.5.5"
+    - "tls://223.6.6.6"
+  parallel_requests: false
+>>>>>>> 47e5a75adaf1a47a07fcaa287bfe33a943ad7d98
   upstream_timeout: 3s
   cache_enabled: true
   cache_size: 500000

@@ -1,10 +1,13 @@
 # 项目长期记忆 - immortalWrt 编译项目
 
 ## 项目概述
-- immortalWrt GitHub Action 编译项目
-- 核心文件：`scripts/diy.sh`（双阶段配置生成器）、`build.sh`（7步编译流程）
-- 生成目标：`files/etc/uci-defaults/99-custom.sh`（主路由/旁路由/完整路由三套配置）
+- GitHub Actions 编译 immortalWrt x86_64 固件（主 workflow: `.github/workflows/ImmortalWrtBuilder_x86_64.yml`，本地: `build.sh`）
+- 双阶段生成器 `scripts/diy.sh`：before=处理 feeds/golang；after=**重新生成** `files/etc/uci-defaults/99-custom.sh`（先 `rm -f` 再写，故该路径下的静态 99-custom.sh 是死文件，已被删除）
+- profile type：`main`(主路由) / `bypass`(旁路由) / `full`(完整路由)
+- workflow profile 选项：`default-main` / `mini-bypass` / `full-main` / `full-noadgh`（full 不带 AdGuardHome）
+- `full-noadgh`：`--type full --no-adgh`，OAF+OpenClash 但无 ADGH；dnsmasq 占 53，OC 用 `enable_redirect_dns='1'` 自行劫持 DNS；不跑自定义 dns-hijack、不装 adguardhome 包/文件
 
+<<<<<<< HEAD
 ## ADGH 方案（2026-07-15 定稿 = 二进制注入）
 - **核心决策**：放弃 feeds 编译 ADGH（需 Go 工具链 + Makefile hash 打补丁，新版本频繁要求更高 Go，脆弱），改为构建期拉取官方预编译静态二进制经 `files/` 注入。
 - 新增 `scripts/upgrade-adgh-binary.sh`：拉 `AdGuardHome_linux_amd64.tar.gz`（`latest` 或 `--version`），校验 `checksums.txt` 本架构 sha256，安装到 `files/usr/bin/AdGuardHome`；主源 + ghproxy 回退；幂等（版本匹配跳过）。
@@ -69,10 +72,38 @@
   3. 旁路由自身 DNS（network.lan.dns）改为 1.1.1.1 / 223.5.5.5，不指向主路由（避免环路）
 - AdGuardHome 初始配置预置在 `files/etc/adguardhome/adguardhome.yaml`（小写目录，schema_version: 34）。上游 = OpenClash `127.0.0.1:7874`（域名分流）为主 + 国内 DoT/明文兜底（223.5.5.5/223.6.6.6），**严禁境外解析器**；OC 停止时自动直连兜底。
 - AdGuardHome 上游主用 `127.0.0.1:7874`（OpenClash redir-host DNS 端口）；因 OC 可能未运行，upstream_dns 顺序放置国内兜底（tls://223.5.5.5 等），`parallel_requests=false` 保证 OC 在时由其做域名分流不泄漏。
+=======
+## noadgh 的 ADGH 剔除机制
+- **单一构建期机制（权威）**：build.sh/workflow 在 `cp .config` 后、`make defconfig` 前对 `noadgh` 执行 `sed -i '/CONFIG_PACKAGE_.*adguardhome/d' .config`，剔除 adguardhome/luci-app-adguardhome/i18n 三行；同时 `WITH_ADGH=false`（不再跑 `upgrade-adgh.sh`，省编译/升级）。
+- 设计变更（2026-07-12）：**推翻此前“不修改 .config”原则**——noadgh 改为构建期从 .config 剔除 ADGH（可行：所有 full/mini config 的 ADGH 包均为 `=y` 形态，sed 删除精确且无副作用；普通 full 不受影响，因其 `NO_ADGH!=true`）。首启 apk/opkg 移除块已于 2026-07-13 复审清理删除（与构建期 sed 双重来源、冗余），构建期 sed 现为唯一权威机制。
 
-## 已知潜在问题（待确认）
-- set -eu 在 diy.sh（编译机）正常，99-custom.sh 无 set -eu（正确，ash source 执行）
+## 网络拓扑与 DNS
+- **main**(10.10.10.1)：DHCP 下发 DNS=旁路IP+公网；dnsmasq:53；dns-hijack 排除旁路IP
+- **bypass**(10.10.10.2)：删 wan/wan6+静态默认路由；ADGH:53+OC(redir-host,关劫持)；dnsmasq→5453 让位；自身 DNS 用公网防环路；删 dns-hijack
+- **full**(10.10.10.1)：OAF+ADGH:53+OC(redir-host)；dnsmasq:5453；**ADGH 上游→OC DNS(`[/./]127.0.0.1:7874`) 使 OC 域名分流生效；不再用 nftables 端口劫持(dns-hijack)，dns-hijack 仅 main 保留**
 
+## diy.sh / build 约定
+- `--type` main/bypass/full；`--no-adgh` 仅 full 生效；`--bypass-ip` 仅本地交互，workflow 不传→回退 10.10.10.2
+- 文件清理在 openwrt 副本上做（build.sh/workflow），源树不被破坏
+- ADGH YAML 预置 `files/etc/adguardhome/adguardhome.yaml`(bind 0.0.0.0+"::")；OC meta 核心由 `upgrade-openclash-core.sh` 下到 `files/etc/openclash/core/clash_meta`；OC sniffer 预置 `files/etc/openclash/custom/openclash_custom_overwrite.yaml`(enable_custom_overwrite=1)
+- `upgrade-adgh.sh` 在 feeds update 后、install 前跑（patch Makefile 版本/hash）；仅 bypass/full（非 noadgh）需要
+- fix_line_endings 覆盖脚本+yaml（CRLF 在路由器 ash 报错）
+- 公共配置块变量：`LAN_WAN_COMMON_BLK` / `ADGH_BLK`(ADGH:53+redirect=0) / `OC_CORE_BLK`(OC公共) / `LAN_FORWARD_BLK` / `DNS_HIJACK_BLK`(仅 main) / `DHCP_COMMON_BLK` / `WAN_BLK`(full/main) / `IP_FORWARD_LN`。⚠️ 定义名与使用名必须一致：`ADGH_BLK` 曾在定义处误写为 `ADGH_OC_BLK` 致 bypass/full 丢失 ADGH UCI 配置，已于 2026-07-15 修正。
+>>>>>>> 47e5a75adaf1a47a07fcaa287bfe33a943ad7d98
+
+## 关键坑（避免回归）
+- ash 不支持 `trap ERR`/`exit 0`(source 杀父 shell)/99-custom.sh 用 set -eu
+- DNS 劫持用 nftables `REDIRECT --to-ports 53`（iptables-nft 不支持）；IPv4 `ip saddr != 旁路IP` 排除旁路由；IPv6 `ip6 daddr ::/0`；禁用 `meta l4proto`(No symbol) 与 `counter`(加载失败)
+- ADGH 上游（`adguardhome.yaml`）用 **domain-specific 形式 `[/./]127.0.0.1:7874`**（OC DNS，redir-host 默认端口），把全部常规查询路由到 OC，使 OC 在解析期拿到域名、域名分流**真正生效**。裸 `127.0.0.1` 会被 ADGH 视为私有上游、仅作 PTR，必须用 `[/./]` 形式绕过。**兜底 `fallback_dns`=国内 DoT**（`tls://223.5.5.5`/`tls://223.6.6.6`），OC 不可达时才启用；`parallel_requests: false` 防止国内上游抢答绕过 OC。**严禁境外解析器**（原 `94.140.14.14`/`1.1.1.1` 已移）。ADGH→OC 单向链，无回环。
+- `dns_redirect='0'` 主/旁/全分支都要（防 dnsmasq init 注入 53→5453 干扰 ADGH）
+- UCI `adguardhome.config.port='53'`+`redirect='0'` 必须设（UCI 覆盖 YAML）
+- ADGH YAML：`filters`/`whitelist_filters`/`user_rules` 顶层项，不嵌套 `filtering:`
+- nft chain `{}` 须单引号；firewall include 无 reload、需 enabled='1'
+- dnsmasq server 重建用 `delete`+`add_list`（防重复）
+- diy.sh 的 `<<EOT`（未加引号）heredoc 会在**生成期**展开 `$(...)`/`$var`；想在首启才执行的命令（如 `opkg list-installed` 兜底移除）必须把 `$` 转义为 `\$`，否则被提前展开成空，到路由器上失效
+- OC `enable_redirect_dns`：有 ADGH 时 '0'（ADGH 占 53），无 ADGH 时 '1'（OC 自行劫持）
+
+<<<<<<< HEAD
 ## 已修复的错误清单
 | 错误 | 修复 |
 |------|------|
@@ -122,3 +153,26 @@
 | hotplug 脚本缺 `adguardhome.yaml` 存在性检查，主路由误触发 | 添加 `[ -f ... ] || exit 0` |
 | `find -type f -executable` 对 Windows git 创建的文件不生效（无 x 位） | 改为按路径/扩展名匹配 `\( -path "*/sbin/*" -o -path "*/hotplug.d/*" -o -path "*/uci-defaults/*" -o -name "*.sh" \)` |
 | adguardhome.yaml 上游曾用境外解析器(94.140.14.14/1.1.1.1) | 改为 OC `127.0.0.1:7874` 主 + 国内兜底，严禁境外 |
+=======
+## 跨分支断流排查（核心结论 2026-07-14，2026-07-15 落地到 diy.sh）
+- 关键转折：用户反馈 main 分支（无 ADGH/OC/OAF）也断流 → 根因**不在分支差异组件**，而在**所有分支共享的底座配置**。据此重查，定位跨分支高危项并全部加固，已写入 diy.sh 公共尾部（作用于全部 4 档）：
+  1. **关闭硬件流卸载** `flow_offloading_hw='0'`（保留软件流卸载 `flow_offloading='1'`）。硬件 offload 在多数 x86 网卡/虚拟化环境不稳定，会偶发丢包、并与 nft DNS 重定向冲突——是跨分支断流头号嫌疑。代价：大带宽 NAT 吞吐略降。
+  2. **conntrack 超时**：sysctl 设 `nf_conntrack_max=262144` + `nf_conntrack_tcp_timeout_established=3600` + `nf_conntrack_udp_timeout=60`，防连接数暴涨时新连接被丢弃（卡死数秒后恢复）。
+  3. **x86 CPU 性能调度**：`files/etc/init.d/cpufreq-perf`（START=89，定义 `start()` 写 `scaling_governor=performance`；非 procd，故必须用 `start()` 而非 `start_service()`），diy.sh 公共尾部首启 `start`+`enable`。避免降频/深空闲致网络延迟抖动。
+  4. **WAN MSS 钳制**：公共尾部对存在的 wan 区设 `mtu_fix='1'`，防 PPPoE/大包 MTU 黑洞间歇断流。
+- full/bypass 专属加固（`adguardhome.yaml`）：`querylog.file_enabled=false`（ADGH 数据目录在 overlay 闪存，长期写盘会撑爆分区致系统不稳）；`upstream_timeout: 3s`（单上游超时拖垮整条解析的兜底）。
+- 仍待上机验证/取舍的嫌疑：① 若仍断流，进一步关软件流卸载 `flow_offloading='0'` ② NIC 卸载(ethtool GRO/LRO/TSO)、IRQ 均衡、virtio(若为 VM) ③ IPv6 DNS 下发（确认 RA/dhcpv6 只下发路由自身 IPv6，避免客户端直连 ISP IPv6 DNS 绕过 DNS 链）④ Block-QUIC（full 独有）⑤ OAF 网关模式 CPU。
+- 诊断命令：ping 长测看 gaps；`cat /proc/sys/net/netfilter/nf_conntrack_count` vs `...nf_conntrack_max`；`logread | grep -iE 'offload|conntrack|dns|adguard|openclash|oaf'`；`cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor`；`ping -M do -s 1472 223.5.5.5`（PPPoE 用 1464）测 MTU 黑洞。
+
+## AdGuardHome 编译策略（feeds golang 与 Go 版本耦合，2026-07-15 定稿）
+- **根因**：AdGuardHome >=0.107.70 全部要求 Go >= 1.25（0.107.78→Go1.26.5）。OpenWrt **25.12** feeds `lang/golang` 自带 **Go 1.26.4**（包 `golang1.26`，`golang-values.mk` 的 `GO_DEFAULT_VERSION:=1.26`，`golang` 虚包→`golang1.26/host`，adguardhome 依赖 `golang/host`）；**24.10** 仅单一 `golang` 包 **1.23.x**，bootstrap 链(go1.4/1.17/1.20)过旧无法 bootstrap Go 1.26。
+- **分支策略（用户定稿，设置界面无需指定版本）**：
+  - **24.10 = 直接用 feeds 自带版本**：build.sh/workflow **不调用** `upgrade-adgh.sh`（最稳，Go 1.23 匹配自带 ADGH，无需升级）。
+  - **25.12 = 自动升最新 + 配套升 Go**：仅当 `WITH_ADGH`(bypass/full 非 noadgh) 且 `MAIN_VER==25` 时，调用 `upgrade-adgh.sh . --version latest`；脚本读目标版 go.mod 的 Go 要求 → 调用 `upgrade-golang.sh --require-go` 把 `golang1.26` 补丁号提到该 Go（如 1.26.5），包名/大版本不变、依赖链自动跟随。
+- **升级脚本接口**：`upgrade-adgh.sh [dir] [--version latest|<ver>]`（默认 latest，兼容 `ADGH_VER` 环境变量回退）；`upgrade-golang.sh [dir] --require-go <X.Y.Z>`（25.12 改 `golang1.26/Makefile` 的 `GO_VERSION_PATCH`+`PKG_HASH`；24.10 大版本不匹配时明确 ABORT 并指引改用 25.12）。
+- **workflow 已移除 `adgh_version` 输入**：版本由分支自动决定（24.10 自带 / 25.12 最新），用户无需在设置界面指定 ADGH。
+- 下载校验：tarball 校验 gzip magic(`1f8b`) 防 404 HTML 错算 hash；升级需联网下载 `go<ver>.src.tar.gz` 与 ADGH 源码/前端，否则 golang 升级失败 ABORT。
+
+## 已知待确认
+- （无）
+>>>>>>> 47e5a75adaf1a47a07fcaa287bfe33a943ad7d98
