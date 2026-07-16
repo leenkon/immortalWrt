@@ -160,9 +160,9 @@ if [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]]; then
 fi
 
 # AdGuardHome LuCI 壳去除对引擎包(adguardhome)的硬依赖：引擎改由二进制注入(files/)提供，
-# 否则 luci-app-adguardhome 会因 unmet dependency(adguardhome >=0.107.73-r3) 编译失败。
-# 仅 25.12 feeds 含有此包；24.10 无该包，跳过。
-if [ "$MAIN_VER" = "25.12" ]; then
+# 否则 luci-app-adguardhome 会因 unmet dependency(adguardhome) 编译失败。
+# 24.10 / 25.12 的 feeds 均含 luci-app-adguardhome（历史构建已验证可编出界面），故两版都处理。
+case "$MAIN_VER" in 24.10|25.12)
   ADGH_LUCI_MK="$OPENWRT_DIR/feeds/luci/applications/luci-app-adguardhome/Makefile"
   if [ -f "$ADGH_LUCI_MK" ]; then
     sed -i -e 's/+adguardhome //g' -e '/LUCI_EXTRA_DEPENDS:=adguardhome/d' "$ADGH_LUCI_MK"
@@ -170,7 +170,8 @@ if [ "$MAIN_VER" = "25.12" ]; then
   else
     echo "[build] 警告: 未找到 luci-app-adguardhome Makefile，跳过依赖去除"
   fi
-fi
+  ;;
+esac
 
 ./scripts/feeds install -a -f
 cp "$SCRIPT_DIR/configs/${MAIN_VER}-${CFG_PREFIX}.config" .config || error_exit "配置文件不存在"

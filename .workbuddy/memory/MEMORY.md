@@ -12,8 +12,12 @@
 - `files/etc/init.d/adguardhome`（Procd）：`/usr/bin/AdGuardHome --config /etc/adguardhome/adguardhome.yaml --work-dir /var/lib/adguardhome --no-check-update --logfile syslog`；interface.up 触发器延后启动。
 - `files/etc/config/adguardhome`：`enabled=1`。
 - `99-custom.sh`（bypass/full）`enable`+`start` 该 init 确保首刷自启（files/ 注入的 init 不会自动 enable，S19 早于 99-custom）。
-- 4 个 configs 注释 `adguardhome`/`luci-app-adguardhome`/`luci-i18n-adguardhome-zh-cn`。
-- `build.sh`/`workflow`：`feeds install -a -f`（消除 core package 覆盖警告）；步骤6 注入二进制 + chmod init.d；main 清理删除 `files/usr/bin/AdGuardHome` 与 `files/etc/adguardhome`。
+- **方向A（已落地, 提交 598d77a）：编译 `luci-app-adguardhome` + i18n 作 Web 壳，引擎仍走二进制注入。**
+  - 实测依赖：`luci-app-adguardhome`(25.12) `LUCI_DEPENDS:=+adguardhome` + `LUCI_EXTRA_DEPENDS:=adguardhome (>=0.107.73-r3)` —— **硬依赖引擎包**。若放开 luci-app 而注释 adguardhome 引擎包，编译会因 unmet dependency 失败。
+  - `build.sh` 在 `feeds update` 后、`feeds install` 前，对 `feeds/luci/applications/luci-app-adguardhome/Makefile` 用 sed 去除 `+adguardhome` 与 `LUCI_EXTRA_DEPENDS` 行，使 luci-app 可独立编译（引擎由二进制注入接管）。
+  - 版本限制：**24.10 feeds 无 `luci-app-adguardhome` 包**（路径 404），故 24.10 config 保持注释，改用二进制自带 Web(:3000)。仅 25.12 放开 luci-app+i18n。
+  - profile 限制：`default-main`(主路由) 与 `full-noadgh` 删除/不注入 ADGH，build.sh 在 .config 阶段对这两类用 `sed` 注释掉 luci 包，避免"有菜单无服务"。
+- `build.sh`：`feeds install -a -f`（消除 core package 覆盖警告）；步骤6 注入二进制 + chmod init.d；main 清理删除 `files/usr/bin/AdGuardHome` 与 `files/etc/adguardhome`。
 
 ## 网络拓扑与 DNS
 - main(10.10.10.1)：DHCP 下发 DNS=旁路IP+公网；dnsmasq:53；dns-hijack 排除旁路IP；删 ADGH/OC。
