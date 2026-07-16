@@ -159,9 +159,28 @@ if [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]]; then
   "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh" "$OPENWRT_DIR"
 fi
 
+# AdGuardHome LuCI 壳去除对引擎包(adguardhome)的硬依赖：引擎改由二进制注入(files/)提供，
+# 否则 luci-app-adguardhome 会因 unmet dependency(adguardhome >=0.107.73-r3) 编译失败。
+# 仅 25.12 feeds 含有此包；24.10 无该包，跳过。
+if [ "$MAIN_VER" = "25.12" ]; then
+  ADGH_LUCI_MK="$OPENWRT_DIR/feeds/luci/applications/luci-app-adguardhome/Makefile"
+  if [ -f "$ADGH_LUCI_MK" ]; then
+    sed -i -e 's/+adguardhome //g' -e '/LUCI_EXTRA_DEPENDS:=adguardhome/d' "$ADGH_LUCI_MK"
+    echo "[build] 已去除 luci-app-adguardhome 对 adguardhome 的硬依赖（引擎走二进制注入）"
+  else
+    echo "[build] 警告: 未找到 luci-app-adguardhome Makefile，跳过依赖去除"
+  fi
+fi
+
 ./scripts/feeds install -a -f
 cp "$SCRIPT_DIR/configs/${MAIN_VER}-${CFG_PREFIX}.config" .config || error_exit "配置文件不存在"
 sed -i 's/\r$//' .config
+# full-noadgh：本 profile 不注入 ADGH 引擎，移除 LuCI 壳避免“有菜单无服务”
+if [ "$RUN_TYPE" = "full" ] && [ "$NO_ADGH" = "true" ]; then
+  sed -i 's/^CONFIG_PACKAGE_luci-app-adguardhome=y/# &/' .config
+  sed -i 's/^CONFIG_PACKAGE_luci-i18n-adguardhome-zh-cn=y/# &/' .config
+  echo "[build] full-noadgh: 已禁用 luci-app-adguardhome（无引擎）"
+fi
 # files/ 目录放在源码根目录下会被构建系统自动打包进固件，无需特殊配置
 [[ "$USE_OAF" == "true" ]] && echo -e "\nCONFIG_PACKAGE_luci-app-oaf=y" >> .config
 success "完成"
