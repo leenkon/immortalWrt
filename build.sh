@@ -25,11 +25,10 @@ echo "========================================"
 
 # 版本选择
 echo -e "\n请选择 ImmortalWrt 版本："
-echo "  1) 25.12.0  2) 24.10.1  3) 24.10.2  4) 24.10.3"
-echo "  5) 24.10.4  6) 24.10.5  7) 24.10.6"
-read -p "请输入选择 [1-7，默认 1]: " v
+echo "  1) 25.12.0  2) 25.12.1"
+read -p "请输入选择 [1-2，默认 1]: " v
 v=${v:-1}
-case "$v" in 1) VERSION="25.12.0";; 2) VERSION="24.10.1";; 3) VERSION="24.10.2";; 4) VERSION="24.10.3";; 5) VERSION="24.10.4";; 6) VERSION="24.10.5";; 7) VERSION="24.10.6";; *) error_exit "无效选择";; esac
+case "$v" in 1) VERSION="25.12.0";; 2) VERSION="25.12.1";; *) error_exit "无效选择";; esac
 success "版本: $VERSION"
 
 # 配置选择
@@ -161,8 +160,8 @@ fi
 
 # AdGuardHome LuCI 壳去除对引擎包(adguardhome)的硬依赖：引擎改由二进制注入(files/)提供，
 # 否则 luci-app-adguardhome 会因 unmet dependency(adguardhome) 编译失败。
-# 24.10 / 25.12 的 feeds 均含 luci-app-adguardhome（历史构建已验证可编出界面），故两版都处理。
-case "$MAIN_VER" in 24.10|25.12)
+# 25.12 feeds 含 luci-app-adguardhome（历史构建已验证可编出界面）。
+case "$MAIN_VER" in 25.12)
   ADGH_LUCI_MK="$OPENWRT_DIR/feeds/luci/applications/luci-app-adguardhome/Makefile"
   if [ -f "$ADGH_LUCI_MK" ]; then
     sed -i -e 's/+adguardhome //g' -e '/LUCI_EXTRA_DEPENDS:=adguardhome/d' "$ADGH_LUCI_MK"

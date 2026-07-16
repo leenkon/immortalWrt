@@ -4,7 +4,7 @@ env:
 on:
   workflow_dispatch:
     inputs:
-      version: {description: '版本', required: true, type: choice, options: [25.12.1, 25.12.0, 24.10.6, 24.10.1]}
+      version: {description: '版本', required: true, type: choice, options: [25.12.1, 25.12.0]}
       profile: {description: '配置', required: true, type: choice, options: [mini-bypass, default-main, full-main, full-noadgh]}
       custom_ip: {description: '自定义IP', type: string, default: ''}
       custom_gateway: {description: '网关(旁路由)', type: string, default: ''}

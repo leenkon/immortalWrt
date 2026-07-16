@@ -2,7 +2,7 @@
 # 下载并注入官方预编译 AdGuardHome 静态二进制（linux/amd64）
 #
 # 取代 feeds 编译方案：免 Go 工具链、免 Makefile hash 打补丁、保证最新版、
-# 24.10 / 25.12 完全通用。二进制经 files/ 注入固件（/usr/bin/AdGuardHome），
+# 25.12 完全通用。二进制经 files/ 注入固件（/usr/bin/AdGuardHome），
 # 由 files/etc/init.d/adguardhome 启动，配置复用 files/etc/adguardhome/adguardhome.yaml。
 #
 # 用法: upgrade-adgh-binary.sh [项目根目录] [--version latest|<版本号>]
