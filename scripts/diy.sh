@@ -355,8 +355,6 @@ chmod 755 /etc/init.d/cpufreq-perf
 
 if [ -f /etc/bxplug.apk ]; then
     apk --allow-untrusted add /etc/bxplug.apk && rm -f /etc/bxplug.apk
-elif [ -f /etc/bxplug.ipk ]; then
-    opkg install /etc/bxplug.ipk && rm -f /etc/bxplug.ipk
 fi
 ( sleep 10; /etc/init.d/odhcpd restart ) &
 logger -t uci-defaults "配置应用完成"

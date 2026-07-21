@@ -231,8 +231,6 @@ case "$RUN_TYPE" in
     fi
     ;;
 esac
-# 仅 25.12：apk 格式生效，删除 ipk 旧包（24.x 已移除）
-rm -f "$OPENWRT_DIR/files/etc/bxplug.ipk"
 # 确保脚本可执行（Windows 无 Unix x 位，按路径/扩展名匹配）
 find "$OPENWRT_DIR/files" -type f \( -path "*/sbin/*" -o -path "*/init.d/*" -o -path "*/hotplug.d/*" -o -path "*/uci-defaults/*" -o -name "*.sh" \) -exec chmod 755 {} + 2>/dev/null || true
 make defconfig && make download && make clean
