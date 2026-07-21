@@ -129,8 +129,6 @@ EOF
 )
 
     # 3) bypass/full 共用：OpenClash meta/redir-host 配置
-    #    注：AdGuardHome 已改为官方预编译二进制（files/ 注入 + init.d 启动），
-    #        不再用 feeds 包的 adguardhome uci schema，port/redirect 由 adguardhome.yaml 接管。
     OC_CONFIG_BLK=$(cat <<'EOF'
 uci -q get openclash.config.core_type >/dev/null || uci set openclash.config=openclash
 uci set openclash.config.core_type='Meta'

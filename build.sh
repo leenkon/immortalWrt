@@ -151,8 +151,7 @@ if [[ "$USE_OAF" == "true" ]]; then
   [[ -d "$SCRIPT_DIR/oaf_files/app_icons" ]] && cp -rf "$SCRIPT_DIR/oaf_files/app_icons" package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
 fi
 
-# OpenClash LuCI 替换（仅旁路由 / 完整路由需要）。
-# 注：AdGuardHome 已改为官方预编译二进制注入（见步骤 6），此处不再做 feeds 编译升级。
+# OpenClash LuCI 替换（仅旁路由 / 完整路由需要）
 if [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]]; then
   chmod +x "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
   "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh" "$OPENWRT_DIR"
@@ -181,7 +180,6 @@ if [ "$RUN_TYPE" = "full" ] && [ "$NO_ADGH" = "true" ]; then
   sed -i 's/^CONFIG_PACKAGE_luci-i18n-adguardhome-zh-cn=y/# &/' .config
   echo "[build] full-noadgh: 已禁用 luci-app-adguardhome（无引擎）"
 fi
-# files/ 目录放在源码根目录下会被构建系统自动打包进固件，无需特殊配置
 [[ "$USE_OAF" == "true" ]] && echo -e "\nCONFIG_PACKAGE_luci-app-oaf=y" >> .config
 success "完成"
 
