@@ -21,14 +21,10 @@ ADGH_VER="${VERSION_ARG:-${ADGH_VER:-latest}}"
 
 BIN_DIR="$PROJECT_ROOT/files/usr/bin"
 BIN="$BIN_DIR/AdGuardHome"
-
-echo "[ADGH-BIN] 目标版本: $ADGH_VER"
-
 if [ "$ADGH_VER" = "latest" ]; then
   ADGH_VER=$(curl -s --connect-timeout 10 https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest \
     | grep '"tag_name"' | sed 's/.*"v\([^"]*\)".*/\1/')
   [ -z "$ADGH_VER" ] && { echo "[ADGH-BIN][ERROR] 获取最新版本失败（GitHub API 受限？）"; exit 1; }
-  echo "[ADGH-BIN] 解析 latest -> v$ADGH_VER"
 fi
 
 # 已存在且版本匹配则跳过（幂等，便于本地重复构建）

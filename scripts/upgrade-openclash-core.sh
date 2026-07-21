@@ -18,7 +18,6 @@ CORE_DIR="$PROJECT_ROOT/files/etc/openclash/core"
 CORE_BIN="$CORE_DIR/clash_meta"
 
 # 获取最新版本号
-echo "[CORE] 获取 OpenClash Meta 核心版本..."
 CORE_VERSION=$(curl -s --connect-timeout 10 \
     "https://raw.githubusercontent.com/vernesong/OpenClash/core/${RELEASE_BRANCH}/core_version" \
     | sed -n '1p')
