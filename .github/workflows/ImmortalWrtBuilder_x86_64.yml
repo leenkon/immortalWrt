@@ -50,8 +50,8 @@ jobs:
         id: build
         run: |
           set -e
-          # 修复 Windows 提交可能带来的 CRLF（路由器 ash 不兼容）
-          find $GITHUB_WORKSPACE -type f \( -name "*.sh" -o -name "*.yaml" -o -name "dns-hijack" -o -name "99-adgh-filters" \) \
+          # 修复 Windows 提交可能带来的 CRLF（路由器 ash 不兼容），覆盖脚本/YAML/init.d
+          find $GITHUB_WORKSPACE -type f \( -name "*.sh" -o -name "*.yaml" -o -name "dns-hijack" -o -name "99-adgh-filters" -o -path "*/init.d/*" \) \
             -exec sed -i 's/\r$//' {} + 2>/dev/null || true
           cd openwrt
           IFS='-' read -r CFG_PREFIX RUN_TYPE <<< "${{ github.event.inputs.profile }}"

@@ -101,7 +101,7 @@ before)
 
 after)
     echo "[diy] after: $PROFILE_TYPE"
-    # noadgh 仅 full 模式有意义；main/bypass 强制无 ADGH（bypass 本质即 ADGH+OC 旁路由）
+    # NO_ADGH 仅 full 模式有意义；main/bypass 强制 NO_ADGH=0（均带 ADGH，bypass 即 ADGH+OC 旁路由）
     [ "$PROFILE_TYPE" != "full" ] && NO_ADGH=0
     OUT="$PROJECT_ROOT/files/etc/uci-defaults/99-custom.sh"
     SHADOW="$PROJECT_ROOT/files/etc/shadow"
@@ -114,7 +114,7 @@ after)
     # 1) IP 转发开关：所有 profile 统一开启
     IP_FORWARD_LN='grep -q '\''net.ipv4.ip_forward=1'\'' /etc/sysctl.conf || echo '\''net.ipv4.ip_forward=1'\'' >> /etc/sysctl.conf'
 
-    # 2) full/main 共用：LAN 静态 + peerdns 关 + wan.dns 公共上游
+    # 2) full/main 共用：LAN 静态地址（lan6 删除、ip6assign、proto、ipaddr、netmask）
     LAN_WAN_COMMON_BLK=$(cat <<EOF
 uci -q delete network.lan6
 uci set network.lan.ip6assign='64'

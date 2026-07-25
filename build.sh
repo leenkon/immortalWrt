@@ -15,9 +15,6 @@ DEF_BYPASS_IP="10.10.10.2"
 DEF_GATEWAY="10.10.10.1"
 ROOT_PASSWORD="password"
 
-# 修复换行符
-fix_line_endings() { for f in "$@"; do [[ -f "$f" ]] && grep -q $'\r' "$f" 2>/dev/null && sed -i 's/\r$//' "$f"; done || true; }
-
 # 交互式输入
 echo "========================================"
 echo "   ImmortalWrt x86_64 本地编译脚本"
@@ -99,16 +96,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OPENWRT_DIR="$SCRIPT_DIR/openwrt"
 DIY="$SCRIPT_DIR/scripts/diy.sh"
 
-# 1. 换行符
+# 1. 换行符（路由器 ash 不兼容 CRLF）：统一修复 scripts/ 与 files/ 下所有脚本、YAML 及 init.d
 echo -e "\n${YELLOW}[1/7] 检查换行符和权限...${NC}"
-fix_line_endings "$DIY" "$SCRIPT_DIR/build.sh" "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
-# files/ 下的脚本和 YAML 也需要修复 CRLF（路由器 ash 不兼容 CRLF）
-fix_line_endings "$SCRIPT_DIR/files/usr/sbin/dns-hijack" \
-  "$SCRIPT_DIR/files/usr/lib/ddns/update_aliyun_com.sh" \
-  "$SCRIPT_DIR/files/etc/adguardhome/adguardhome.yaml" \
-  "$SCRIPT_DIR/files/etc/openclash/custom/openclash_custom_overwrite.yaml" \
-  "$SCRIPT_DIR/files/etc/hotplug.d/iface/99-adgh-filters"
-chmod +x "$DIY" "$SCRIPT_DIR/build.sh"
+find "$SCRIPT_DIR/scripts" "$SCRIPT_DIR/files" -type f \
+  \( -name "*.sh" -o -name "*.yaml" -o -name "dns-hijack" -o -name "99-adgh-filters" -o -path "*/init.d/*" \) \
+  -exec sed -i 's/\r$//' {} + 2>/dev/null || true
+chmod +x "$DIY" "$SCRIPT_DIR/build.sh" "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
 success "完成"
 
 # 2. 依赖
