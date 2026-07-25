@@ -121,9 +121,6 @@ uci set network.lan.ip6assign='64'
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr='$ip_esc'
 uci set network.lan.netmask='$SUBNET_MASK'
-uci -q delete network.wan.dns
-uci add_list network.wan.dns='$DNS_MAIN'
-uci add_list network.wan.dns='$DNS_BACKUP'
 uci commit network
 EOF
 )
@@ -193,16 +190,16 @@ EOF
 uci set network.wan.proto='pppoe'
 uci set network.wan.username='$u'
 uci set network.wan.password='$p'
-uci set network.wan.ipv6='auto'
-uci set network.wan.peerdns='0'
-uci -q delete network.wan6
+            uci set network.wan.ipv6='auto'
+            uci set network.wan.peerdns='1'
+            uci -q delete network.wan6
 EOT
 )
         else
             WAN_BLK=$(cat <<EOT
-uci set network.wan.proto='dhcp'
-uci set network.wan.peerdns='0'
-uci set network.wan6.proto='dhcpv6'
+            uci set network.wan.proto='dhcp'
+            uci set network.wan.peerdns='1'
+            uci set network.wan6.proto='dhcpv6'
 uci set network.wan6.reqaddress='try'
 uci set network.wan6.reqprefix='auto'
 EOT
@@ -271,8 +268,6 @@ EOT
 uci -q delete dhcp.@dnsmasq[0].port
 uci -q delete dhcp.@dnsmasq[0].server
 uci add_list dhcp.@dnsmasq[0].server='127.0.0.1#7874'
-uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
-uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
 uci set dhcp.@dnsmasq[0].noresolv='0'
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
 uci commit dhcp
@@ -282,6 +277,7 @@ EOT
             cat >> "$OUT" <<EOT
 uci -q set dhcp.@dnsmasq[0].port='5453'
 uci -q delete dhcp.@dnsmasq[0].server
+uci set dhcp.@dnsmasq[0].noresolv='0'
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
 uci commit dhcp
 EOT
