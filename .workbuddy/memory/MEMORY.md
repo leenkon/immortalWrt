@@ -23,16 +23,17 @@
 - main(10.10.10.1)：DHCP 下发 DNS=旁路IP+公网；dnsmasq:53；dns-hijack 排除旁路IP；删 ADGH/OC。
 - bypass(10.10.10.2)：删 wan/wan6+静态默认路由；ADGH:53+OC(redir-host,关劫持)；dnsmasq→5453；自身DNS 用公网防环路；删 dns-hijack。
 - full(10.10.10.1)：OAF+ADGH:53+OC(redir-host)；dnsmasq:5453；dns-hijack 全劫持（无旁路则全劫持）；dhcpv6/ra=server。
-- full-noadgh(10.10.10.1)：OAF+OC(redir-host)，无 ADGH；dnsmasq 占 :53 上游=OC:7874+公网兜底（OC 停则 dnsmasq 直连兜底，DNS 不中断）；dns-hijack 全劫持到 :53（由 dnsmasq 接管）；dhcpv6/ra=server。
+- full-noadgh(10.10.10.1)：OAF+OC(redir-host)，无 ADGH；dnsmasq 占 :53 上游=OC:7874+ISP DNS 兜底(noresolv=0, 不再硬编码223；OC 停则 dnsmasq 直连 ISP DNS，DNS 不中断)；dns-hijack 全劫持到 :53（由 dnsmasq 接管）；dhcpv6/ra=server。
 
 ## 关键技术决策
 - DNS 劫持：nftables REDIRECT :53（fw4/nftables 后端）；IPv4 `ip saddr != 旁路IP` 排除旁路由；IPv6 `ip6 daddr ::/0`（不加 meta l4proto 会 No symbol）。
-- ADGH YAML（`files/etc/adguardhome/adguardhome.yaml`）：upstream=OC `127.0.0.1:7874`（主，裸IP非`[/./]`——后者会 crash loop）+ 国内 DoT/明文兜底（223.5.5.5/223.6.6.6）；`parallel_requests=false`（OC 在时分流不泄漏）；严禁境外解析器；querylog.file_enabled=false（防闪存写爆）。OC 停则自动直连兜底。
-- dnsmasq：`dns_redirect='0'`（主/旁/全，防 init 注入 53→5453 干扰 ADGH）；server 列表整体重建 + strictorder=1。
+- ADGH YAML（`files/etc/adguardhome/adguardhome.yaml`）：upstream=OC `127.0.0.1:7874`（主，裸IP非`[/./]`——后者会 crash loop）+ 兜底 `127.0.0.1:5453`（本地 dnsmasq，上游=**纯阿里云 DNS** `223.5.5.5/223.6.6.6` 明文，`noresolv='1'` 不读 ISP resolv.conf）；`parallel_requests=false`（OC 在时分流不泄漏）；querylog.file_enabled=false（防闪存写爆）。**DNS 已解耦：OC 停则 ADGH 自动跳到 dnsmasq:5453→阿里云，普通解析不中断**（2026-07-25 精简；早期失败根因是 `tls://223.5.5.5` 的 DoT 被干扰，明文 223.5.5.5 国内可达）。
+- dnsmasq：`dns_redirect='0'`（主/旁/全，防 init 注入 53→5453 干扰 ADGH）；带 ADGH 时占 `:5453`、server=纯阿里云 `223.5.5.5`/`223.6.6.6`（明文）、`noresolv='1'`（不读 ISP resolv.conf）；noadgh 时占 `:53`、上游 OC:7874 + 阿里云 `223.5.5.5`/`223.6.6.6`、`noresolv='1'`，OC 停直连阿里云兜底。（注：WAN `peerdns='1'` 仍保留，仅影响路由器自身 resolv.conf，不进 dnsmasq）
 - OC：`enable_redirect_dns='0'`（ADGH 占 :53 由 ADGH 处理；noadgh 时 dnsmasq 占 :53 上游指向 OC :7874，OC 也不抢 :53）。Meta 核心由 `upgrade-openclash-core.sh` 下到 `files/etc/openclash/core/clash_meta`；sniffer 预置 `files/etc/openclash/custom/openclash_custom_overwrite.yaml`(enable_custom_overwrite=1)。
 - 跨分支加固（公共尾部，全部 4 档）：关硬件流卸载、conntrack 超时、cpufreq-perf(performance)、WAN mtu_fix=1。
 - `fix_line_endings` 覆盖 scripts+yaml（防 Windows CRLF 在路由器 ash 报错）。
 - 文件清理在 openwrt 副本上做（build.sh/workflow），源树不被破坏。
+- **已移除 mwan3 / watchcat（2026-07-25 精简）**：单 WAN 下 mwan3 用 1.1.1.1 等境外目标做健康检查会持续误判 WAN offline；watchcat 默认监控 8.8.8.8（被墙），累计 21600s 会强制重启路由器。两者从 `configs/*.config` 移除编译。
 
 ## 关键坑（避免回归）
 - ash 不支持 `trap ERR` / `exit 0`（source 杀父 shell）。

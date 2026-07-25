@@ -347,7 +347,7 @@ uci add_list system.ntp.server='ntp.aliyun.com'
 uci add_list system.ntp.server='cn.pool.ntp.org'
 uci commit system
 
-# x86 CPU 性能调度：固定 performance，避免降频/深空闲导致网络抖动（全 profile 生效）
+# 固定 CPU 为 performance，避免降频导致网络抖动
 chmod 755 /etc/init.d/cpufreq-perf
 /etc/init.d/cpufreq-perf enable
 /etc/init.d/cpufreq-perf start
