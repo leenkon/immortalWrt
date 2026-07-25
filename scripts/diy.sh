@@ -262,27 +262,27 @@ $IP_FORWARD_LN
 $DHCP_COMMON_BLK
 EOT
         if [ "$NO_ADGH" = "1" ]; then
-            # noadgh：dnsmasq 占 :53，上游指向 OpenClash redir-host DNS(:7874) + ISP/阿里云兜底；
-            # OC 停止时 dnsmasq 直连兜底，避免 DNS 全断（兼容 OC 停止场景）
+            # noadgh：dnsmasq 占 :53，上游指向 OpenClash redir-host DNS(:7874) + 纯阿里云兜底；
+            # OC 停止时 dnsmasq 直连阿里云兜底，避免 DNS 全断（兼容 OC 停止场景）
             cat >> "$OUT" <<EOT
 uci -q delete dhcp.@dnsmasq[0].port
 uci -q delete dhcp.@dnsmasq[0].server
 uci add_list dhcp.@dnsmasq[0].server='127.0.0.1#7874'
 uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
 uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
-uci set dhcp.@dnsmasq[0].noresolv='0'
+uci set dhcp.@dnsmasq[0].noresolv='1'
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
 uci commit dhcp
 EOT
         else
             # 带 ADGH：dnsmasq 让出 :53（port 5453，仅 DHCP），AdGuardHome 占 :53
-            # dnsmasq 上游 = ISP DNS（peerdns=1 经 resolv.conf）+ 阿里云 DNS 双兜底，dnsmasq 自动故障转移
+            # 纯阿里云 DNS 兜底（明文 223.5.5.5/223.6.6.6），noresolv=1 不读 ISP resolv.conf
             cat >> "$OUT" <<EOT
 uci -q set dhcp.@dnsmasq[0].port='5453'
 uci -q delete dhcp.@dnsmasq[0].server
 uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
 uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
-uci set dhcp.@dnsmasq[0].noresolv='0'
+uci set dhcp.@dnsmasq[0].noresolv='1'
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
 uci commit dhcp
 EOT
