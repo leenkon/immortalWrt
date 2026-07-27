@@ -30,18 +30,21 @@ success "版本: $VERSION"
 
 # 配置选择
 echo -e "\n请选择编译配置："
-echo "  1) default-main (主路由)  2) mini-bypass (旁路由)  3) full-main (完整路由)  4) full-noadgh (完整路由无ADGH)"
+echo "  1) Main (主路由)  2) Mini (旁路由)  3) Full (完整路由)  4) Full-noadgh (完整路由无ADGH)"
 read -p "请输入选择 [1-4，默认 1]: " p
 p=${p:-1}
-case "$p" in 1) PROFILE="default-main";; 2) PROFILE="mini-bypass";; 3) PROFILE="full-main";; 4) PROFILE="full-noadgh";; *) error_exit "无效选择";; esac
+case "$p" in 1) PROFILE="Main";; 2) PROFILE="Mini";; 3) PROFILE="Full";; 4) PROFILE="Full-noadgh";; *) error_exit "无效选择";; esac
 success "配置: $PROFILE"
 
-# 解析配置
-IFS='-' read -r CFG_PREFIX RUN_TYPE <<< "$PROFILE"
-# full-main / full-noadgh 的 RUN_TYPE 都需要覆盖为 full（diy.sh 需要）
-[[ "$CFG_PREFIX" == "full" ]] && RUN_TYPE="full"
-NO_ADGH="false"
-[[ "$PROFILE" == "full-noadgh" ]] && NO_ADGH="true"
+# 解析配置（显式映射，避免按 '-' 拆分带来的歧义）
+case "$PROFILE" in
+  Main)        CFG_PREFIX=default; RUN_TYPE=main;;
+  Mini)        CFG_PREFIX=mini;    RUN_TYPE=bypass;;
+  Full)        CFG_PREFIX=full;    RUN_TYPE=full;;
+  Full-noadgh) CFG_PREFIX=full;    RUN_TYPE=full; NO_ADGH="true";;
+  *) error_exit "无效配置: $PROFILE";;
+esac
+NO_ADGH=${NO_ADGH:-false}
 MAIN_VER=${VERSION%.*}
 
 # 自定义IP
@@ -166,11 +169,11 @@ esac
 ./scripts/feeds install -a -f
 cp "$SCRIPT_DIR/configs/${MAIN_VER}-${CFG_PREFIX}.config" .config || error_exit "配置文件不存在"
 sed -i 's/\r$//' .config
-# full-noadgh：本 profile 不注入 ADGH 引擎，移除 LuCI 壳避免“有菜单无服务”
+# Full-noadgh：本 profile 不注入 ADGH 引擎，移除 LuCI 壳避免“有菜单无服务”
 if [ "$RUN_TYPE" = "full" ] && [ "$NO_ADGH" = "true" ]; then
   sed -i 's/^CONFIG_PACKAGE_luci-app-adguardhome=y/# &/' .config
   sed -i 's/^CONFIG_PACKAGE_luci-i18n-adguardhome-zh-cn=y/# &/' .config
-  echo "[build] full-noadgh: 已禁用 luci-app-adguardhome（无引擎）"
+  echo "[build] Full-noadgh: 已禁用 luci-app-adguardhome（无引擎）"
 fi
 [[ "$USE_OAF" == "true" ]] && echo -e "\nCONFIG_PACKAGE_luci-app-oaf=y" >> .config
 success "完成"
@@ -193,7 +196,7 @@ if [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]]; then
     chmod +x "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh"
     "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR"
 fi
-# AdGuardHome 官方预编译二进制注入（旁路由 + 完整路由；full-noadgh 不注入）。
+# AdGuardHome 官方预编译二进制注入（旁路由 + 完整路由；Full-noadgh 不注入）。
 # 构建期免 Go 编译，保证最新版；二进制写入 $SCRIPT_DIR/files/usr/bin/AdGuardHome 后随 files/ 打包。
 if [[ "$RUN_TYPE" == "bypass" || ("$RUN_TYPE" == "full" && "$NO_ADGH" != "true") ]]; then
     chmod +x "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh"
