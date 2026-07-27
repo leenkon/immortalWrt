@@ -180,12 +180,16 @@ success "完成"
 
 # 5. 网络配置
 echo -e "\n${YELLOW}[5/7] 生成网络配置...${NC}"
+# --no-adgh 仅在 NO_ADGH=true 时传入：NO_ADGH="false" 也是非空字符串，${NO_ADGH:+--no-adgh}
+# 会误传给 Full，导致 Full 被 diy.sh 当 noadgh 处理（与 yml 的 NOADGH_ARG 守卫保持一致）
+NOADGH_ARG=""
+[ "$NO_ADGH" = "true" ] && NOADGH_ARG="--no-adgh"
 "$DIY" -v "$MAIN_VER" -p after -t "$RUN_TYPE" \
   ${ROUTER_IP:+--ip "$ROUTER_IP"} \
   ${GATEWAY_IP:+--gateway "$GATEWAY_IP"} \
   ${BYPASS_IP:+--bypass-ip "$BYPASS_IP"} \
   ${PPPOE_USER:+--pppoe-user "$PPPOE_USER"} ${PPPOE_PASS:+--pppoe-pass "$PPPOE_PASS"} \
-  ${NO_ADGH:+--no-adgh} \
+  ${NOADGH_ARG:+"$NOADGH_ARG"} \
   --root-pass "$ROOT_PWD"
 success "完成"
 
