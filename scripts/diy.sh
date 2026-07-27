@@ -86,17 +86,6 @@ before)
     [ -f "$FEED_CONF_SRC" ] || error_exit "缺失feed配置: $FEED_CONF_SRC"
     rm -f feeds.conf
     cp "$FEED_CONF_SRC" feeds.conf
-    if grep -qs '^[^#].*src-git small' feeds.conf; then
-        GOLANG_DIR="feeds/packages/lang/golang"
-        if [ ! -d "$GOLANG_DIR/.git" ]; then
-            echo "[diy] golang → 1.26"
-            rm -rf feeds/luci/applications/luci-app-osdns \
-                feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,sing*,smartdns} \
-                feeds/packages/utils/v2dat \
-                "$GOLANG_DIR"
-            git clone --depth 1 -b 1.26 https://github.com/kenzok8/golang "$GOLANG_DIR" || error_exit "golang1.26克隆失败"
-        fi
-    fi
     ;;
 
 after)

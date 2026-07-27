@@ -152,7 +152,6 @@ fi
 
 # AdGuardHome LuCI 壳去除对引擎包(adguardhome)的硬依赖：引擎改由二进制注入(files/)提供，
 # 否则 luci-app-adguardhome 会因 unmet dependency(adguardhome) 编译失败。
-# 25.12 feeds 含 luci-app-adguardhome（历史构建已验证可编出界面）。
 case "$MAIN_VER" in 25.12)
   ADGH_LUCI_MK="$OPENWRT_DIR/feeds/luci/applications/luci-app-adguardhome/Makefile"
   if [ -f "$ADGH_LUCI_MK" ]; then
