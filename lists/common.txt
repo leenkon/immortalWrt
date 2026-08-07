@@ -1,0 +1,14 @@
+# FanchmWrt 首启在线安装 —— 通用包（官方 OpenWrt 源，仅 userspace，不含 kmod）
+# 每行一个包名；# 开头为注释。kmod 必须编译进镜像（见 configs/fanchmwrt-25.12-*.config），不要放这里。
+luci-app-ddns
+ddns-scripts
+ddns-scripts-aliyun
+luci-app-upnp
+miniupnpd
+luci-app-wol
+wake-on-lan
+luci-app-udpxy
+udpxy
+luci-app-vlan
+openssl-util
+coreutils

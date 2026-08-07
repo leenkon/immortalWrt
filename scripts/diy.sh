@@ -28,7 +28,7 @@ SUBNET_MASK="255.255.255.0"
 DNS_MAIN="223.5.5.5"
 DNS_BACKUP="223.6.6.6"
 
-VERSION="" PHASE="" PROFILE_TYPE=""
+VERSION="" PHASE="" PROFILE_TYPE="" CORE="immortalwrt" FEEDS_SRC="" FILES_DIR_NAME="files"
 NO_ADGH=0
 CUSTOM_IP="" CUSTOM_GATEWAY="" BYPASS_IP="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
 
@@ -44,6 +44,9 @@ while [ $# -gt 0 ]; do
         --root-pass)  ROOT_PASSWORD="$2"; shift 2 ;;
         --bypass-ip) BYPASS_IP="$2"; shift 2 ;;
         --no-adgh)   NO_ADGH=1; shift ;;
+        --core)      CORE="$2"; shift 2 ;;
+        --feeds)     FEEDS_SRC="$2"; shift 2 ;;
+        --files-dir) FILES_DIR_NAME="$2"; shift 2 ;;
         *) error_exit "未知参数 $1" ;;
     esac
 done
@@ -81,8 +84,12 @@ PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && pwd -P)
 
 case "$PHASE" in
 before)
-    echo "[diy] before: $VERSION"
-    FEED_CONF_SRC="$PROJECT_ROOT/feeds/$VERSION.conf"
+    echo "[diy] before: $VERSION (core=$CORE)"
+    if [ -n "$FEEDS_SRC" ]; then
+        FEED_CONF_SRC="$FEEDS_SRC"
+    else
+        FEED_CONF_SRC="$PROJECT_ROOT/feeds/$VERSION.conf"
+    fi
     [ -f "$FEED_CONF_SRC" ] || error_exit "缺失feed配置: $FEED_CONF_SRC"
     rm -f feeds.conf
     cp "$FEED_CONF_SRC" feeds.conf
@@ -92,14 +99,113 @@ after)
     echo "[diy] after: $PROFILE_TYPE"
     # NO_ADGH 仅 full 模式有意义；main/bypass 强制 NO_ADGH=0（均带 ADGH，bypass 即 ADGH+OC 旁路由）
     [ "$PROFILE_TYPE" != "full" ] && NO_ADGH=0
-    OUT="$PROJECT_ROOT/files/etc/uci-defaults/99-custom.sh"
-    SHADOW="$PROJECT_ROOT/files/etc/shadow"
+    case "$FILES_DIR_NAME" in
+      /*) FB_DIR="$FILES_DIR_NAME" ;;
+      *)  FB_DIR="$PROJECT_ROOT/$FILES_DIR_NAME" ;;
+    esac
+    OUT="$FB_DIR/etc/uci-defaults/99-custom.sh"
+    SHADOW="$FB_DIR/etc/shadow"
     mkdir -p "$(dirname "$OUT")"
     rm -f "$OUT" "$SHADOW"
 
     ip_esc=$(_escape_uci "$CUSTOM_IP")
 
-    # ===== 公共配置块（各 profile 按需引用） =====
+    if [ "$CORE" = "fanchmwrt" ]; then
+        # ===== FanchmWrt 精简分支（仅 IP/WAN/主机名；无 OC/ADGH/DNS_HIJACK/OAF） =====
+        case "$PROFILE_TYPE" in
+          bypass) FB_PROFILE="mini" ;;
+          *)      FB_PROFILE="default" ;;
+        esac
+        mkdir -p "$FB_DIR/etc/firstboot-pkgs"
+        echo "$FB_PROFILE" > "$FB_DIR/etc/firstboot-pkgs/profile"
+
+        echo '#!/bin/sh' > "$OUT"
+        echo "logger -t uci-defaults \"开始应用 FanchmWrt ${PROFILE_TYPE} 配置\"" >> "$OUT"
+
+        if [ "$PROFILE_TYPE" = "bypass" ]; then
+            gw_esc=$(_escape_uci "$CUSTOM_GATEWAY")
+            cat >> "$OUT" <<EOT
+uci set network.lan.proto='static'
+uci set network.lan.ipaddr='$ip_esc'
+uci set network.lan.netmask='$SUBNET_MASK'
+uci set network.lan.gateway='$gw_esc'
+uci -q delete network.lan.dns
+uci add_list network.lan.dns='$DNS_MAIN'
+uci add_list network.lan.dns='$DNS_BACKUP'
+uci -q delete network.lan6
+uci -q delete network.wan
+uci -q delete network.wan6
+uci commit network
+
+uci set dhcp.lan.ignore='1'
+uci set dhcp.lan6.ignore='1'
+uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
+uci commit dhcp
+EOT
+        else
+            if [ -n "$PPPOE_USERNAME" ]; then
+                u=$(_escape_uci "$PPPOE_USERNAME"); p=$(_escape_uci "$PPPOE_PASSWORD")
+                WAN_FANCHM=$(cat <<EOT
+uci set network.wan.proto='pppoe'
+uci set network.wan.username='$u'
+uci set network.wan.password='$p'
+uci set network.wan.ipv6='auto'
+uci set network.wan.peerdns='1'
+uci -q delete network.wan6
+EOT
+)
+            else
+                WAN_FANCHM=$(cat <<EOT
+uci set network.wan.proto='dhcp'
+uci set network.wan.peerdns='1'
+uci set network.wan6.proto='dhcpv6'
+uci set network.wan6.reqaddress='try'
+uci set network.wan6.reqprefix='auto'
+EOT
+)
+            fi
+            cat >> "$OUT" <<EOT
+$WAN_FANCHM
+uci set network.lan.proto='static'
+uci set network.lan.ipaddr='$ip_esc'
+uci set network.lan.netmask='$SUBNET_MASK'
+uci commit network
+
+uci -q delete dhcp.lan.dhcp_option
+uci add_list dhcp.lan.dhcp_option='6,$ip_esc'
+uci set dhcp.lan.start='7'
+uci set dhcp.lan.limit='149'
+uci set dhcp.lan.dhcpv6='server'
+uci set dhcp.lan.ra='server'
+uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
+uci set dhcp.@dnsmasq[0].sequential_ip='1'
+uci commit dhcp
+EOT
+        fi
+
+        cat >> "$OUT" <<EOT
+uci set firewall.@defaults[0].flow_offloading='1'
+uci set firewall.@defaults[0].flow_offloading_hw='0'
+uci commit firewall
+
+uci set system.@system[0].hostname='FanchmWrt-${PROFILE_TYPE}'
+uci set system.@system[0].timezone='CST-8'
+uci set system.@system[0].zonename='Asia/Shanghai'
+uci -q delete system.ntp.server
+uci add_list system.ntp.server='ntp.aliyun.com'
+uci add_list system.ntp.server='cn.pool.ntp.org'
+uci commit system
+
+chmod 755 /etc/init.d/cpufreq-perf
+/etc/init.d/cpufreq-perf enable
+/etc/init.d/cpufreq-perf start
+
+logger -t uci-defaults "FanchmWrt 配置应用完成"
+EOT
+        chmod 755 "$OUT"
+        echo "[diy] 输出: $OUT (FanchmWrt lean)"
+    else
+        # ===== 公共配置块（各 profile 按需引用） =====
     # 1) IP 转发开关：所有 profile 统一开启
     IP_FORWARD_LN='grep -q '\''net.ipv4.ip_forward=1'\'' /etc/sysctl.conf || echo '\''net.ipv4.ip_forward=1'\'' >> /etc/sysctl.conf'
 
@@ -349,6 +455,7 @@ logger -t uci-defaults "配置应用完成"
 EOT
     chmod 755 "$OUT"
     echo "[diy] 输出: $OUT"
+    fi
 
     if [ -n "$ROOT_PASSWORD" ]; then
         crypt=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin) || error_exit "openssl密码加密失败"

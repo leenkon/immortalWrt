@@ -4,13 +4,14 @@ env:
 on:
   workflow_dispatch:
     inputs:
-      version: {description: '版本', required: true, type: choice, options: [25.12.1, 25.12.0]}
-      profile: {description: '配置', required: true, type: choice, options: [Main, Mini, Full, Full-noadgh]}
+      core: {description: '核心(编译源): immortalwrt 或 fanchmwrt', required: true, type: choice, options: [immortalwrt, fanchmwrt]}
+      version: {description: '版本 (immortalwrt: 25.12.0/25.12.1 | fanchmwrt: 25.12.2/25.12.3/25.12.4)', required: true, type: string, default: '25.12.1'}
+      profile: {description: '配置 (fanchmwrt 仅支持 Main/Mini)', required: true, type: choice, options: [Main, Mini, Full, Full-noadgh]}
       custom_ip: {description: '自定义IP', type: string, default: ''}
       custom_gateway: {description: '网关(旁路由)', type: string, default: ''}
       pppoe_username: {description: 'PPPoE账号', type: string, default: ''}
       pppoe_password: {description: 'PPPoE密码', type: string, default: ''}
-      install_oaf: {description: '安装OAF', type: boolean, default: false}
+      install_oaf: {description: '安装OAF(仅immortalwrt有效)', type: boolean, default: false}
       root_password: {description: 'root密码', type: string, default: ''}
 permissions:
   contents: write
@@ -40,16 +41,20 @@ jobs:
       - name: 拉取源码
         run: |
           set -e
+          source $GITHUB_WORKSPACE/cores/${{ github.event.inputs.core }}.conf
           rm -rf openwrt
-          timeout 180 git clone --depth 1 https://github.com/immortalwrt/immortalwrt openwrt
+          timeout 180 git clone --depth 1 "$REPO_URL" openwrt
           cd openwrt
-          timeout 60 git fetch origin tag v${{ github.event.inputs.version }} --depth 1
-          git checkout v${{ github.event.inputs.version }}
+          timeout 60 git fetch origin tag "${REF_PREFIX}${{ github.event.inputs.version }}" --depth 1
+          git checkout "${REF_PREFIX}${{ github.event.inputs.version }}"
 
       - name: 配置与编译
         id: build
         run: |
           set -e
+          source $GITHUB_WORKSPACE/cores/${{ github.event.inputs.core }}.conf
+          FEEDS_FILE_ABS="$GITHUB_WORKSPACE/$FEEDS_FILE"
+          FILES_DIR_ABS="$GITHUB_WORKSPACE/$FILES_DIR"
           # 修复 Windows 提交可能带来的 CRLF（路由器 ash 不兼容），覆盖脚本/YAML/init.d
           find $GITHUB_WORKSPACE -type f \( -name "*.sh" -o -name "*.yaml" -o -name "dns-hijack" -o -name "99-adgh-filters" -o -path "*/init.d/*" \) \
             -exec sed -i 's/\r$//' {} + 2>/dev/null || true
@@ -63,13 +68,23 @@ jobs:
           esac
           NO_ADGH=${NO_ADGH:-false}
           MAIN_VER="${{ github.event.inputs.version }}"; MAIN_VER="${MAIN_VER%.*}"
-          # OAF：主路由勾选或完整路由必装；OC：仅旁路由/完整路由需要；ADGH：OC 且非 noadgh
-          [[ ("${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main") || "$RUN_TYPE" == "full" ]] && INSTALL_OAF=true || INSTALL_OAF=false
-          [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]] && WITH_OC=true || WITH_OC=false
-          [[ "$RUN_TYPE" == "bypass" || ("$RUN_TYPE" == "full" && "$NO_ADGH" != "true") ]] && WITH_ADGH=true || WITH_ADGH=false
+          IS_FANCHM=false; [ "${{ github.event.inputs.core }}" = "fanchmwrt" ] && IS_FANCHM=true
+          # fanchmwrt 仅支持 Main/Mini；其余 profile 按 Main 处理
+          if $IS_FANCHM && [ "${{ github.event.inputs.profile }}" != "Main" ] && [ "${{ github.event.inputs.profile }}" != "Mini" ]; then
+            echo "[build] fanchmwrt 仅支持 Main/Mini，profile=${{ github.event.inputs.profile }} 按 Main 处理"
+            CFG_PREFIX=default; RUN_TYPE=main; NO_ADGH=false
+          fi
+
+          # OAF/OC/ADGH 仅 immortalwrt 需要
+          INSTALL_OAF=false; WITH_OC=false; WITH_ADGH=false
+          if ! $IS_FANCHM; then
+            [[ ("${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main") || "$RUN_TYPE" == "full" ]] && INSTALL_OAF=true || INSTALL_OAF=false
+            [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]] && WITH_OC=true || WITH_OC=false
+            [[ "$RUN_TYPE" == "bypass" || ("$RUN_TYPE" == "full" && "$NO_ADGH" != "true") ]] && WITH_ADGH=true || WITH_ADGH=false
+          fi
 
           chmod +x $GITHUB_WORKSPACE/scripts/diy.sh
-          $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p before -t $RUN_TYPE
+          $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p before -t $RUN_TYPE --core ${{ github.event.inputs.core }} --feeds "$FEEDS_FILE_ABS"
           ./scripts/feeds update -a
 
           if $INSTALL_OAF; then
@@ -84,9 +99,8 @@ jobs:
             $GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh .
           fi
 
-          # AdGuardHome LuCI 壳去除对引擎包(adguardhome)的硬依赖：引擎改由二进制注入(files/)提供，
-          # 否则 luci-app-adguardhome 会因 unmet dependency(adguardhome) 编译失败。
-          if [ "$MAIN_VER" = "25.12" ]; then
+          # AdGuardHome LuCI 壳去除对引擎包(adguardhome)的硬依赖（仅 immortalwrt 25.12）
+          if ! $IS_FANCHM && [ "$MAIN_VER" = "25.12" ]; then
             ADGH_LUCI_MK="feeds/luci/applications/luci-app-adguardhome/Makefile"
             if [ -f "$ADGH_LUCI_MK" ]; then
               sed -i -e 's/+adguardhome //g' -e '/LUCI_EXTRA_DEPENDS:=adguardhome/d' "$ADGH_LUCI_MK"
@@ -97,10 +111,10 @@ jobs:
           fi
 
           ./scripts/feeds install -a -f
-          cp $GITHUB_WORKSPACE/configs/${MAIN_VER}-${CFG_PREFIX}.config .config
+          cp $GITHUB_WORKSPACE/configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config .config
           sed -i 's/\r$//' .config
           # Full-noadgh：本 profile 不注入 ADGH 引擎，移除 LuCI 壳避免“有菜单无服务”
-          if [ "$RUN_TYPE" = "full" ] && [ "$NO_ADGH" = "true" ]; then
+          if ! $IS_FANCHM && [ "$RUN_TYPE" = "full" ] && [ "$NO_ADGH" = "true" ]; then
             sed -i 's/^CONFIG_PACKAGE_luci-app-adguardhome=y/# &/' .config
             sed -i 's/^CONFIG_PACKAGE_luci-i18n-adguardhome-zh-cn=y/# &/' .config
             echo "[build] Full-noadgh: 已禁用 luci-app-adguardhome（无引擎）"
@@ -111,7 +125,7 @@ jobs:
           PUSER="${{ github.event.inputs.pppoe_username }}"; PPASS="${{ github.event.inputs.pppoe_password }}"
           NOADGH_ARG=""
           [ "$NO_ADGH" = "true" ] && NOADGH_ARG="--no-adgh"
-          $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p after -t $RUN_TYPE \
+          $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p after -t $RUN_TYPE --core ${{ github.event.inputs.core }} --files-dir "$FILES_DIR_ABS" \
             ${CIP:+--ip "$CIP"} ${CGW:+--gateway "$CGW"} \
             ${PUSER:+--pppoe-user "$PUSER"} ${PPASS:+--pppoe-pass "$PPASS"} \
             ${NOADGH_ARG:+"$NOADGH_ARG"} \
@@ -122,14 +136,23 @@ jobs:
             chmod +x $GITHUB_WORKSPACE/scripts/upgrade-adgh-binary.sh
             $GITHUB_WORKSPACE/scripts/upgrade-adgh-binary.sh $GITHUB_WORKSPACE
           fi
-          [[ -d "$GITHUB_WORKSPACE/files" ]] && { rm -rf files; cp -rf "$GITHUB_WORKSPACE/files/" .; } || true
+          [[ -d "$FILES_DIR_ABS" ]] && { rm -rf files; cp -rf "$FILES_DIR_ABS/" .; } || true
 
-          # 按 profile 删除不需要的静态文件（在 openwrt 副本上操作，不修改源树）
+          # FanchmWrt：把 apps/(离线 .apk) 与 lists/(官方源包名) 拷入镜像首启安装目录
+          if $IS_FANCHM; then
+            mkdir -p files/etc/firstboot-pkgs/lists files/etc/firstboot-pkgs/apps
+            cp -f $GITHUB_WORKSPACE/lists/*.txt files/etc/firstboot-pkgs/lists/ 2>/dev/null || true
+            cp -f $GITHUB_WORKSPACE/apps/*.apk files/etc/firstboot-pkgs/apps/ 2>/dev/null || true
+          fi
+
+          # 按 profile 删除不需要的静态文件（仅 immortalwrt）
+          if ! $IS_FANCHM; then
           case "$RUN_TYPE" in
             main)   rm -rf files/etc/{adguardhome,openclash}; rm -f files/usr/bin/AdGuardHome files/etc/init.d/adguardhome files/etc/config/adguardhome;;
             bypass) rm -f files/usr/sbin/dns-hijack;;
             full)   [ "$NO_ADGH" = "true" ] && { rm -rf files/etc/adguardhome; rm -f files/usr/bin/AdGuardHome files/etc/init.d/adguardhome files/etc/config/adguardhome; } || true;;
           esac
+          fi
           find files/ -type f \( -path "*/sbin/*" -o -path "*/init.d/*" -o -path "*/hotplug.d/*" -o -path "*/uci-defaults/*" -o -name "*.sh" \) -exec chmod 755 {} + 2>/dev/null || true
           make defconfig && make download && make clean
           make -j$(nproc) || make -j1 V=s
@@ -140,8 +163,8 @@ jobs:
       - name: 上传固件
         uses: softprops/action-gh-release@v2
         with:
-          name: ImmortalWrt ${{ github.event.inputs.version }} (${{ github.event.inputs.profile }})
-          tag_name: ${{ github.event.inputs.version }}-${{ github.event.inputs.profile }}
+          name: ${{ github.event.inputs.core }} ${{ github.event.inputs.version }} (${{ github.event.inputs.profile }})
+          tag_name: ${{ github.event.inputs.core }}-${{ github.event.inputs.version }}-${{ github.event.inputs.profile }}
           files: openwrt/bin/targets/x86/64/*-${{ steps.build.outputs.timestamp }}.img.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

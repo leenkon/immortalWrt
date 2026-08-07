@@ -1,0 +1,2 @@
+# FanchmWrt 首启在线安装 —— 旁路由 (mini) 专属补充包
+luci-app-ttyd

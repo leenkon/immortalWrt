@@ -1,0 +1,56 @@
+#!/bin/sh /etc/rc.common
+# FanchmWrt 首启在线/离线安装服务
+# 等待网络连通后：
+#   1) 离线安装 /etc/firstboot-pkgs/apps/*.apk（自编译包，vermagic 安全，允许未签名）
+#   2) 在线安装 /etc/firstboot-pkgs/lists/{common,$PROFILE}.txt 中的官方源包
+# 完成后自禁用并清理本服务，避免每次启动重复安装。
+START=99
+STOP=10
+
+install_all() {
+    # 1) 离线 .apk（自编译包，允许未签名）
+    if [ -d /etc/firstboot-pkgs/apps ]; then
+        for f in /etc/firstboot-pkgs/apps/*.apk; do
+            [ -f "$f" ] || continue
+            apk --allow-untrusted add "$f" >/dev/null 2>&1 && rm -f "$f"
+        done
+    fi
+
+    # 2) 在线官方源包（lists 文本：每行一个包名，# 开头为注释）
+    local prof pkg_list
+    prof=$(cat /etc/firstboot-pkgs/profile 2>/dev/null)
+    apk update >/dev/null 2>&1 || true
+    for l in /etc/firstboot-pkgs/lists/common.txt /etc/firstboot-pkgs/lists/${prof}.txt; do
+        [ -f "$l" ] || continue
+        pkg_list=$(grep -v '^#' "$l" | grep -v '^$' | tr '\n' ' ')
+        [ -n "$pkg_list" ] && apk add --no-cache $pkg_list >/dev/null 2>&1 || true
+    done
+
+    # 自清理：禁用并删除本服务，避免后续启动重复执行
+    /etc/init.d/firstboot-pkgs disable 2>/dev/null
+    rm -f /etc/init.d/firstboot-pkgs
+    rm -rf /etc/firstboot-pkgs
+}
+
+wait_net() {
+    # 等待到公网可达（不依赖具体接口，旁路由无 wan 也能靠网关路由出去）
+    local i=0
+    while [ $i -lt 30 ]; do
+        if ping -c1 -W2 223.5.5.5 >/dev/null 2>&1; then
+            return 0
+        fi
+        i=$((i + 1))
+        sleep 4
+    done
+    return 1
+}
+
+start() {
+    # 后台执行，避免阻塞系统启动
+    (
+        wait_net
+        install_all
+    ) &
+}
+
+stop() { :; }
