@@ -136,7 +136,7 @@ jobs:
             chmod +x $GITHUB_WORKSPACE/scripts/upgrade-adgh-binary.sh
             $GITHUB_WORKSPACE/scripts/upgrade-adgh-binary.sh $GITHUB_WORKSPACE
           fi
-          [[ -d "$FILES_DIR_ABS" ]] && { rm -rf files; cp -rf "$FILES_DIR_ABS/" .; } || true
+          [[ -d "$FILES_DIR_ABS" ]] && { rm -rf files; cp -rf "$FILES_DIR_ABS" files; } || true
 
           # FanchmWrt：把 apps/(离线 .apk) 与 lists/(官方源包名) 拷入镜像首启安装目录
           if $IS_FANCHM; then

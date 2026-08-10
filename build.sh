@@ -235,7 +235,7 @@ if [[ "$WITH_ADGH" == "true" ]]; then
     chmod +x "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh"
     "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh" "$SCRIPT_DIR"
 fi
-[[ -d "$FILES_DIR_ABS" ]] && { rm -rf "$OPENWRT_DIR/files"; cp -rf "$FILES_DIR_ABS" "$OPENWRT_DIR/"; }
+[[ -d "$FILES_DIR_ABS" ]] && { rm -rf "$OPENWRT_DIR/files"; cp -rf "$FILES_DIR_ABS" "$OPENWRT_DIR/files"; }
 
 # FanchmWrt：把 apps/(离线 .apk) 与 lists/(官方源包名) 拷入镜像首启安装目录
 if [[ "$CORE" = "fanchmwrt" ]]; then

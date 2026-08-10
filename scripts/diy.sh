@@ -17,11 +17,6 @@ is_valid_ipv4() {
     return 0
 }
 
-check_build_deps() {
-    command -v openssl >/dev/null 2>&1 || error_exit "缺失依赖: openssl"
-    command -v git >/dev/null 2>&1 || error_exit "缺失依赖: git"
-}
-
 DEF_MAIN_IP="10.10.10.1"
 DEF_BYPASS_IP="10.10.10.2"
 SUBNET_MASK="255.255.255.0"
@@ -50,8 +45,6 @@ while [ $# -gt 0 ]; do
         *) error_exit "未知参数 $1" ;;
     esac
 done
-
-check_build_deps
 
 [ -n "$VERSION" ] && [ -n "$PHASE" ] || error_exit "必填 --version / --phase"
 [ "$PHASE" = "after" ] && [ -z "$PROFILE_TYPE" ] && error_exit "after阶段必须指定 --type main/bypass/full"
@@ -200,9 +193,13 @@ chmod 755 /etc/init.d/cpufreq-perf
 /etc/init.d/cpufreq-perf enable
 /etc/init.d/cpufreq-perf start
 
+chmod 755 /etc/init.d/firstboot-pkgs
+/etc/init.d/firstboot-pkgs enable
+/etc/init.d/firstboot-pkgs start
+
 logger -t uci-defaults "FanchmWrt 配置应用完成"
 EOT
-        chmod 755 "$OUT"
+        chmod 755 "$OUT" 2>/dev/null || true
         echo "[diy] 输出: $OUT (FanchmWrt lean)"
     else
         # ===== 公共配置块（各 profile 按需引用） =====
@@ -458,9 +455,10 @@ EOT
     fi
 
     if [ -n "$ROOT_PASSWORD" ]; then
+        command -v openssl >/dev/null 2>&1 || error_exit "缺失依赖: openssl (用于 root 密码哈希)"
         crypt=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin) || error_exit "openssl密码加密失败"
         echo "root:$crypt:0:0:99999:7:::" > "$SHADOW"
-        chmod 600 "$SHADOW"
+        chmod 600 "$SHADOW" 2>/dev/null || true
     fi
     ;;
 *) error_exit "PHASE仅支持 before / after" ;;
