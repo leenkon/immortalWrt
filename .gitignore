@@ -9,7 +9,7 @@ files-fanchmwrt/etc/firstboot-pkgs/profile
 files/etc/openclash/core/
 files/usr/bin/AdGuardHome
 
-# 自编译离线包（apps/ 中的 .apk 不入库，避免大二进制）
+# 离线 .apk 包（apps/ 中的不入库，避免大二进制；含自编译或本地上传的预编译包）
 apps/*.apk
 
 # 构建输出
