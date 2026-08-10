@@ -198,13 +198,38 @@ if [[ "$CORE" = "immortalwrt" && "$MAIN_VER" = "25.12" ]]; then
 fi
 
 ./scripts/feeds install -a -f
-cp "$SCRIPT_DIR/configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config" .config || error_exit "配置文件不存在: configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config"
-sed -i 's/\r$//' .config
-# Full-noadgh：本 profile 不注入 ADGH 引擎，移除 LuCI 壳避免“有菜单无服务”（仅 immortalwrt）
-if [[ "$CORE" = "immortalwrt" && "$RUN_TYPE" = "full" && "$NO_ADGH" = "true" ]]; then
-  sed -i 's/^CONFIG_PACKAGE_luci-app-adguardhome=y/# &/' .config
-  sed -i 's/^CONFIG_PACKAGE_luci-i18n-adguardhome-zh-cn=y/# &/' .config
-  echo "[build] Full-noadgh: 已禁用 luci-app-adguardhome（无引擎）"
+
+# FanchmWrt：不依赖本地 .config 种子，仅注入最小 target + 必要内核模块 + apk，
+# 由 make defconfig 展开为完整配置后编译；其余 userspace 包在首启联网后安装。
+if [[ "$CORE" = "fanchmwrt" ]]; then
+  cat > .config <<'EOF'
+CONFIG_TARGET_x86=y
+CONFIG_TARGET_x86_64=y
+CONFIG_USE_APK=y
+CONFIG_TARGET_ROOTFS_PARTSIZE=960
+CONFIG_PACKAGE_kmod-e1000=y
+CONFIG_PACKAGE_kmod-e1000e=y
+CONFIG_PACKAGE_kmod-igb=y
+CONFIG_PACKAGE_kmod-igc=y
+CONFIG_PACKAGE_kmod-vmxnet3=y
+CONFIG_PACKAGE_kmod-r8169=y
+CONFIG_PACKAGE_kmod-ixgbe=y
+CONFIG_PACKAGE_kmod-ppp=y
+CONFIG_PACKAGE_kmod-pppoe=y
+CONFIG_PACKAGE_kmod-pppox=y
+CONFIG_PACKAGE_kmod-nft-offload=y
+EOF
+  sed -i 's/\r$//' .config
+  echo "[build] FanchmWrt: 已写入最小 .config（target+kmod），make defconfig 将展开"
+else
+  cp "$SCRIPT_DIR/configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config" .config || error_exit "配置文件不存在: configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config"
+  sed -i 's/\r$//' .config
+  # Full-noadgh：本 profile 不注入 ADGH 引擎，移除 LuCI 壳避免“有菜单无服务”（仅 immortalwrt）
+  if [[ "$RUN_TYPE" = "full" && "$NO_ADGH" = "true" ]]; then
+    sed -i 's/^CONFIG_PACKAGE_luci-app-adguardhome=y/# &/' .config
+    sed -i 's/^CONFIG_PACKAGE_luci-i18n-adguardhome-zh-cn=y/# &/' .config
+    echo "[build] Full-noadgh: 已禁用 luci-app-adguardhome（无引擎）"
+  fi
 fi
 [[ "$USE_OAF" == "true" ]] && echo -e "\nCONFIG_PACKAGE_luci-app-oaf=y" >> .config
 success "完成"

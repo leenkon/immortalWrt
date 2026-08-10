@@ -46,10 +46,13 @@ wait_net() {
 }
 
 start() {
-    # 后台执行，避免阻塞系统启动
+    # 后台执行，避免阻塞系统启动；网络就绪才安装并清理，否则保留服务下次启动重试
     (
-        wait_net
-        install_all
+        if wait_net; then
+            install_all
+        else
+            logger -t firstboot-pkgs "等待网络超时，保留服务下次启动重试"
+        fi
     ) &
 }
 

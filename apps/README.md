@@ -6,7 +6,7 @@
 ## 适用场景
 - **带 vermagic 的 kmod**（内核模块，如网卡驱动、kmod-tun、fwxd 等）：
   官方 release 源的 kmod 与自编译内核的 vermagic 不一致，`insmod` 会拒绝加载，
-  因此必须随固件编译进镜像（放入 `configs/fanchmwrt-25.12-*.config`）或作为同源编译的 `.apk` 离线装。
+  因此必须随固件编译进镜像（FanchmWrt 由 `build.sh` / workflow 内联最小种子中的 `CONFIG_PACKAGE_kmod-*` 段 + `make defconfig` 生成）或作为同源编译的 `.apk` 离线装。
 - **闭源 / 自编译 / 非官方源的 userspace 包**（如 OpenClash、AdGuardHome 包装成的 `.apk`、
   你自己的 Lua 应用等），官方 apk 源取不到的，放这里离线装。
 
