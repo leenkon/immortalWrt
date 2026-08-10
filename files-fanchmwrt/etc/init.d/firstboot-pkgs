@@ -1,7 +1,8 @@
 #!/bin/sh /etc/rc.common
 # FanchmWrt 首启在线/离线安装服务
 # 等待网络连通后：
-#   1) 离线安装 /etc/firstboot-pkgs/apps/*.apk（自编译包，vermagic 安全，允许未签名）
+#   1) 离线安装 /etc/firstboot-pkgs/apps/*.apk（自编译或本地上传的预编译包，允许未签名；
+#      来源需与目标内核 vermagic 匹配，否则 kmod 无法加载）
 #   2) 在线安装 /etc/firstboot-pkgs/lists/{common,$PROFILE}.txt 中的官方源包
 # 完成后自禁用并清理本服务，避免每次启动重复安装。
 START=99
