@@ -200,13 +200,13 @@ fi
 ./scripts/feeds install -a -f
 
 # FanchmWrt：不依赖本地 .config 种子，仅注入最小 target + 必要内核模块 + apk，
+# 镜像格式 / 磁盘分区大小 直接引用 immortalWrt 默认配置（保持两者输出一致），
 # 由 make defconfig 展开为完整配置后编译；其余 userspace 包在首启联网后安装。
 if [[ "$CORE" = "fanchmwrt" ]]; then
   cat > .config <<'EOF'
 CONFIG_TARGET_x86=y
 CONFIG_TARGET_x86_64=y
 CONFIG_USE_APK=y
-CONFIG_TARGET_ROOTFS_PARTSIZE=960
 CONFIG_PACKAGE_kmod-e1000=y
 CONFIG_PACKAGE_kmod-e1000e=y
 CONFIG_PACKAGE_kmod-igb=y
@@ -219,8 +219,16 @@ CONFIG_PACKAGE_kmod-pppoe=y
 CONFIG_PACKAGE_kmod-pppox=y
 CONFIG_PACKAGE_kmod-nft-offload=y
 EOF
+  # 镜像格式 / 磁盘分区大小 直接参考 immortalWrt 默认配置，避免依赖 make defconfig 默认值
+  IW_CONF="$SCRIPT_DIR/cores/immortalwrt.conf"
+  [[ -f "$IW_CONF" ]] || error_exit "缺失 immortalwrt 核心描述: $IW_CONF"
+  # shellcheck disable=SC1090
+  source "$IW_CONF"
+  REF_CFG="$SCRIPT_DIR/configs/${CONFIG_PREFIX}-default.config"
+  [[ -f "$REF_CFG" ]] || error_exit "参考配置不存在: $REF_CFG（FanchmWrt 镜像格式/分区大小依赖它）"
+  grep -E '^(CONFIG_(GRUB_IMAGES|GRUB_EFI_IMAGES|TARGET_ROOTFS_(SQUASHFS|EXT4)|TARGET_IMAGES_GZIP|TARGET_(KERNEL|ROOTFS)_PARTSIZE|ISO_IMAGES|VDI_IMAGES|VMDK_IMAGES|QCOW2_IMAGES|VHDX_IMAGES))=' "$REF_CFG" >> .config
   sed -i 's/\r$//' .config
-  echo "[build] FanchmWrt: 已写入最小 .config（target+kmod），make defconfig 将展开"
+  echo "[build] FanchmWrt: 已写入最小 .config（target+kmod）+ 引用 immortalWrt 镜像格式/分区大小，make defconfig 将展开"
 else
   cp "$SCRIPT_DIR/configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config" .config || error_exit "配置文件不存在: configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config"
   sed -i 's/\r$//' .config
