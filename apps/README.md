@@ -22,5 +22,5 @@
 ## 注意
 - 原始二进制（如 OpenClash 的 clash_meta 核心、AdGuardHome 可执行文件）不是 `.apk`，
   应直接放进 `files-fanchmwrt/`（编译进镜像），而不是本目录。
-- 若日后获得 **fwxd（fwx 内核模块）** 源码并编译出 `kmod-fwxd*.apk`，或拿到任何预编译的可信
-  `.apk`（含手动上传），放这里即可在首启离线安装。
+- fwx 内核模块（`kmod-fwxd`）：若由 `fanchmwrt-packages` feed 提供，则随官方源编译进镜像，
+  无需放这里；若拿到自编译 / 手动上传的可信 `kmod-fwxd*.apk`（含其他任何 `.apk`），放这里即可在首启离线安装。

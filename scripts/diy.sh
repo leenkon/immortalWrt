@@ -13,7 +13,7 @@ is_valid_ipv4() {
         [ "$o" -le 255 ] || return 1
     done
     case "$o1" in 0|127) return 1 ;; 169) [ "$o2" = "254" ] && return 1 ;; esac
-    [ "$o4" -eq 0 ] || [ "$o4" -eq 255 ] && return 1
+    { [ "$o4" -eq 0 ] || [ "$o4" -eq 255 ]; } && return 1
     return 0
 }
 
@@ -444,9 +444,6 @@ chmod 755 /etc/init.d/cpufreq-perf
 /etc/init.d/cpufreq-perf enable
 /etc/init.d/cpufreq-perf start
 
-if [ -f /etc/bxplug.apk ]; then
-    apk --allow-untrusted add /etc/bxplug.apk && rm -f /etc/bxplug.apk
-fi
 ( sleep 10; /etc/init.d/odhcpd restart ) &
 logger -t uci-defaults "配置应用完成"
 EOT
