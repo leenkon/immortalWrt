@@ -4,7 +4,6 @@
 # 此处不再安装；下面仅保留可选增强包。kmod 必须编译进镜像，不要放这里。
 luci-app-ddns
 ddns-scripts
-ddns-scripts-aliyun
 luci-app-upnp
 miniupnpd
 luci-app-wol

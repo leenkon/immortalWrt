@@ -22,9 +22,9 @@ install_all() {
     fi
 
     # 2) 在线官方源包（lists 文本：每行一个包名，# 开头为注释）
-    #    逐包安装：apk 默认整批原子提交，列表中任一包名缺失/失败会导致整批不装，
-    #    曾因某个非核心包（如 ddns-scripts-aliyun 在 25.12 已更名/移除）不存在，
-    #    连 luci 都没装上 → 进不去后台。改为逐包安装 + 失败仅记录，保证 luci/uhttpd 一定装得上。
+    #    逐包安装：apk 默认整批原子提交，列表中任一包名缺失/失败会导致整批不装；
+    #    曾因列表中某个非核心包在 25.12 源不存在（更名/移除）而整批失败、连 luci 都没装上，
+    #    导致进不去后台。改为逐包安装 + 失败仅记录，保证核心包一定装得上。
     local prof pkg_list pkg
     prof=$(cat /etc/firstboot-pkgs/profile 2>/dev/null)
     if ! apk update >/dev/null 2>&1; then
