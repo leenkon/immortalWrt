@@ -13,19 +13,43 @@ install_all() {
     if [ -d /etc/firstboot-pkgs/apps ]; then
         for f in /etc/firstboot-pkgs/apps/*.apk; do
             [ -f "$f" ] || continue
-            apk --allow-untrusted add "$f" >/dev/null 2>&1 && rm -f "$f"
+            if apk --allow-untrusted add "$f" >/dev/null 2>&1; then
+                rm -f "$f"
+            else
+                logger -t firstboot-pkgs "离线安装失败(保留待查): $f"
+            fi
         done
     fi
 
     # 2) 在线官方源包（lists 文本：每行一个包名，# 开头为注释）
-    local prof pkg_list
+    #    逐包安装：apk 默认整批原子提交，列表中任一包名缺失/失败会导致整批不装，
+    #    曾因某个非核心包（如 ddns-scripts-aliyun 在 25.12 已更名/移除）不存在，
+    #    连 luci 都没装上 → 进不去后台。改为逐包安装 + 失败仅记录，保证 luci/uhttpd 一定装得上。
+    local prof pkg_list pkg
     prof=$(cat /etc/firstboot-pkgs/profile 2>/dev/null)
-    apk update >/dev/null 2>&1 || true
-    for l in /etc/firstboot-pkgs/lists/common.txt /etc/firstboot-pkgs/lists/${prof}.txt; do
-        [ -f "$l" ] || continue
-        pkg_list=$(grep -v '^#' "$l" | grep -v '^$' | tr '\n' ' ')
-        [ -n "$pkg_list" ] && apk add --no-cache $pkg_list >/dev/null 2>&1 || true
-    done
+    if ! apk update >/dev/null 2>&1; then
+        logger -t firstboot-pkgs "apk update 失败：跳过在线安装（检查 /etc/apk/repositories 与联网）"
+    else
+        for l in /etc/firstboot-pkgs/lists/common.txt /etc/firstboot-pkgs/lists/${prof}.txt; do
+            [ -f "$l" ] || continue
+            pkg_list=$(grep -v '^#' "$l" | grep -v '^$')
+            for pkg in $pkg_list; do
+                if apk add "$pkg" >/dev/null 2>&1; then
+                    logger -t firstboot-pkgs "已安装: $pkg"
+                else
+                    logger -t firstboot-pkgs "安装失败(跳过): $pkg"
+                fi
+            done
+        done
+    fi
+
+    # 3) 确保 Web 管理后台可用：LuCI 由 uhttpd 提供，显式拉起（不依赖包 postinst 是否自动 start）
+    if [ -x /etc/init.d/uhttpd ]; then
+        /etc/init.d/uhttpd enable 2>/dev/null
+        /etc/init.d/uhttpd restart 2>/dev/null
+        logger -t firstboot-pkgs "uhttpd 已拉起（Web 后台）"
+    fi
+    [ -x /etc/init.d/rpcd ] && /etc/init.d/rpcd enable 2>/dev/null
 
     # 自清理：禁用并删除本服务，避免后续启动重复执行
     /etc/init.d/firstboot-pkgs disable 2>/dev/null
