@@ -1,11 +1,7 @@
 #!/bin/bash
-# ImmortalWrt / FanchmWrt 本地编译脚本 - Debian/Ubuntu
+# ImmortalWrt / FanchmWrt 本地编译脚本（Debian/Ubuntu）
+# 双核心由 cores/<core>.conf 驱动：immortalwrt(默认, OAF/OC/ADGH 全功能) / fanchmwrt(OpenWrt fork, 原生 fwx)。
 # 用法: chmod +x build.sh && ./build.sh
-#
-# 双核心（通过 cores/<core>.conf 统一描述仓库/feeds/config 前缀/应用过滤后端/静态文件目录）：
-#   immortalwrt : 默认核心，保持原行为（OAF/OC/ADGH 全功能）
-#   fanchmwrt  : OpenWrt fork（官方宣称原生 fwx 应用过滤）；本脚本仅做原生编译 +
-#                仅 IP/WAN/主机名 在编译期定制 + 其余包经 apps/(离线.apk)/lists/(官方源) 首启安装
 
 set -e
 
@@ -206,11 +202,8 @@ fi
 
 ./scripts/feeds install -a -f
 
-# FanchmWrt：不依赖本地 .config 种子，仅注入最小 target + 必要内核模块 + apk，
-# 镜像格式 / 磁盘分区大小 直接引用 immortalWrt 默认配置（保持两者输出一致），
-# 由 make defconfig 展开为完整配置后编译；Web 后台(luci + fwx 仪表盘皮肤 + kmod-fwx/fwxd)
-# 已随上面的内联最小 .config 一并编进镜像（见 cat > .config 段），不再依赖首启联网安装。
-# 其余可选 userspace 包（ddns/upnp/wol/udpxy/vlan 等）仍走首启联网安装。
+# FanchmWrt：内联最小 target + 必要 kmod + apk（不依赖本地 .config 种子），镜像格式/分区大小引用 immortalWrt 默认配置以保持输出一致；
+# Web 后台(luci + fwx 仪表盘 + kmod-fwx/fwxd) 随下方 .config 编入镜像，其余 userspace 包(ddns/upnp/wol/udpxy/vlan 等)走首启安装。
 if [[ "$CORE" = "fanchmwrt" ]]; then
   cat > .config <<'EOF'
 CONFIG_TARGET_x86=y
@@ -227,9 +220,7 @@ CONFIG_PACKAGE_kmod-ppp=y
 CONFIG_PACKAGE_kmod-pppoe=y
 CONFIG_PACKAGE_kmod-pppox=y
 CONFIG_PACKAGE_kmod-nft-offload=y
-# FanchmWrt 自家后台/主题：标准 luci 框架 + fwx 仪表盘皮肤 + fwx 内核栈。
-# 源码均在主仓库（luci 为标准 OpenWrt luci；kmod-fwx/fwxd 在 package/fcm/，随 clone 下来），
-# 故直接编进镜像，不再依赖首启联网安装 Web 界面。dashboard 硬依赖 kmod-fwx/fwxd，二者一并选上。
+# FanchmWrt 后台/主题：标准 luci + fwx 仪表盘皮肤 + kmod-fwx/fwxd（源码在主仓库 package/fcm/，随 clone 编入镜像；dashboard 硬依赖二者，一并选上）。
 CONFIG_PACKAGE_luci=y
 CONFIG_PACKAGE_luci-compat=y
 CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
@@ -261,6 +252,17 @@ EOF
   grep -E '^(CONFIG_(GRUB_IMAGES|GRUB_EFI_IMAGES|TARGET_ROOTFS_(SQUASHFS|EXT4)|TARGET_IMAGES_GZIP|TARGET_(KERNEL|ROOTFS)_PARTSIZE|ISO_IMAGES|VDI_IMAGES|VMDK_IMAGES|QCOW2_IMAGES|VHDX_IMAGES))=' "$REF_CFG" >> .config
   sed -i 's/\r$//' .config
   echo "[build] FanchmWrt: 已写入最小 .config（target+kmod）+ 引用 immortalWrt 镜像格式/分区大小，make defconfig 将展开"
+
+  # FanchmWrt：用本项目定制 feature.cfg 覆盖 fwxd 自带应用特征库。
+  # fwxd 的 Makefile 把 package/fcm/fwxd/files/*.cfg 安装到固件 /etc/fwxd/feature.cfg，
+  # 本自定义库与 fwxd 同为 #format v3.0 应用特征库（仅版本号更新），可直接替换。
+  FWXD_CFG="$OPENWRT_DIR/package/fcm/fwxd/files/feature.cfg"
+  if [[ -f "$SCRIPT_DIR/oaf_files/feature.cfg" && -f "$FWXD_CFG" ]]; then
+    cp -f "$SCRIPT_DIR/oaf_files/feature.cfg" "$FWXD_CFG"
+    echo "[build] FanchmWrt: 已用 oaf_files/feature.cfg 覆盖 fwxd 应用特征库 (-> /etc/fwxd/feature.cfg)"
+  elif [[ -f "$SCRIPT_DIR/oaf_files/feature.cfg" ]]; then
+    echo "[build] 警告: 未找到 fwxd feature.cfg（package/fcm/fwxd/files/feature.cfg），跳过覆盖"
+  fi
 else
   cp "$SCRIPT_DIR/configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config" .config || error_exit "配置文件不存在: configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config"
   sed -i 's/\r$//' .config

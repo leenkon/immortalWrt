@@ -160,6 +160,17 @@ jobs:
             grep -E '^(CONFIG_(GRUB_IMAGES|GRUB_EFI_IMAGES|TARGET_ROOTFS_(SQUASHFS|EXT4)|TARGET_IMAGES_GZIP|TARGET_(KERNEL|ROOTFS)_PARTSIZE|ISO_IMAGES|VDI_IMAGES|VMDK_IMAGES|QCOW2_IMAGES|VHDX_IMAGES))=' "$REF_CFG" >> .config
             sed -i 's/\r$//' .config
             echo "[build] FanchmWrt: 已写入最小 .config（target+kmod）+ 引用 immortalWrt 镜像格式/分区大小，make defconfig 将展开"
+
+            # FanchmWrt：用本项目定制 feature.cfg 覆盖 fwxd 自带应用特征库。
+            # fwxd 的 Makefile 把 package/fcm/fwxd/files/*.cfg 安装到固件 /etc/fwxd/feature.cfg，
+            # 本自定义库与 fwxd 同为 #format v3.0 应用特征库（仅版本号更新），可直接替换。
+            FWXD_CFG="package/fcm/fwxd/files/feature.cfg"
+            if [ -f "$GITHUB_WORKSPACE/oaf_files/feature.cfg" ] && [ -f "$FWXD_CFG" ]; then
+              cp -f "$GITHUB_WORKSPACE/oaf_files/feature.cfg" "$FWXD_CFG"
+              echo "[build] FanchmWrt: 已用 oaf_files/feature.cfg 覆盖 fwxd 应用特征库 (-> /etc/fwxd/feature.cfg)"
+            elif [ -f "$GITHUB_WORKSPACE/oaf_files/feature.cfg" ]; then
+              echo "[build] 警告: 未找到 fwxd feature.cfg（package/fcm/fwxd/files/feature.cfg），跳过覆盖"
+            fi
           else
             cp $GITHUB_WORKSPACE/configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config .config
             sed -i 's/\r$//' .config
