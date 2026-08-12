@@ -155,15 +155,22 @@ success "完成"
 
 # 3. 源码
 echo -e "\n${YELLOW}[3/7] 拉取源码...${NC}"
+# 取源引用：immortalwrt 用 tag（v${VERSION}）；fanchmwrt 的 fwx 内核栈(kmod-fwx/fwxd) 仅在其
+# 主仓库【分支】fanchmwrt-${VERSION}，所有 v25.12.x tag 均不含，故 FanchmWrt 改用分支取源。
+if [[ "$CORE" = "fanchmwrt" ]]; then
+    SRC_REF="fanchmwrt-${VERSION}"
+else
+    SRC_REF="${REF_PREFIX}${VERSION}"
+fi
 if [[ -d "$OPENWRT_DIR" ]]; then
     read -p "删除现有目录? [y/N]: " r
     [[ "$r" =~ ^[Yy]$ ]] && rm -rf "$OPENWRT_DIR" || { error_exit "请先删除 $OPENWRT_DIR"; }
 fi
 if [[ ! -d "$OPENWRT_DIR" ]]; then
     git clone --depth 1 "$REPO_URL" "$OPENWRT_DIR" || error_exit "源码克隆失败"
-    (cd "$OPENWRT_DIR" && git fetch origin tag "${REF_PREFIX}${VERSION}" --depth 1 && git checkout "${REF_PREFIX}${VERSION}") || error_exit "版本切换失败"
+    (cd "$OPENWRT_DIR" && git fetch origin "$SRC_REF" --depth 1 && git checkout "$SRC_REF") || error_exit "版本切换失败"
 fi
-success "完成"
+success "完成（取源引用: $SRC_REF）"
 
 # 4. 配置
 echo -e "\n${YELLOW}[4/7] 准备配置...${NC}"

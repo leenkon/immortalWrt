@@ -42,11 +42,16 @@ jobs:
         run: |
           set -e
           source $GITHUB_WORKSPACE/cores/${{ github.event.inputs.core }}.conf
+          if [ "${{ github.event.inputs.core }}" = "fanchmwrt" ]; then
+            SRC_REF="fanchmwrt-${{ github.event.inputs.version }}"
+          else
+            SRC_REF="${REF_PREFIX}${{ github.event.inputs.version }}"
+          fi
           rm -rf openwrt
           timeout 180 git clone --depth 1 "$REPO_URL" openwrt
           cd openwrt
-          timeout 60 git fetch origin tag "${REF_PREFIX}${{ github.event.inputs.version }}" --depth 1
-          git checkout "${REF_PREFIX}${{ github.event.inputs.version }}"
+          timeout 60 git fetch origin "$SRC_REF" --depth 1
+          git checkout "$SRC_REF"
 
       - name: 配置与编译
         id: build
