@@ -201,7 +201,9 @@ fi
 
 # FanchmWrt：不依赖本地 .config 种子，仅注入最小 target + 必要内核模块 + apk，
 # 镜像格式 / 磁盘分区大小 直接引用 immortalWrt 默认配置（保持两者输出一致），
-# 由 make defconfig 展开为完整配置后编译；其余 userspace 包在首启联网后安装。
+# 由 make defconfig 展开为完整配置后编译；Web 后台(luci + fwx 仪表盘皮肤 + kmod-fwx/fwxd)
+# 已随上面的内联最小 .config 一并编进镜像（见 cat > .config 段），不再依赖首启联网安装。
+# 其余可选 userspace 包（ddns/upnp/wol/udpxy/vlan 等）仍走首启联网安装。
 if [[ "$CORE" = "fanchmwrt" ]]; then
   cat > .config <<'EOF'
 CONFIG_TARGET_x86=y
@@ -218,6 +220,29 @@ CONFIG_PACKAGE_kmod-ppp=y
 CONFIG_PACKAGE_kmod-pppoe=y
 CONFIG_PACKAGE_kmod-pppox=y
 CONFIG_PACKAGE_kmod-nft-offload=y
+# FanchmWrt 自家后台/主题：标准 luci 框架 + fwx 仪表盘皮肤 + fwx 内核栈。
+# 源码均在主仓库（luci 为标准 OpenWrt luci；kmod-fwx/fwxd 在 package/fcm/，随 clone 下来），
+# 故直接编进镜像，不再依赖首启联网安装 Web 界面。dashboard 硬依赖 kmod-fwx/fwxd，二者一并选上。
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-compat=y
+CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+CONFIG_PACKAGE_kmod-fwx=y
+CONFIG_PACKAGE_fwxd=y
+CONFIG_PACKAGE_luci-app-fwx-dashboard=y
+CONFIG_PACKAGE_luci-app-fwx-resources=y
+CONFIG_PACKAGE_luci-app-fwx-dashboard-setting=y
+CONFIG_PACKAGE_luci-app-fwx-appfilter=y
+CONFIG_PACKAGE_luci-app-fwx-system=y
+CONFIG_PACKAGE_luci-app-fwx-network=y
+CONFIG_PACKAGE_luci-app-fwx-app-center=y
+CONFIG_PACKAGE_luci-app-fwx-feature=y
+CONFIG_PACKAGE_luci-app-fwx-macfilter=y
+CONFIG_PACKAGE_luci-app-fwx-mac-blacklist=y
+CONFIG_PACKAGE_luci-app-fwx-record=y
+CONFIG_PACKAGE_luci-app-fwx-record-whitelist=y
+CONFIG_PACKAGE_luci-app-fwx-session-stat=y
+CONFIG_PACKAGE_luci-app-fwx-user=y
+CONFIG_PACKAGE_luci-app-fwx-user-record=y
 EOF
   # 镜像格式 / 磁盘分区大小 直接参考 immortalWrt 默认配置，避免依赖 make defconfig 默认值
   IW_CONF="$SCRIPT_DIR/cores/immortalwrt.conf"

@@ -1,9 +1,7 @@
 # FanchmWrt 首启在线安装 —— 通用包（官方 OpenWrt 源，仅 userspace，不含 kmod）
 # 每行一个包名；# 开头为注释。kmod 必须编译进镜像（见 build.sh / workflow 内联最小种子 + make defconfig），不要放这里。
-# 基础 Web 管理（luci 框架 + 中文 + 默认主题）：defconfig 不默认带 LuCI，首启联网后安装，否则无 Web 界面。
-luci
-luci-i18n-base-zh-cn
-luci-theme-bootstrap
+# 基础 Web 管理（luci 框架 + 中文 + fwx 仪表盘皮肤）现已编译进镜像（见 build.sh / workflow 内联 .config），
+# 此处不再安装；下面仅保留可选增强包。kmod 必须编译进镜像，不要放这里。
 luci-app-ddns
 ddns-scripts
 ddns-scripts-aliyun
