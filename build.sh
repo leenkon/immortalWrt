@@ -130,7 +130,7 @@ FILES_DIR_ABS="$SCRIPT_DIR/$FILES_DIR"
 
 # 1. 换行符（路由器 ash 不兼容 CRLF）：统一修复 scripts/ 与 files/ 下所有脚本、YAML 及 init.d
 echo -e "\n${YELLOW}[1/7] 检查换行符和权限...${NC}"
-find "$SCRIPT_DIR/scripts" "$SCRIPT_DIR/$FILES_DIR" -type f \
+find "$SCRIPT_DIR/scripts" "$SCRIPT_DIR/$FILES_DIR" "$SCRIPT_DIR/files-common" -type f \
   \( -name "*.sh" -o -name "*.yaml" -o -name "dns-hijack" -o -name "99-adgh-filters" -o -path "*/init.d/*" \) \
   -exec sed -i 's/\r$//' {} + 2>/dev/null || true
 chmod +x "$DIY" "$SCRIPT_DIR/build.sh" "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
@@ -179,8 +179,8 @@ if [[ "$USE_OAF" == "true" ]]; then
   rm -rf package/{luci-app-oaf,open-app-filter,oaf} feeds/packages/{net/open-app-filter,luci/luci-app-oaf,kernel/oaf}
   rm -rf package/OpenAppFilter
   timeout 120 git clone --depth 1 https://github.com/destan19/OpenAppFilter package/OpenAppFilter
-  [[ -f "$SCRIPT_DIR/oaf_files/feature.cfg" ]] && cp -f "$SCRIPT_DIR/oaf_files/feature.cfg" package/OpenAppFilter/open-app-filter/files/
-  [[ -d "$SCRIPT_DIR/oaf_files/app_icons" ]] && cp -rf "$SCRIPT_DIR/oaf_files/app_icons" package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
+  [[ -f "$SCRIPT_DIR/appfilter-assets/feature.cfg" ]] && cp -f "$SCRIPT_DIR/appfilter-assets/feature.cfg" package/OpenAppFilter/open-app-filter/files/
+  [[ -d "$SCRIPT_DIR/appfilter-assets/oaf-icons" ]] && cp -rf "$SCRIPT_DIR/appfilter-assets/oaf-icons" package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
 fi
 
 # OpenClash LuCI 替换（仅 immortalwrt 旁路由 / 完整路由）
@@ -257,10 +257,10 @@ EOF
   # fwxd 的 Makefile 把 package/fcm/fwxd/files/*.cfg 安装到固件 /etc/fwxd/feature.cfg，
   # 本自定义库与 fwxd 同为 #format v3.0 应用特征库（仅版本号更新），可直接替换。
   FWXD_CFG="$OPENWRT_DIR/package/fcm/fwxd/files/feature.cfg"
-  if [[ -f "$SCRIPT_DIR/oaf_files/feature.cfg" && -f "$FWXD_CFG" ]]; then
-    cp -f "$SCRIPT_DIR/oaf_files/feature.cfg" "$FWXD_CFG"
-    echo "[build] FanchmWrt: 已用 oaf_files/feature.cfg 覆盖 fwxd 应用特征库 (-> /etc/fwxd/feature.cfg)"
-  elif [[ -f "$SCRIPT_DIR/oaf_files/feature.cfg" ]]; then
+  if [[ -f "$SCRIPT_DIR/appfilter-assets/feature.cfg" && -f "$FWXD_CFG" ]]; then
+    cp -f "$SCRIPT_DIR/appfilter-assets/feature.cfg" "$FWXD_CFG"
+    echo "[build] FanchmWrt: 已用 appfilter-assets/feature.cfg 覆盖 fwxd 应用特征库 (-> /etc/fwxd/feature.cfg)"
+  elif [[ -f "$SCRIPT_DIR/appfilter-assets/feature.cfg" ]]; then
     echo "[build] 警告: 未找到 fwxd feature.cfg（package/fcm/fwxd/files/feature.cfg），跳过覆盖"
   fi
 else
@@ -303,6 +303,8 @@ if [[ "$WITH_ADGH" == "true" ]]; then
     "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh" "$SCRIPT_DIR"
 fi
 [[ -d "$FILES_DIR_ABS" ]] && { rm -rf "$OPENWRT_DIR/files"; cp -rf "$FILES_DIR_ABS" "$OPENWRT_DIR/files"; }
+# 共享静态文件层（双核通用，如 cpufreq-perf）：覆盖到核专属 files 之上
+[[ -d "$SCRIPT_DIR/files-common" ]] && { cp -rf "$SCRIPT_DIR/files-common/." "$OPENWRT_DIR/files/"; }
 
 # FanchmWrt：把 apps/(离线 .apk) 与 lists/(官方源包名) 拷入镜像首启安装目录
 if [[ "$CORE" = "fanchmwrt" ]]; then
