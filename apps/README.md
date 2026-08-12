@@ -2,7 +2,7 @@
 
 本目录存放**离线**的 `.apk` 安装包——既可以是你本地编译的产物，也可以是从可信来源
 下载 / **手动上传**的预编译包——统一在 FanchmWrt 首次启动时由
-`files-fanchmwrt/etc/init.d/firstboot-pkgs` 离线安装（`apk --allow-untrusted add`）。
+`files/fanchmwrt/etc/init.d/firstboot-pkgs` 离线安装（`apk --allow-untrusted add`）。
 来源不限，关键是**与目标内核的 vermagic 匹配、且来源可信**。
 
 ## 适用场景
@@ -21,6 +21,6 @@
 
 ## 注意
 - 原始二进制（如 OpenClash 的 clash_meta 核心、AdGuardHome 可执行文件）不是 `.apk`，
-  应直接放进 `files-fanchmwrt/`（编译进镜像），而不是本目录。
+  应直接放进 `files/fanchmwrt/`（编译进镜像），而不是本目录。
 - fwx 内核模块（`kmod-fwxd`）：若由 `fanchmwrt-packages` feed 提供，则随官方源编译进镜像，
   无需放这里；若拿到自编译 / 手动上传的可信 `kmod-fwxd*.apk`（含其他任何 `.apk`），放这里即可在首启离线安装。

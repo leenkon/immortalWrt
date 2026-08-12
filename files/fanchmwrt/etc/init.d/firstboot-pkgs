@@ -3,7 +3,7 @@
 # 等待网络连通后：
 #   1) 离线安装 /etc/firstboot-pkgs/apps/*.apk（自编译或本地上传的预编译包，允许未签名；
 #      来源需与目标内核 vermagic 匹配，否则 kmod 无法加载）
-#   2) 在线安装 /etc/firstboot-pkgs/lists/{common,$PROFILE}.txt 中的官方源包
+#   2) 在线安装 lists/ 中的官方源包：common.txt 始终安装；非 Mini 档额外安装 default.txt
 # 完成后自禁用并清理本服务，避免每次启动重复安装。
 START=99
 STOP=10
@@ -27,20 +27,23 @@ install_all() {
     #    导致进不去后台。改为逐包安装 + 失败仅记录，保证核心包一定装得上。
     local prof pkg_list pkg
     prof=$(cat /etc/firstboot-pkgs/profile 2>/dev/null)
+    install_list() {
+        [ -f "$1" ] || return 0
+        pkg_list=$(grep -v '^#' "$1" | grep -v '^$')
+        for pkg in $pkg_list; do
+            if apk add "$pkg" >/dev/null 2>&1; then
+                logger -t firstboot-pkgs "已安装: $pkg"
+            else
+                logger -t firstboot-pkgs "安装失败(跳过): $pkg"
+            fi
+        done
+    }
     if ! apk update >/dev/null 2>&1; then
         logger -t firstboot-pkgs "apk update 失败：跳过在线安装（检查 /etc/apk/repositories 与联网）"
     else
-        for l in /etc/firstboot-pkgs/lists/common.txt /etc/firstboot-pkgs/lists/${prof}.txt; do
-            [ -f "$l" ] || continue
-            pkg_list=$(grep -v '^#' "$l" | grep -v '^$')
-            for pkg in $pkg_list; do
-                if apk add "$pkg" >/dev/null 2>&1; then
-                    logger -t firstboot-pkgs "已安装: $pkg"
-                else
-                    logger -t firstboot-pkgs "安装失败(跳过): $pkg"
-                fi
-            done
-        done
+        # common 始终安装；Mini 档无专属包（仅 common），Main 档额外安装 default.txt
+        install_list /etc/firstboot-pkgs/lists/common.txt
+        [ "$prof" != "mini" ] && install_list /etc/firstboot-pkgs/lists/default.txt
     fi
 
     # 3) 确保 Web 管理后台可用：LuCI 由 uhttpd 提供，显式拉起（不依赖包 postinst 是否自动 start）
