@@ -478,10 +478,10 @@ chmod 755 /etc/init.d/cpufreq-perf
 /etc/init.d/cpufreq-perf enable
 /etc/init.d/cpufreq-perf start
 
-# 离线安装 bxplug（files/immortalwrt/etc/bxplug.apk 随固件注入，首启时装入并清理）
-if [ -f /etc/bxplug.apk ]; then
-    apk --allow-untrusted add /etc/bxplug.apk && rm -f /etc/bxplug.apk
-fi
+# 首启离线安装 apps/ 中的 .apk（允许未签名），与 FanchmWrt 一致（由 firstboot-pkgs 安装后清理）
+chmod 755 /etc/init.d/firstboot-pkgs
+/etc/init.d/firstboot-pkgs enable
+/etc/init.d/firstboot-pkgs start
 
 ( sleep 10; /etc/init.d/odhcpd restart ) &
 logger -t uci-defaults "配置应用完成"

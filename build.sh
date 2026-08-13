@@ -313,11 +313,13 @@ fi
 # 共享静态文件层（双核通用，如 cpufreq-perf）：覆盖到核专属 files 之上
 [[ -d "$SCRIPT_DIR/files/common" ]] && { cp -rf "$SCRIPT_DIR/files/common/." "$OPENWRT_DIR/files/"; }
 
-# FanchmWrt：把 apps/(离线 .apk) 与 lists/(官方源包名) 拷入镜像首启安装目录
+# 离线 .apk：双核都拷入镜像首启安装目录 /etc/firstboot-pkgs/apps/（由各自 firstboot-pkgs 用 --allow-untrusted 安装）
+mkdir -p "$OPENWRT_DIR/files/etc/firstboot-pkgs/apps"
+cp -f "$SCRIPT_DIR/apps/"*.apk "$OPENWRT_DIR/files/etc/firstboot-pkgs/apps/" 2>/dev/null || true
+# lists/(官方源包名)：仅 FanchmWrt 需要（首启在线安装）
 if [[ "$CORE" = "fanchmwrt" ]]; then
-  mkdir -p "$OPENWRT_DIR/files/etc/firstboot-pkgs/lists" "$OPENWRT_DIR/files/etc/firstboot-pkgs/apps"
+  mkdir -p "$OPENWRT_DIR/files/etc/firstboot-pkgs/lists"
   cp -f "$SCRIPT_DIR/lists/"*.txt "$OPENWRT_DIR/files/etc/firstboot-pkgs/lists/" 2>/dev/null || true
-  cp -f "$SCRIPT_DIR/apps/"*.apk "$OPENWRT_DIR/files/etc/firstboot-pkgs/apps/" 2>/dev/null || true
 fi
 
 # 文件清理：按 profile 删除不需要的静态文件（仅 immortalwrt；在 openwrt 副本上操作，不修改源树）
