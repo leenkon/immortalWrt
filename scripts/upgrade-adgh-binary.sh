@@ -5,8 +5,6 @@
 # 25.12 完全通用。二进制经 files/<core>/ 注入固件（如 files/immortalwrt/usr/bin/AdGuardHome），
 # 由 files/immortalwrt/etc/init.d/adguardhome 启动，配置复用 files/immortalwrt/etc/adguardhome/adguardhome.yaml。
 #
-# 用法: upgrade-adgh-binary.sh [项目根目录] [--version latest|<版本号>]
-#   不带 --version 时默认 latest；也兼容 ADGH_VER 环境变量。
 set -e
 
 # 用法: upgrade-adgh-binary.sh [项目根目录] [--files-dir <核专属files目录>] [--version latest|<版本号>]

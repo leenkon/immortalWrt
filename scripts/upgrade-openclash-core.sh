@@ -2,17 +2,13 @@
 # OpenClash Meta 核心预装脚本
 # 下载最新 mihomo 核心二进制放入 files/<core>/etc/openclash/core/（如 files/immortalwrt），跳过首次启动时的在线下载
 #
-# 用法: ./scripts/upgrade-openclash-core.sh [项目根目录] [架构]
-# 默认架构: linux-amd64 (x86_64)
-#
-# 仅旁路由和完整路由构建时调用
-# 执行时机: diy.sh after 之后、files/ 复制到 openwrt 之前
+# 用法: upgrade-openclash-core.sh [项目根目录] [--files-dir <核专属files目录>] [--arch linux-amd64]
+#   --files-dir: 注入目标目录（如 files/immortalwrt）；缺省回退到 <root>/files/immortalwrt
+#   --arch:      默认 linux-amd64 (x86_64)
+#   仅 immortalwrt 旁路由/完整路由构建时调用；执行时机: diy.sh after 之后、files/ 复制到 openwrt 之前
 
 set -e
 
-# 用法: upgrade-openclash-core.sh [项目根目录] [--files-dir <核专属files目录>] [--arch linux-amd64]
-#   --files-dir: 注入目标目录（如 files/immortalwrt）；缺省回退到 <root>/files/immortalwrt
-#   OpenClash 仅 immortalwrt 使用，其 FILES_DIR 即 files/immortalwrt，须把核心注入该目录才能进固件
 PROJECT_ROOT="$(pwd -P)"
 FILES_DEST=""
 CORE_ARCH="linux-amd64"

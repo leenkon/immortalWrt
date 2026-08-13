@@ -207,11 +207,13 @@ jobs:
           # 共享静态文件层（双核通用，如 cpufreq-perf）：覆盖到核专属 files 之上
           [[ -d "$GITHUB_WORKSPACE/files/common" ]] && { cp -rf "$GITHUB_WORKSPACE/files/common/." files/; } || true
 
-          # FanchmWrt：把 apps/(离线 .apk) 与 lists/(官方源包名) 拷入镜像首启安装目录
+          # 离线 .apk：双核都拷入镜像首启安装目录（由各自 firstboot-pkgs 用 --allow-untrusted 安装）
+          mkdir -p files/etc/firstboot-pkgs/apps
+          cp -f $GITHUB_WORKSPACE/apps/*.apk files/etc/firstboot-pkgs/apps/ 2>/dev/null || true
+          # lists/(官方源包名)：仅 FanchmWrt 需要（首启在线安装）
           if $IS_FANCHM; then
-            mkdir -p files/etc/firstboot-pkgs/lists files/etc/firstboot-pkgs/apps
+            mkdir -p files/etc/firstboot-pkgs/lists
             cp -f $GITHUB_WORKSPACE/lists/*.txt files/etc/firstboot-pkgs/lists/ 2>/dev/null || true
-            cp -f $GITHUB_WORKSPACE/apps/*.apk files/etc/firstboot-pkgs/apps/ 2>/dev/null || true
           fi
 
           # 按 profile 删除不需要的静态文件（仅 immortalwrt）
