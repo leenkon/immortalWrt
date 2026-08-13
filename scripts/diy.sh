@@ -103,7 +103,7 @@ after)
     mkdir -p "$(dirname "$OUT")"
     rm -f "$OUT" "$SHADOW"
 
-    # immortalWrt 默认 WAN=eth0；FanchmWrt 留空由首启自动识别最前口（--wan-iface 为空时）
+    # immortalWrt 默认 WAN=eth0（--wan-iface 可覆盖）；FanchmWrt 端口由下方源码 patch 固定，不读 WAN_IFACE
     [ "$CORE" = "immortalwrt" ] && [ -z "$WAN_IFACE" ] && WAN_IFACE="eth0"
     ip_esc=$(_escape_uci "$CUSTOM_IP")
     wan_esc=$(_escape_uci "$WAN_IFACE")
