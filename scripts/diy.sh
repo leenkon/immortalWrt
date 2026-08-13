@@ -179,32 +179,37 @@ uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
 uci set dhcp.@dnsmasq[0].sequential_ip='1'
 uci commit dhcp
 EOT
-        # WAN 物理口显式绑定（修复 FanchmWrt 默认把 WAN 绑到最后一个口 eth3 的问题）+ LAN 防冲突
+        # WAN/LAN 物理口自动绑定：x86 多网口约定“最前口=WAN，其余口(含最后口)=LAN 桥接”
+        # 无需手动指定：默认 WAN=eth0(最前口)，LAN=除 WAN 外所有 eth 口桥接；--wan-iface 仅作可选覆盖。
         cat >> "$OUT" <<'EOT'
-# 显式绑定 WAN 物理口
-uci set network.wan.device='__WAN_IF__'
-# 防止 LAN 与 WAN 共用同一物理口
-if [ "$(uci get network.lan.type 2>/dev/null)" = "bridge" ]; then
-  _oldports="$(uci get network.lan.ports 2>/dev/null)"
+# 自动绑定 WAN/LAN 物理口
+_fw_all=$(ls /sys/class/net 2>/dev/null | grep -E '^eth[0-9]+$' | sort -V)
+_fw_wan='__WAN_IF__'
+if [ -z "$_fw_wan" ]; then
+  _fw_wan=$(echo "$_fw_all" | head -n1)
+fi
+_fw_lan=''
+for _e in $_fw_all; do
+  [ "$_e" = "$_fw_wan" ] && continue
+  _fw_lan="$_fw_lan $_e"
+done
+uci set network.wan.device="$_fw_wan"
+if [ -n "$_fw_lan" ]; then
+  uci set network.lan.type='bridge'
+  uci -q delete network.lan.device
   uci -q delete network.lan.ports
-  for _p in $_oldports; do
-    [ "$_p" = "__WAN_IF__" ] && continue
+  for _p in $_fw_lan; do
     uci add_list network.lan.ports="$_p"
   done
-  if [ -n "__LAN_IF__" ]; then
-    _has=0
-    for _p in $(uci get network.lan.ports 2>/dev/null); do [ "$_p" = "__LAN_IF__" ] && _has=1; done
-    [ "$_has" = 0 ] && uci add_list network.lan.ports="__LAN_IF__"
-  fi
-elif [ "$(uci get network.lan.device 2>/dev/null)" = "__WAN_IF__" ] && [ -n "__LAN_IF__" ]; then
-  uci set network.lan.device="__LAN_IF__"
 fi
+uci commit network
 EOT
-        sed -i "s/__WAN_IF__/$wan_esc/g; s/__LAN_IF__/$lan_esc/g" "$OUT"
+        sed -i "s/__WAN_IF__/$wan_esc/g" "$OUT"
         fi
 
         cat >> "$OUT" <<EOT
-uci set firewall.@defaults[0].flow_offloading='1'
+# fwx 应用过滤(DPI 内核模块)依赖 conntrack，与流卸载冲突会导致连接不稳/应用过滤失效，故关闭
+uci set firewall.@defaults[0].flow_offloading='0'
 uci set firewall.@defaults[0].flow_offloading_hw='0'
 uci commit firewall
 
