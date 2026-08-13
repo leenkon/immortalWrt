@@ -86,6 +86,10 @@ GATEWAY_IP=""
 PPPOE_USER="" PPPOE_PASS=""
 [[ "$RUN_TYPE" == "main" || "$RUN_TYPE" == "full" ]] && { read -p "配置PPPoE? [y/N]: " pp; [[ "$pp" =~ ^[Yy]$ ]] && { read -p "用户名: " PPPOE_USER; read -p "密码: " PPPOE_PASS; success "PPPoE已配置"; } || success "使用DHCP"; }
 
+# WAN / LAN 物理口（默认 WAN=eth0，匹配 immortalWrt；多网口设备可指定）
+read -p "WAN 物理口 [默认: eth0]: " wanif; WAN_IFACE="${wanif:-eth0}"
+read -p "LAN 物理口(可选, 回车跳过) [默认: 自动]: " lanif; LAN_IFACE="$lanif"
+
 # OAF / OC / ADGH：仅 immortalwrt 需要；fanchmwrt 关闭（原生编译，包由 apps/lists 装）
 USE_OAF="false"; WITH_OC="false"; WITH_ADGH="false"
 if [ "$CORE" = "immortalwrt" ]; then
@@ -220,6 +224,7 @@ CONFIG_PACKAGE_kmod-ppp=y
 CONFIG_PACKAGE_kmod-pppoe=y
 CONFIG_PACKAGE_kmod-pppox=y
 CONFIG_PACKAGE_kmod-nft-offload=y
+CONFIG_PACKAGE_wget-ssl=y
 # FanchmWrt 后台/主题：标准 luci + fwx 仪表盘皮肤 + kmod-fwx/fwxd（源码在主仓库 package/fcm/，随 clone 编入镜像；dashboard 硬依赖二者，一并选上）。
 CONFIG_PACKAGE_luci=y
 CONFIG_PACKAGE_luci-compat=y
@@ -287,6 +292,7 @@ NOADGH_ARG=""
   ${BYPASS_IP:+--bypass-ip "$BYPASS_IP"} \
   ${PPPOE_USER:+--pppoe-user "$PPPOE_USER"} ${PPPOE_PASS:+--pppoe-pass "$PPPOE_PASS"} \
   ${NOADGH_ARG:+"$NOADGH_ARG"} \
+  --wan-iface "$WAN_IFACE" ${LAN_IFACE:+--lan-iface "$LAN_IFACE"} \
   --root-pass "$ROOT_PWD"
 success "完成"
 

@@ -26,6 +26,7 @@ DNS_BACKUP="223.6.6.6"
 VERSION="" PHASE="" PROFILE_TYPE="" CORE="immortalwrt" FEEDS_SRC="" FILES_DIR_NAME="files"
 NO_ADGH=0
 CUSTOM_IP="" CUSTOM_GATEWAY="" BYPASS_IP="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
+WAN_IFACE="eth0" LAN_IFACE=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -42,6 +43,8 @@ while [ $# -gt 0 ]; do
         --core)      CORE="$2"; shift 2 ;;
         --feeds)     FEEDS_SRC="$2"; shift 2 ;;
         --files-dir) FILES_DIR_NAME="$2"; shift 2 ;;
+        --wan-iface)  WAN_IFACE="$2"; shift 2 ;;
+        --lan-iface)  LAN_IFACE="$2"; shift 2 ;;
         *) error_exit "未知参数 $1" ;;
     esac
 done
@@ -102,6 +105,8 @@ after)
     rm -f "$OUT" "$SHADOW"
 
     ip_esc=$(_escape_uci "$CUSTOM_IP")
+    wan_esc=$(_escape_uci "$WAN_IFACE")
+    lan_esc=$(_escape_uci "$LAN_IFACE")
 
     if [ "$CORE" = "fanchmwrt" ]; then
         # ===== FanchmWrt 精简分支（仅 IP/WAN/主机名；无 OC/ADGH/DNS_HIJACK/OAF） =====
@@ -174,6 +179,28 @@ uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
 uci set dhcp.@dnsmasq[0].sequential_ip='1'
 uci commit dhcp
 EOT
+        # WAN 物理口显式绑定（修复 FanchmWrt 默认把 WAN 绑到最后一个口 eth3 的问题）+ LAN 防冲突
+        cat >> "$OUT" <<'EOT'
+# 显式绑定 WAN 物理口
+uci set network.wan.device='__WAN_IF__'
+# 防止 LAN 与 WAN 共用同一物理口
+if [ "$(uci get network.lan.type 2>/dev/null)" = "bridge" ]; then
+  _oldports="$(uci get network.lan.ports 2>/dev/null)"
+  uci -q delete network.lan.ports
+  for _p in $_oldports; do
+    [ "$_p" = "__WAN_IF__" ] && continue
+    uci add_list network.lan.ports="$_p"
+  done
+  if [ -n "__LAN_IF__" ]; then
+    _has=0
+    for _p in $(uci get network.lan.ports 2>/dev/null); do [ "$_p" = "__LAN_IF__" ] && _has=1; done
+    [ "$_has" = 0 ] && uci add_list network.lan.ports="__LAN_IF__"
+  fi
+elif [ "$(uci get network.lan.device 2>/dev/null)" = "__WAN_IF__" ] && [ -n "__LAN_IF__" ]; then
+  uci set network.lan.device="__LAN_IF__"
+fi
+EOT
+        sed -i "s/__WAN_IF__/$wan_esc/g; s/__LAN_IF__/$lan_esc/g" "$OUT"
         fi
 
         cat >> "$OUT" <<EOT
@@ -284,6 +311,7 @@ uci set network.wan.username='$u'
 uci set network.wan.password='$p'
             uci set network.wan.ipv6='auto'
             uci set network.wan.peerdns='1'
+            uci set network.wan.device='$wan_esc'
             uci -q delete network.wan6
 EOT
 )
@@ -291,6 +319,7 @@ EOT
             WAN_BLK=$(cat <<EOT
             uci set network.wan.proto='dhcp'
             uci set network.wan.peerdns='1'
+            uci set network.wan.device='$wan_esc'
             uci set network.wan6.proto='dhcpv6'
 uci set network.wan6.reqaddress='try'
 uci set network.wan6.reqprefix='auto'

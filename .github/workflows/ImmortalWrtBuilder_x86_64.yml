@@ -13,6 +13,8 @@ on:
       pppoe_password: {description: 'PPPoE密码', type: string, default: ''}
       install_oaf: {description: '安装OAF(仅immortalwrt有效)', type: boolean, default: false}
       root_password: {description: 'root密码', type: string, default: ''}
+      wan_iface: {description: 'WAN 物理口 (默认 eth0，匹配 immortalWrt)', type: string, default: 'eth0'}
+      lan_iface: {description: 'LAN 物理口 (可选, 不指定则自动避免与 WAN 冲突)', type: string, default: ''}
 permissions:
   contents: write
 
@@ -132,6 +134,7 @@ jobs:
               'CONFIG_PACKAGE_kmod-pppoe=y' \
               'CONFIG_PACKAGE_kmod-pppox=y' \
               'CONFIG_PACKAGE_kmod-nft-offload=y' \
+              'CONFIG_PACKAGE_wget-ssl=y' \
               '# FanchmWrt 自家后台/主题：标准 luci 框架 + fwx 仪表盘皮肤 + fwx 内核栈（源码在主仓库 package/fcm/）' \
               'CONFIG_PACKAGE_luci=y' \
               'CONFIG_PACKAGE_luci-compat=y' \
@@ -186,10 +189,13 @@ jobs:
           PUSER="${{ github.event.inputs.pppoe_username }}"; PPASS="${{ github.event.inputs.pppoe_password }}"
           NOADGH_ARG=""
           [ "$NO_ADGH" = "true" ] && NOADGH_ARG="--no-adgh"
+          WANIF="${{ github.event.inputs.wan_iface }}"; WANIF="${WANIF:-eth0}"
+          LANIF="${{ github.event.inputs.lan_iface }}"
           $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p after -t $RUN_TYPE --core ${{ github.event.inputs.core }} --files-dir "$FILES_DIR_ABS" \
             ${CIP:+--ip "$CIP"} ${CGW:+--gateway "$CGW"} \
             ${PUSER:+--pppoe-user "$PUSER"} ${PPASS:+--pppoe-pass "$PPASS"} \
             ${NOADGH_ARG:+"$NOADGH_ARG"} \
+            --wan-iface "$WANIF" ${LANIF:+--lan-iface "$LANIF"} \
             --root-pass "$ROOTPWD"
 
           $WITH_OC && { chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh; $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh $GITHUB_WORKSPACE; } || true
