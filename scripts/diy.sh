@@ -179,10 +179,8 @@ uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
 uci set dhcp.@dnsmasq[0].sequential_ip='1'
 uci commit dhcp
 EOT
-        # WAN/LAN 物理口自动绑定：x86 多网口约定“最前口=WAN，其余口(含最后口)=LAN 桥接”
-        # 首启在设备上枚举 eth* 实时探测（非编译期写死）：WAN=最前口，LAN=其余口全桥接；--wan-iface 仅作可选覆盖。
-        # 注意：25.x 为 DSA 架构，桥接必须用独立 config device(type bridge)，lan 通过 option device 指向它；
-        # 旧式“lan 上 option type bridge + list ports”已不支持，且删除 lan.device 会让 LAN 失联、后台进不去。
+        # WAN/LAN 物理口自动绑定（x86 多网口：最前口=WAN，其余口桥接=LAN）；首启枚举 eth* 实时探测，--wan-iface 留空即自动、填了则强制覆盖。
+        # 25.x 为 DSA 架构：绝不能用旧式"lan 上 option type bridge"或删除 lan.device（会让 LAN 失联、后台进不去）。
         cat >> "$OUT" <<'EOT'
 # 自动绑定 WAN/LAN 物理口
 _fw_all=$(ls /sys/class/net 2>/dev/null | grep -E '^eth[0-9]+$' | sort -V)
@@ -235,9 +233,7 @@ chmod 755 /etc/init.d/firstboot-pkgs
 /etc/init.d/firstboot-pkgs enable
 /etc/init.d/firstboot-pkgs start
 
-# Web 后台由标准 luci 提供，依赖 uhttpd + rpcd。FanchmWrt 的 uhttpd 首启不会自动拉起
-# （immortalWrt 用完整种子配置含显式 uhttpd 不受影响），此处兜底 enable+start，
-# 确保首启即可访问后台，且不依赖 firstboot-pkgs 在线安装是否成功。
+# FanchmWrt 的 uhttpd 首启不会自动拉起（immortalWrt 不受影响），兜底 enable+start 确保后台立即可访问，且不依赖 firstboot-pkgs 在线安装成败。
 if [ -x /etc/init.d/uhttpd ]; then
     /etc/init.d/uhttpd enable 2>/dev/null
     /etc/init.d/uhttpd start 2>/dev/null
