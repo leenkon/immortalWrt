@@ -120,6 +120,16 @@ after)
         echo '#!/bin/sh' > "$OUT"
         echo "logger -t uci-defaults \"开始应用 FanchmWrt ${PROFILE_TYPE} 配置\"" >> "$OUT"
 
+        # FanchmWrt x86 默认 network 由 board.d/03-default-network 在首启生成：源码原把“末口”当 WAN、其余桥接为 LAN。
+        # 翻转为“首口=WAN”（其余桥接为 LAN）。board.d 会正确建立 DSA br-lan 桥，main/full 无需 diy 再处理端口；
+        # 旁路由在下方单独把全部网口桥接为 LAN（无独立 WAN）。
+        _SRC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../openwrt" 2>/dev/null && pwd || true)"
+        [ -z "$_SRC_ROOT" ] && _SRC_ROOT="."
+        _03net="$_SRC_ROOT/target/linux/x86/base-files/etc/board.d/03-default-network"
+        if [ -f "$_03net" ]; then
+          sed -i 's/\[ "$idx" -eq "$eth_count" \]/[ "$idx" -eq 1 ]/' "$_03net"
+        fi
+
         if [ "$PROFILE_TYPE" = "bypass" ]; then
             gw_esc=$(_escape_uci "$CUSTOM_GATEWAY")
             cat >> "$OUT" <<EOT
@@ -201,41 +211,7 @@ uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
 uci set dhcp.@dnsmasq[0].sequential_ip='1'
 uci commit dhcp
 EOT
-        # WAN/LAN 物理口自动绑定（x86 多网口：最前口=WAN，其余口桥接=LAN）；首启枚举 eth* 实时探测，--wan-iface 留空即自动、填了则强制覆盖。
-        # 25.x 为 DSA 架构：显式重建名为 br-lan 的 bridge device（先删任何同名旧段再重建），
-        # 绝不依赖镜像默认是否已有该段，也绝不用旧式"lan 上 option type bridge"或删除 lan.device（会让 LAN 失联、后台进不去）。
-        cat >> "$OUT" <<'EOT'
-# 自动绑定 WAN/LAN 物理口
-_fw_all=$(ls /sys/class/net 2>/dev/null | grep -E '^eth[0-9]+$' | sort -V)
-if [ -z "$_fw_all" ]; then
-  logger -t uci-defaults "未枚举到 eth* 网口，跳过 WAN/LAN 自动绑定（保持镜像默认）"
-else
-  _fw_wan='__WAN_IF__'
-  [ -z "$_fw_wan" ] && _fw_wan=$(echo "$_fw_all" | head -n1)
-  # 显式重建 LAN 桥接设备 br-lan（兼容镜像默认 named/anonymous 任意形态）：
-  # 先删除任何名为 br-lan 的既有 device 段，避免重复导致 netifd 冲突。
-  for _d in $(uci show network 2>/dev/null | sed -n "s/^\(network\.[^.]*\)\.name='br-lan'$/\1/p"); do
-    uci -q delete "$_d"
-  done
-  uci set network.br_lan=device
-  uci set network.br_lan.name='br-lan'
-  uci set network.br_lan.type='bridge'
-  uci -q delete network.br_lan.ports
-  for _e in $_fw_all; do
-    [ "$_e" = "$_fw_wan" ] && continue
-    uci add_list network.br_lan.ports="$_e"
-  done
-  # lan 接口指向桥接设备（DSA 写法），不使用旧式 option type bridge / ifname
-  uci set network.lan.device='br-lan'
-  uci -q delete network.lan.type
-  uci -q delete network.lan.ports
-  uci -q delete network.lan.ifname
-  # WAN 物理口（从桥接摘除，独占）
-  uci set network.wan.device="$_fw_wan"
-  uci commit network
-fi
-EOT
-        sed -i "s/__WAN_IF__/$wan_esc/g" "$OUT"
+        
         fi
 
         cat >> "$OUT" <<EOT
