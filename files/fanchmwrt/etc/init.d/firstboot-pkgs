@@ -46,14 +46,6 @@ install_all() {
         [ "$prof" != "mini" ] && install_list /etc/firstboot-pkgs/lists/default.txt
     fi
 
-    # 3) 确保 Web 管理后台可用：LuCI 由 uhttpd 提供，显式拉起（不依赖包 postinst 是否自动 start）
-    if [ -x /etc/init.d/uhttpd ]; then
-        /etc/init.d/uhttpd enable 2>/dev/null
-        /etc/init.d/uhttpd restart 2>/dev/null
-        logger -t firstboot-pkgs "uhttpd 已拉起（Web 后台）"
-    fi
-    [ -x /etc/init.d/rpcd ] && /etc/init.d/rpcd enable 2>/dev/null
-
     # 自清理：禁用并删除本服务，避免后续启动重复执行
     /etc/init.d/firstboot-pkgs disable 2>/dev/null
     rm -f /etc/init.d/firstboot-pkgs

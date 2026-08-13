@@ -8,6 +8,5 @@ wake-on-lan
 luci-app-udpxy
 udpxy
 luci-app-vlan
-luci-app-ttyd
 openssl-util
 coreutils
