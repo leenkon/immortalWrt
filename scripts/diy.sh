@@ -26,7 +26,6 @@ DNS_BACKUP="223.6.6.6"
 VERSION="" PHASE="" PROFILE_TYPE="" CORE="immortalwrt" FEEDS_SRC="" FILES_DIR_NAME="files"
 NO_ADGH=0
 CUSTOM_IP="" CUSTOM_GATEWAY="" BYPASS_IP="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
-WAN_IFACE=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -43,7 +42,6 @@ while [ $# -gt 0 ]; do
         --core)      CORE="$2"; shift 2 ;;
         --feeds)     FEEDS_SRC="$2"; shift 2 ;;
         --files-dir) FILES_DIR_NAME="$2"; shift 2 ;;
-        --wan-iface)  WAN_IFACE="$2"; shift 2 ;;
         *) error_exit "未知参数 $1" ;;
     esac
 done
@@ -103,10 +101,7 @@ after)
     mkdir -p "$(dirname "$OUT")"
     rm -f "$OUT" "$SHADOW"
 
-    # immortalWrt 默认 WAN=eth0（--wan-iface 可覆盖）；FanchmWrt 端口由下方源码 patch 固定，不读 WAN_IFACE
-    [ "$CORE" = "immortalwrt" ] && [ -z "$WAN_IFACE" ] && WAN_IFACE="eth0"
     ip_esc=$(_escape_uci "$CUSTOM_IP")
-    wan_esc=$(_escape_uci "$WAN_IFACE")
 
     if [ "$CORE" = "fanchmwrt" ]; then
         # ===== FanchmWrt 精简分支（仅 IP/WAN/主机名；无 OC/ADGH/DNS_HIJACK/OAF） =====
@@ -330,7 +325,7 @@ uci set network.wan.username='$u'
 uci set network.wan.password='$p'
             uci set network.wan.ipv6='auto'
             uci set network.wan.peerdns='1'
-            uci set network.wan.device='$wan_esc'
+            uci set network.wan.device='eth0'
             uci -q delete network.wan6
 EOT
 )
@@ -338,7 +333,7 @@ EOT
             WAN_BLK=$(cat <<EOT
             uci set network.wan.proto='dhcp'
             uci set network.wan.peerdns='1'
-            uci set network.wan.device='$wan_esc'
+            uci set network.wan.device='eth0'
             uci set network.wan6.proto='dhcpv6'
 uci set network.wan6.reqaddress='try'
 uci set network.wan6.reqprefix='auto'
