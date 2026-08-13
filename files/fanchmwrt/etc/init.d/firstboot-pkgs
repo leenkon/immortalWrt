@@ -46,6 +46,10 @@ install_all() {
         [ "$prof" != "mini" ] && install_list /etc/firstboot-pkgs/lists/default.txt
     fi
 
+    # 安装完成后刷新 Web 后台，加载新装的 luci-app-* 模块（uhttpd 需 restart 才能识别）
+    [ -x /etc/init.d/uhttpd ] && /etc/init.d/uhttpd restart 2>/dev/null
+    [ -x /etc/init.d/rpcd ] && /etc/init.d/rpcd restart 2>/dev/null
+
     # 自清理：禁用并删除本服务，避免后续启动重复执行
     /etc/init.d/firstboot-pkgs disable 2>/dev/null
     rm -f /etc/init.d/firstboot-pkgs

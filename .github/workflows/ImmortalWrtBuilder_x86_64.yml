@@ -14,7 +14,6 @@ on:
       install_oaf: {description: '安装OAF(仅immortalwrt有效)', type: boolean, default: false}
       root_password: {description: 'root密码', type: string, default: ''}
       wan_iface: {description: 'WAN 物理口 (可选；留空=FanchmWrt 首启自动探测最前口, immortalWrt 默认 eth0)', type: string, default: ''}
-      lan_iface: {description: 'LAN 物理口 (可选, 不指定则自动避免与 WAN 冲突)', type: string, default: ''}
 permissions:
   contents: write
 
@@ -190,12 +189,11 @@ jobs:
           NOADGH_ARG=""
           [ "$NO_ADGH" = "true" ] && NOADGH_ARG="--no-adgh"
           WANIF="${{ github.event.inputs.wan_iface }}"
-          LANIF="${{ github.event.inputs.lan_iface }}"
           $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p after -t $RUN_TYPE --core ${{ github.event.inputs.core }} --files-dir "$FILES_DIR_ABS" \
             ${CIP:+--ip "$CIP"} ${CGW:+--gateway "$CGW"} \
             ${PUSER:+--pppoe-user "$PUSER"} ${PPASS:+--pppoe-pass "$PPASS"} \
             ${NOADGH_ARG:+"$NOADGH_ARG"} \
-            ${WANIF:+--wan-iface "$WANIF"} ${LANIF:+--lan-iface "$LANIF"} \
+            ${WANIF:+--wan-iface "$WANIF"} \
             --root-pass "$ROOTPWD"
 
           $WITH_OC && { chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh; $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh $GITHUB_WORKSPACE --files-dir "$FILES_DIR_ABS"; } || true

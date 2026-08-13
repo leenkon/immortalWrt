@@ -26,7 +26,7 @@ DNS_BACKUP="223.6.6.6"
 VERSION="" PHASE="" PROFILE_TYPE="" CORE="immortalwrt" FEEDS_SRC="" FILES_DIR_NAME="files"
 NO_ADGH=0
 CUSTOM_IP="" CUSTOM_GATEWAY="" BYPASS_IP="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
-WAN_IFACE="eth0" LAN_IFACE=""
+WAN_IFACE=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -44,7 +44,6 @@ while [ $# -gt 0 ]; do
         --feeds)     FEEDS_SRC="$2"; shift 2 ;;
         --files-dir) FILES_DIR_NAME="$2"; shift 2 ;;
         --wan-iface)  WAN_IFACE="$2"; shift 2 ;;
-        --lan-iface)  LAN_IFACE="$2"; shift 2 ;;
         *) error_exit "未知参数 $1" ;;
     esac
 done
@@ -104,9 +103,10 @@ after)
     mkdir -p "$(dirname "$OUT")"
     rm -f "$OUT" "$SHADOW"
 
+    # immortalWrt 默认 WAN=eth0；FanchmWrt 留空由首启自动识别最前口（--wan-iface 为空时）
+    [ "$CORE" = "immortalwrt" ] && [ -z "$WAN_IFACE" ] && WAN_IFACE="eth0"
     ip_esc=$(_escape_uci "$CUSTOM_IP")
     wan_esc=$(_escape_uci "$WAN_IFACE")
-    lan_esc=$(_escape_uci "$LAN_IFACE")
 
     if [ "$CORE" = "fanchmwrt" ]; then
         # ===== FanchmWrt 精简分支（仅 IP/WAN/主机名；无 OC/ADGH/DNS_HIJACK/OAF） =====
@@ -180,7 +180,7 @@ uci set dhcp.@dnsmasq[0].sequential_ip='1'
 uci commit dhcp
 EOT
         # WAN/LAN 物理口自动绑定：x86 多网口约定“最前口=WAN，其余口(含最后口)=LAN 桥接”
-        # 无需手动指定：默认 WAN=eth0(最前口)，LAN=除 WAN 外所有 eth 口桥接；--wan-iface 仅作可选覆盖。
+        # 首启在设备上枚举 eth* 实时探测（非编译期写死）：WAN=最前口，LAN=其余口全桥接；--wan-iface 仅作可选覆盖。
         cat >> "$OUT" <<'EOT'
 # 自动绑定 WAN/LAN 物理口
 _fw_all=$(ls /sys/class/net 2>/dev/null | grep -E '^eth[0-9]+$' | sort -V)
@@ -228,6 +228,15 @@ chmod 755 /etc/init.d/cpufreq-perf
 chmod 755 /etc/init.d/firstboot-pkgs
 /etc/init.d/firstboot-pkgs enable
 /etc/init.d/firstboot-pkgs start
+
+# Web 后台由标准 luci 提供，依赖 uhttpd + rpcd。FanchmWrt 的 uhttpd 首启不会自动拉起
+# （immortalWrt 用完整种子配置含显式 uhttpd 不受影响），此处兜底 enable+start，
+# 确保首启即可访问后台，且不依赖 firstboot-pkgs 在线安装是否成功。
+if [ -x /etc/init.d/uhttpd ]; then
+    /etc/init.d/uhttpd enable 2>/dev/null
+    /etc/init.d/uhttpd start 2>/dev/null
+fi
+[ -x /etc/init.d/rpcd ] && /etc/init.d/rpcd enable 2>/dev/null
 
 logger -t uci-defaults "FanchmWrt 配置应用完成"
 EOT
