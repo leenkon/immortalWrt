@@ -167,8 +167,9 @@ if [[ -d "$OPENWRT_DIR" ]]; then
     [[ "$r" =~ ^[Yy]$ ]] && rm -rf "$OPENWRT_DIR" || { error_exit "请先删除 $OPENWRT_DIR"; }
 fi
 if [[ ! -d "$OPENWRT_DIR" ]]; then
-    git clone --depth 1 "$REPO_URL" "$OPENWRT_DIR" || error_exit "源码克隆失败"
-    (cd "$OPENWRT_DIR" && git fetch origin "$SRC_REF" --depth 1 && git checkout "$SRC_REF") || error_exit "版本切换失败"
+    # 直接按 SRC_REF（tag 或 分支）浅克隆并检出，避免浅克隆后 fetch 仅写入 FETCH_HEAD、
+    # 不创建本地 ref 导致 git checkout "$SRC_REF" 报 "pathspec ... did not match any file(s)" 错误。
+    git clone --depth 1 --single-branch --branch "$SRC_REF" "$REPO_URL" "$OPENWRT_DIR" || error_exit "源码克隆失败"
 fi
 success "完成（取源引用: $SRC_REF）"
 

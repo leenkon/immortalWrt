@@ -49,10 +49,9 @@ jobs:
             SRC_REF="${REF_PREFIX}${{ github.event.inputs.version }}"
           fi
           rm -rf openwrt
-          timeout 180 git clone --depth 1 "$REPO_URL" openwrt
-          cd openwrt
-          timeout 60 git fetch origin "$SRC_REF" --depth 1
-          git checkout "$SRC_REF"
+          # 直接按 SRC_REF（tag 或 分支）浅克隆并检出，避免浅克隆后 fetch 仅写入 FETCH_HEAD、
+          # 不创建本地 ref 导致 git checkout 报 "pathspec ... did not match any file(s)" 错误。
+          timeout 180 git clone --depth 1 --single-branch --branch "$SRC_REF" "$REPO_URL" openwrt
 
       - name: 配置与编译
         id: build
