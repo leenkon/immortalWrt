@@ -86,13 +86,9 @@ GATEWAY_IP=""
 PPPOE_USER="" PPPOE_PASS=""
 [[ "$RUN_TYPE" == "main" || "$RUN_TYPE" == "full" ]] && { read -p "配置PPPoE? [y/N]: " pp; [[ "$pp" =~ ^[Yy]$ ]] && { read -p "用户名: " PPPOE_USER; read -p "密码: " PPPOE_PASS; success "PPPoE已配置"; } || success "使用DHCP"; }
 
-# WAN 物理口：immortalWrt 默认 eth0，可经 --wan-iface 覆盖；FanchmWrt 端口由源码 patch 固定为“首口=WAN”
-# （diy.sh 改写 board.d/03-default-network），不提供运行时覆盖，故不在此询问。
-if [ "$CORE" = "fanchmwrt" ]; then
-  echo -e "\n[WAN] FanchmWrt：固定首口=WAN（源码 patch），无需指定"
-else
-  read -p "WAN 物理口(留空=eth0) [默认: 自动]: " wanif; WAN_IFACE="$wanif"
-fi
+# WAN 物理口：immortalWrt 默认 eth0（由 diy.sh 内兜底，无需询问；workflow 可经 --wan-iface 覆盖）；
+# FanchmWrt 端口由源码 patch 固定为“首口=WAN”（diy.sh 改写 board.d/03-default-network），不读 WAN_IFACE。
+WAN_IFACE=""
 
 # OAF / OC / ADGH：仅 immortalwrt 需要；fanchmwrt 关闭（原生编译，包由 apps/lists 装）
 USE_OAF="false"; WITH_OC="false"; WITH_ADGH="false"
