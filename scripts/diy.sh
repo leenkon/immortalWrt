@@ -494,7 +494,6 @@ chmod 755 /etc/init.d/firstboot-pkgs
 /etc/init.d/firstboot-pkgs enable
 /etc/init.d/firstboot-pkgs start
 
-( sleep 10; /etc/init.d/odhcpd restart ) &
 logger -t uci-defaults "配置应用完成"
 EOT
     chmod 755 "$OUT"
