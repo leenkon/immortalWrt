@@ -181,27 +181,33 @@ uci commit dhcp
 EOT
         # WAN/LAN 物理口自动绑定：x86 多网口约定“最前口=WAN，其余口(含最后口)=LAN 桥接”
         # 首启在设备上枚举 eth* 实时探测（非编译期写死）：WAN=最前口，LAN=其余口全桥接；--wan-iface 仅作可选覆盖。
+        # 注意：25.x 为 DSA 架构，桥接必须用独立 config device(type bridge)，lan 通过 option device 指向它；
+        # 旧式“lan 上 option type bridge + list ports”已不支持，且删除 lan.device 会让 LAN 失联、后台进不去。
         cat >> "$OUT" <<'EOT'
 # 自动绑定 WAN/LAN 物理口
 _fw_all=$(ls /sys/class/net 2>/dev/null | grep -E '^eth[0-9]+$' | sort -V)
 _fw_wan='__WAN_IF__'
-if [ -z "$_fw_wan" ]; then
-  _fw_wan=$(echo "$_fw_all" | head -n1)
-fi
-_fw_lan=''
+[ -z "$_fw_wan" ] && _fw_wan=$(echo "$_fw_all" | head -n1)
+# 定位 LAN 桥接设备（lan.device 指向的 config device type bridge）
+_fw_brname=$(uci -q get network.lan.device)
+[ -z "$_fw_brname" ] && _fw_brname='br-lan'
+_fw_brsec=''
+for _s in $(uci show network 2>/dev/null | sed -n "s/^\(network\.[^.]*\)\.name='$_fw_brname'$/\1/p"); do
+  _fw_brsec="$_s"; break
+done
+[ -z "$_fw_brsec" ] && _fw_brsec="$_fw_brname"
+# 重建桥接成员：除 WAN 口外的所有 eth*
+uci -q delete ${_fw_brsec}.ports
 for _e in $_fw_all; do
   [ "$_e" = "$_fw_wan" ] && continue
-  _fw_lan="$_fw_lan $_e"
+  uci add_list ${_fw_brsec}.ports="$_e"
 done
+# lan 接口保持指向桥接设备（DSA 写法），不使用旧式 option type bridge
+uci set network.lan.device="$_fw_brname"
+uci -q delete network.lan.type
+uci -q delete network.lan.ports
+# WAN 物理口（从桥接摘除，独占）
 uci set network.wan.device="$_fw_wan"
-if [ -n "$_fw_lan" ]; then
-  uci set network.lan.type='bridge'
-  uci -q delete network.lan.device
-  uci -q delete network.lan.ports
-  for _p in $_fw_lan; do
-    uci add_list network.lan.ports="$_p"
-  done
-fi
 uci commit network
 EOT
         sed -i "s/__WAN_IF__/$wan_esc/g" "$OUT"
