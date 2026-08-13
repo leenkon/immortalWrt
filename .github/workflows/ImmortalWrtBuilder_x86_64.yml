@@ -116,44 +116,7 @@ jobs:
 
           ./scripts/feeds install -a -f
           if $IS_FANCHM; then
-            printf '%s\n' \
-              'CONFIG_TARGET_x86=y' \
-              'CONFIG_TARGET_x86_64=y' \
-              'CONFIG_USE_APK=y' \
-              'CONFIG_PACKAGE_kmod-e1000=y' \
-              'CONFIG_PACKAGE_kmod-e1000e=y' \
-              'CONFIG_PACKAGE_kmod-igb=y' \
-              'CONFIG_PACKAGE_kmod-igc=y' \
-              'CONFIG_PACKAGE_kmod-vmxnet3=y' \
-              'CONFIG_PACKAGE_kmod-r8169=y' \
-              'CONFIG_PACKAGE_kmod-ixgbe=y' \
-              'CONFIG_PACKAGE_kmod-ppp=y' \
-              'CONFIG_PACKAGE_kmod-pppoe=y' \
-              'CONFIG_PACKAGE_kmod-pppox=y' \
-              'CONFIG_PACKAGE_kmod-nft-offload=y' \
-              'CONFIG_PACKAGE_wget-ssl=y' \
-              '# FanchmWrt 自家后台/主题：标准 luci 框架 + fwx 仪表盘皮肤 + fwx 内核栈（源码在主仓库 package/fcm/）' \
-              'CONFIG_PACKAGE_luci=y' \
-              'CONFIG_PACKAGE_luci-compat=y' \
-              'CONFIG_PACKAGE_luci-i18n-base-zh-cn=y' \
-              'CONFIG_PACKAGE_kmod-fwx=y' \
-              'CONFIG_PACKAGE_fwxd=y' \
-              'CONFIG_PACKAGE_luci-app-fwx-dashboard=y' \
-              'CONFIG_PACKAGE_luci-app-fwx-resources=y' \
-              'CONFIG_PACKAGE_luci-app-fwx-dashboard-setting=y' \
-              'CONFIG_PACKAGE_luci-app-fwx-appfilter=y' \
-              'CONFIG_PACKAGE_luci-app-fwx-system=y' \
-              'CONFIG_PACKAGE_luci-app-fwx-network=y' \
-              'CONFIG_PACKAGE_luci-app-fwx-app-center=y' \
-              'CONFIG_PACKAGE_luci-app-fwx-feature=y' \
-              'CONFIG_PACKAGE_luci-app-fwx-macfilter=y' \
-              'CONFIG_PACKAGE_luci-app-fwx-mac-blacklist=y' \
-              'CONFIG_PACKAGE_luci-app-fwx-record=y' \
-              'CONFIG_PACKAGE_luci-app-fwx-record-whitelist=y' \
-              'CONFIG_PACKAGE_luci-app-fwx-session-stat=y' \
-              'CONFIG_PACKAGE_luci-app-fwx-user=y' \
-              'CONFIG_PACKAGE_luci-app-fwx-user-record=y' \
-              > .config
+            cp $GITHUB_WORKSPACE/configs/fanchmwrt-lean.config .config
             # 镜像格式 / 磁盘分区大小 直接参考 immortalWrt 默认配置，避免依赖 make defconfig 默认值
             source $GITHUB_WORKSPACE/cores/immortalwrt.conf
             REF_CFG="$GITHUB_WORKSPACE/configs/${CONFIG_PREFIX}-default.config"

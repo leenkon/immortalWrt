@@ -206,47 +206,10 @@ fi
 
 ./scripts/feeds install -a -f
 
-# FanchmWrt：内联最小 target + 必要 kmod + apk（不依赖本地 .config 种子），镜像格式/分区大小引用 immortalWrt 默认配置以保持输出一致；
-# Web 后台(luci + fwx 仪表盘 + kmod-fwx/fwxd) 随下方 .config 编入镜像，其余 userspace 包(ddns/upnp/wol/udpxy/vlan 等)走首启安装。
+# FanchmWrt：内联最小 target + 必要 kmod + apk（不依赖本地 .config 种子），内容见 configs/fanchmwrt-lean.config；
+# 镜像格式/分区大小引用 immortalWrt 默认配置以保持输出一致；其余 userspace 包(ddns/upnp/wol/udpxy/vlan 等)走首启安装。
 if [[ "$CORE" = "fanchmwrt" ]]; then
-  cat > .config <<'EOF'
-CONFIG_TARGET_x86=y
-CONFIG_TARGET_x86_64=y
-CONFIG_USE_APK=y
-CONFIG_PACKAGE_kmod-e1000=y
-CONFIG_PACKAGE_kmod-e1000e=y
-CONFIG_PACKAGE_kmod-igb=y
-CONFIG_PACKAGE_kmod-igc=y
-CONFIG_PACKAGE_kmod-vmxnet3=y
-CONFIG_PACKAGE_kmod-r8169=y
-CONFIG_PACKAGE_kmod-ixgbe=y
-CONFIG_PACKAGE_kmod-ppp=y
-CONFIG_PACKAGE_kmod-pppoe=y
-CONFIG_PACKAGE_kmod-pppox=y
-CONFIG_PACKAGE_kmod-nft-offload=y
-CONFIG_PACKAGE_wget-ssl=y
-# FanchmWrt 后台/主题：标准 luci + fwx 仪表盘皮肤 + kmod-fwx/fwxd（源码在主仓库 package/fcm/，随 clone 编入镜像；dashboard 硬依赖二者，一并选上）。
-CONFIG_PACKAGE_luci=y
-CONFIG_PACKAGE_luci-compat=y
-CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
-CONFIG_PACKAGE_kmod-fwx=y
-CONFIG_PACKAGE_fwxd=y
-CONFIG_PACKAGE_luci-app-fwx-dashboard=y
-CONFIG_PACKAGE_luci-app-fwx-resources=y
-CONFIG_PACKAGE_luci-app-fwx-dashboard-setting=y
-CONFIG_PACKAGE_luci-app-fwx-appfilter=y
-CONFIG_PACKAGE_luci-app-fwx-system=y
-CONFIG_PACKAGE_luci-app-fwx-network=y
-CONFIG_PACKAGE_luci-app-fwx-app-center=y
-CONFIG_PACKAGE_luci-app-fwx-feature=y
-CONFIG_PACKAGE_luci-app-fwx-macfilter=y
-CONFIG_PACKAGE_luci-app-fwx-mac-blacklist=y
-CONFIG_PACKAGE_luci-app-fwx-record=y
-CONFIG_PACKAGE_luci-app-fwx-record-whitelist=y
-CONFIG_PACKAGE_luci-app-fwx-session-stat=y
-CONFIG_PACKAGE_luci-app-fwx-user=y
-CONFIG_PACKAGE_luci-app-fwx-user-record=y
-EOF
+  cat "$SCRIPT_DIR/configs/fanchmwrt-lean.config" > .config
   # 镜像格式 / 磁盘分区大小 直接参考 immortalWrt 默认配置，避免依赖 make defconfig 默认值
   IW_CONF="$SCRIPT_DIR/cores/immortalwrt.conf"
   [[ -f "$IW_CONF" ]] || error_exit "缺失 immortalwrt 核心描述: $IW_CONF"
@@ -256,7 +219,7 @@ EOF
   [[ -f "$REF_CFG" ]] || error_exit "参考配置不存在: $REF_CFG（FanchmWrt 镜像格式/分区大小依赖它）"
   grep -E '^(CONFIG_(GRUB_IMAGES|GRUB_EFI_IMAGES|TARGET_ROOTFS_(SQUASHFS|EXT4)|TARGET_IMAGES_GZIP|TARGET_(KERNEL|ROOTFS)_PARTSIZE|ISO_IMAGES|VDI_IMAGES|VMDK_IMAGES|QCOW2_IMAGES|VHDX_IMAGES))=' "$REF_CFG" >> .config
   sed -i 's/\r$//' .config
-  echo "[build] FanchmWrt: 已写入最小 .config（target+kmod）+ 引用 immortalWrt 镜像格式/分区大小，make defconfig 将展开"
+  echo "[build] FanchmWrt: 已写入最小 .config（见 configs/fanchmwrt-lean.config）+ 引用 immortalWrt 镜像格式/分区大小，make defconfig 将展开"
 
   # FanchmWrt：用本项目定制 feature.cfg 覆盖 fwxd 自带应用特征库。
   # fwxd 的 Makefile 把 package/fcm/fwxd/files/*.cfg 安装到固件 /etc/fwxd/feature.cfg，
