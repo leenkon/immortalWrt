@@ -302,12 +302,12 @@ echo -e "\n${YELLOW}[6/7] 预装核心与打包文件...${NC}"
 # OpenClash Meta 核心预装（仅 immortalwrt 旁路由 + 完整路由）
 if [[ "$WITH_OC" == "true" ]]; then
     chmod +x "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh"
-    "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR"
+    "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR" --files-dir "$FILES_DIR_ABS"
 fi
 # AdGuardHome 官方预编译二进制注入（仅 immortalwrt 旁路由 + 完整路由；Full-noadgh 不注入）
 if [[ "$WITH_ADGH" == "true" ]]; then
     chmod +x "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh"
-    "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh" "$SCRIPT_DIR"
+    "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh" "$SCRIPT_DIR" --files-dir "$FILES_DIR_ABS"
 fi
 [[ -d "$FILES_DIR_ABS" ]] && { rm -rf "$OPENWRT_DIR/files"; cp -rf "$FILES_DIR_ABS" "$OPENWRT_DIR/files"; }
 # 共享静态文件层（双核通用，如 cpufreq-perf）：覆盖到核专属 files 之上

@@ -1,6 +1,6 @@
 #!/bin/bash
 # OpenClash Meta 核心预装脚本
-# 下载最新 mihomo 核心二进制放入 files/，跳过首次启动时的在线下载
+# 下载最新 mihomo 核心二进制放入 files/<core>/etc/openclash/core/（如 files/immortalwrt），跳过首次启动时的在线下载
 #
 # 用法: ./scripts/upgrade-openclash-core.sh [项目根目录] [架构]
 # 默认架构: linux-amd64 (x86_64)
@@ -10,11 +10,24 @@
 
 set -e
 
-PROJECT_ROOT="${1:-.}"
-CORE_ARCH="${2:-linux-amd64}"
+# 用法: upgrade-openclash-core.sh [项目根目录] [--files-dir <核专属files目录>] [--arch linux-amd64]
+#   --files-dir: 注入目标目录（如 files/immortalwrt）；缺省回退到 <root>/files/immortalwrt
+#   OpenClash 仅 immortalwrt 使用，其 FILES_DIR 即 files/immortalwrt，须把核心注入该目录才能进固件
+PROJECT_ROOT="$(pwd -P)"
+FILES_DEST=""
+CORE_ARCH="linux-amd64"
 RELEASE_BRANCH="master"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --files-dir) FILES_DEST="$2"; shift 2 ;;
+    --arch)      CORE_ARCH="$2"; shift 2 ;;
+    -*) shift ;;
+    *) PROJECT_ROOT="$(cd "$1" && pwd -P)"; shift ;;
+  esac
+done
+FILES_DEST="${FILES_DEST:-$PROJECT_ROOT/files/immortalwrt}"
 
-CORE_DIR="$PROJECT_ROOT/files/etc/openclash/core"
+CORE_DIR="$FILES_DEST/etc/openclash/core"
 CORE_BIN="$CORE_DIR/clash_meta"
 
 # 获取最新版本号

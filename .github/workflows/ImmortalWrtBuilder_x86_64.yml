@@ -13,7 +13,7 @@ on:
       pppoe_password: {description: 'PPPoE密码', type: string, default: ''}
       install_oaf: {description: '安装OAF(仅immortalwrt有效)', type: boolean, default: false}
       root_password: {description: 'root密码', type: string, default: ''}
-      wan_iface: {description: 'WAN 物理口 (默认 eth0，匹配 immortalWrt)', type: string, default: 'eth0'}
+      wan_iface: {description: 'WAN 物理口 (可选；留空=FanchmWrt 首启自动探测最前口, immortalWrt 默认 eth0)', type: string, default: ''}
       lan_iface: {description: 'LAN 物理口 (可选, 不指定则自动避免与 WAN 冲突)', type: string, default: ''}
 permissions:
   contents: write
@@ -189,19 +189,19 @@ jobs:
           PUSER="${{ github.event.inputs.pppoe_username }}"; PPASS="${{ github.event.inputs.pppoe_password }}"
           NOADGH_ARG=""
           [ "$NO_ADGH" = "true" ] && NOADGH_ARG="--no-adgh"
-          WANIF="${{ github.event.inputs.wan_iface }}"; WANIF="${WANIF:-eth0}"
+          WANIF="${{ github.event.inputs.wan_iface }}"
           LANIF="${{ github.event.inputs.lan_iface }}"
           $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p after -t $RUN_TYPE --core ${{ github.event.inputs.core }} --files-dir "$FILES_DIR_ABS" \
             ${CIP:+--ip "$CIP"} ${CGW:+--gateway "$CGW"} \
             ${PUSER:+--pppoe-user "$PUSER"} ${PPASS:+--pppoe-pass "$PPASS"} \
             ${NOADGH_ARG:+"$NOADGH_ARG"} \
-            --wan-iface "$WANIF" ${LANIF:+--lan-iface "$LANIF"} \
+            ${WANIF:+--wan-iface "$WANIF"} ${LANIF:+--lan-iface "$LANIF"} \
             --root-pass "$ROOTPWD"
 
-          $WITH_OC && { chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh; $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh $GITHUB_WORKSPACE; } || true
+          $WITH_OC && { chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh; $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh $GITHUB_WORKSPACE --files-dir "$FILES_DIR_ABS"; } || true
           if $WITH_ADGH; then
             chmod +x $GITHUB_WORKSPACE/scripts/upgrade-adgh-binary.sh
-            $GITHUB_WORKSPACE/scripts/upgrade-adgh-binary.sh $GITHUB_WORKSPACE
+            $GITHUB_WORKSPACE/scripts/upgrade-adgh-binary.sh $GITHUB_WORKSPACE --files-dir "$FILES_DIR_ABS"
           fi
           [[ -d "$FILES_DIR_ABS" ]] && { rm -rf files; cp -rf "$FILES_DIR_ABS" files; } || true
           # 共享静态文件层（双核通用，如 cpufreq-perf）：覆盖到核专属 files 之上
